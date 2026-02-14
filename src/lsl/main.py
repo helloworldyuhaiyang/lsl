@@ -7,8 +7,14 @@ from lsl.asset.factory import create_storage_provider
 
 app = FastAPI(title="LSL")
 
+_env_settings = Settings.from_env()
 settings = Settings(
-    STORAGE_PROVIDER="oss",  # 明确指定
+    STORAGE_PROVIDER=_env_settings.STORAGE_PROVIDER or "oss",
+    ASSET_BASE_URL=_env_settings.ASSET_BASE_URL,
+    OSS_REGION=_env_settings.OSS_REGION,
+    OSS_BUCKET=_env_settings.OSS_BUCKET,
+    OSS_ACCESS_KEY_ID=_env_settings.OSS_ACCESS_KEY_ID,
+    OSS_ACCESS_KEY_SECRET=_env_settings.OSS_ACCESS_KEY_SECRET,
 )
 
 storage = create_storage_provider(settings)
