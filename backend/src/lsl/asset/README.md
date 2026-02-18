@@ -1,6 +1,6 @@
 # LSL - Asset Service (Object Storage Abstraction)
 
-Asset 是一个用于对象存储上传与访问解耦的 FastAPI 示例项目。
+Asset 是一个用于对象存储上传与访问解耦的项目。
 
 核心目标：
 数据库只存 `object_key`，上传走 Presigned URL，访问统一用 `ASSET_BASE_URL + object_key`。
@@ -33,7 +33,7 @@ DB
 ## 项目结构
 
 ```text
-src/lsl/
+backend/src/lsl/
 |- main.py                # FastAPI 入口
 |- config.py              # 配置定义
 |- asset/
@@ -70,7 +70,7 @@ ASSET_BASE_URL=https://your-real-bucket.oss-cn-hangzhou.aliyuncs.com
 ### 3. 启动服务
 
 ```bash
-uv run uvicorn --app-dir src lsl.main:app --reload --env-file .env
+uv run uvicorn --app-dir backend/src lsl.main:app --reload --env-file .env
 ```
 
 ### 4. 健康检查

@@ -10,7 +10,7 @@
 
 ## 产品定位（Phase 1）
 
-LSL 不是录音软件，而是「口语课录音的智能复盘工具」。
+LSL 「口语录音的智能复盘工具」。
 
 输入：
 - 已有口语课录音文件（mp3 / wav / m4a）
@@ -75,7 +75,7 @@ LSL 不是录音软件，而是「口语课录音的智能复盘工具」。
 - 已完成：存储 provider 抽象（`fake` / `oss`）
 - 未完成：ASR/LLM/TTS 调度、任务系统、鉴权、前端页面
 
-Asset 模块详细文档见：`src/lsl/asset/README.md`
+Asset 模块详细文档见：`backend/src/lsl/asset/README.md`
 
 ## 本地启动（当前后端原型）
 
@@ -93,7 +93,7 @@ ASSET_BASE_URL=https://your-real-bucket.oss-cn-hangzhou.aliyuncs.com
 2. 启动服务
 
 ```bash
-uv run uvicorn --app-dir src lsl.main:app --reload --env-file .env
+uv run uvicorn --app-dir backend/src lsl.main:app --reload --env-file .env
 ```
 
 3. 调试上传 URL
@@ -116,7 +116,7 @@ curl -X PUT -T /path/to/log.txt -H "Content-Type: text/plain" "<upload_url>"
 ## 建议目录演进
 
 ```text
-src/lsl/
+backend/src/lsl/
   main.py
   config.py
   asset/
@@ -125,6 +125,11 @@ src/lsl/
   llm/
   tts/
   auth/
+
+frontend/
+  src/
+  components/
+  pages/
 ```
 
 ## 路线图（Roadmap）
