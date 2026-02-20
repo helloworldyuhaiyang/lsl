@@ -69,10 +69,6 @@ export function FileDropzone({ disabled = false, onFileSelected }: FileDropzoneP
         <p className="mt-2 text-sm text-slate-600">{label}</p>
         <p className="mt-3 text-xs text-slate-500">Supported: mp3 / wav / m4a</p>
       </button>
-
-      <Button type="button" variant="outline" disabled={disabled} onClick={() => inputRef.current?.click()}>
-        Choose File
-      </Button>
     </div>
   )
 }

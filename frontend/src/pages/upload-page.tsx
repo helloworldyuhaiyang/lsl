@@ -232,7 +232,6 @@ export function UploadPage() {
         <Card className="border-slate-200/80 bg-white/90 shadow-sm lg:col-span-2">
           <CardHeader>
             <CardTitle className="text-lg">Audio Input</CardTitle>
-            <CardDescription>Client uploads directly to object storage using presigned PUT URL.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <FileDropzone disabled={isUploading || isPreparingUpload} onFileSelected={handleFileSelected} />
@@ -302,7 +301,7 @@ export function UploadPage() {
         <Card className="border-slate-200/80 bg-white/90 shadow-sm">
           <CardHeader>
             <CardTitle className="text-lg">Recent Uploads</CardTitle>
-            <CardDescription>Latest 20 records fetched from API.</CardDescription>
+            <CardDescription>Latest 20 records order by upload time (newest first).</CardDescription>
           </CardHeader>
           <CardContent>
             {isLoadingHistory ? (
