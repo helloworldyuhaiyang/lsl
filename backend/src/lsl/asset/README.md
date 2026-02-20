@@ -144,16 +144,27 @@ curl "http://127.0.0.1:8000/health"
 请求示例：
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/assets/upload-url?category=listening&entity_id=test_user&filename=log.txt&content_type=text/plain"
+curl -X POST "http://127.0.0.1:8000/assets/upload-url" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "category": "listening",
+    "entity_id": "test_user",
+    "filename": "log.txt",
+    "content_type": "text/plain"
+  }'
 ```
 
 返回示例：
 
 ```json
 {
-  "object_key": "listening/test_user/xxxx.txt",
-  "upload_url": "https://bucket.oss-cn-hangzhou.aliyuncs.com/...",
-  "asset_url": "https://cdn-or-bucket-domain/listening/test_user/xxxx.txt"
+  "code": 0,
+  "message": "successful",
+  "data": {
+    "object_key": "listening/test_user/xxxx.txt",
+    "upload_url": "https://bucket.oss-cn-hangzhou.aliyuncs.com/...",
+    "asset_url": "https://cdn-or-bucket-domain/listening/test_user/xxxx.txt"
+  }
 }
 ```
 
@@ -182,10 +193,13 @@ curl -X POST "http://127.0.0.1:8000/assets/complete-upload" \
 
 ```json
 {
-  "object_key": "listening/test_user/xxxx.txt",
-  "asset_url": "https://cdn-or-bucket-domain/listening/test_user/xxxx.txt",
-  "status": "acknowledged",
-  "message": "Upload completion received."
+  "code": 0,
+  "message": "successful",
+  "data": {
+    "object_key": "listening/test_user/xxxx.txt",
+    "asset_url": "https://cdn-or-bucket-domain/listening/test_user/xxxx.txt",
+    "status": "acknowledged"
+  }
 }
 ```
 

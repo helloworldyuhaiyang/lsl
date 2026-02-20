@@ -1,4 +1,3 @@
-import { createUploadUrl } from '@/lib/api/assets'
 import { requestJson } from '@/lib/api/client'
 import type {
   CompleteUploadRequest,
@@ -6,6 +5,12 @@ import type {
   UploadUrlRequest,
   UploadUrlResponse,
 } from '@/types/api'
+
+interface ApiResponse<T> {
+  code: number
+  message: string
+  data: T
+}
 
 interface UploadToPresignedUrlParams {
   uploadUrl: string
@@ -54,7 +59,7 @@ export async function uploadToPresignedUrl({
 }
 
 export async function notifyUploadCompleted(payload: CompleteUploadRequest): Promise<CompleteUploadResponse> {
-  return requestJson<CompleteUploadResponse>('/assets/complete-upload', {
+  const response = await requestJson<ApiResponse<CompleteUploadResponse>>('/assets/complete-upload', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -69,33 +74,39 @@ export async function notifyUploadCompleted(payload: CompleteUploadRequest): Pro
       etag: payload.etag,
     }),
   })
+  return response.data
 }
 
-interface UploadAssetParams {
+interface CompleteUploadedAssetParams {
+  uploadInfo: UploadUrlResponse
   upload: UploadUrlRequest
   file: File
-  onProgress?: (progress: number) => void
+  etag?: string
 }
 
-interface UploadAssetResult {
-  uploadInfo: UploadUrlResponse
-  completed: CompleteUploadResponse
+export async function prepareUploadUrl(payload: UploadUrlRequest): Promise<UploadUrlResponse> {
+  const response = await requestJson<ApiResponse<UploadUrlResponse>>('/assets/upload-url', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      category: payload.category,
+      entity_id: payload.entityId,
+      filename: payload.filename,
+      content_type: payload.contentType,
+    }),
+  })
+  return response.data
 }
 
-export async function uploadAssetWithConfirmation({
+export async function completeUploadedAsset({
+  uploadInfo,
   upload,
   file,
-  onProgress,
-}: UploadAssetParams): Promise<UploadAssetResult> {
-  const uploadInfo = await createUploadUrl(upload)
-  const { etag } = await uploadToPresignedUrl({
-    uploadUrl: uploadInfo.upload_url,
-    file,
-    contentType: upload.contentType,
-    onProgress,
-  })
-
-  const completed = await notifyUploadCompleted({
+  etag,
+}: CompleteUploadedAssetParams): Promise<CompleteUploadResponse> {
+  return notifyUploadCompleted({
     objectKey: uploadInfo.object_key,
     category: upload.category,
     entityId: upload.entityId,
@@ -104,9 +115,4 @@ export async function uploadAssetWithConfirmation({
     fileSize: file.size,
     etag,
   })
-
-  return {
-    uploadInfo,
-    completed,
-  }
 }

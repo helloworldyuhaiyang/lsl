@@ -6,10 +6,11 @@ import { FileDropzone } from '@/components/upload/file-dropzone'
 import { UploadProgress } from '@/components/upload/upload-progress'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { uploadAssetWithConfirmation } from '@/lib/api/upload'
+import { completeUploadedAsset, prepareUploadUrl, uploadToPresignedUrl } from '@/lib/api/upload'
 import { getUploadHistory, saveUploadRecord } from '@/lib/storage/upload-history'
 import { formatBytes, formatDateTime, formatDuration } from '@/lib/utils/format'
 import type { UploadRecord } from '@/types/domain'
+import type { UploadUrlResponse } from '@/types/api'
 
 const ALLOWED_EXTENSIONS = new Set(['mp3', 'wav', 'm4a'])
 
@@ -67,8 +68,10 @@ function createJobIds(objectKey: string): { taskId: string; summaryId: string } 
 
 export function UploadPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [preparedUpload, setPreparedUpload] = useState<UploadUrlResponse | null>(null)
   const [durationSec, setDurationSec] = useState<number | null>(null)
   const [uploadProgress, setUploadProgress] = useState(0)
+  const [isPreparingUpload, setIsPreparingUpload] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successRecord, setSuccessRecord] = useState<UploadRecord | null>(null)
@@ -87,20 +90,45 @@ export function UploadPage() {
     if (!ALLOWED_EXTENSIONS.has(extension)) {
       setErrorMessage('Only mp3, wav, and m4a files are supported.')
       setSelectedFile(null)
+      setPreparedUpload(null)
       setDurationSec(null)
       return
     }
 
-    const duration = await getAudioDuration(file)
-    setSelectedFile(file)
-    setDurationSec(duration)
+    setIsPreparingUpload(true)
+    setSelectedFile(null)
+    setPreparedUpload(null)
+    setDurationSec(null)
     setUploadProgress(0)
     setSuccessRecord(null)
     setErrorMessage(null)
+
+    try {
+      const duration = await getAudioDuration(file)
+      const contentType = resolveContentType(file)
+
+      const uploadInfo = await prepareUploadUrl({
+        category: 'conversation',
+        entityId: 'web_user',
+        filename: file.name,
+        contentType,
+      })
+
+      setSelectedFile(file)
+      setPreparedUpload(uploadInfo)
+      setDurationSec(duration)
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to create upload URL. Please retry.')
+      setSelectedFile(null)
+      setPreparedUpload(null)
+      setDurationSec(null)
+    } finally {
+      setIsPreparingUpload(false)
+    }
   }
 
   async function handleUpload() {
-    if (!selectedFile || isUploading) {
+    if (!selectedFile || !preparedUpload || isUploading || isPreparingUpload) {
       return
     }
 
@@ -112,7 +140,15 @@ export function UploadPage() {
     try {
       const contentType = resolveContentType(selectedFile)
 
-      const { completed } = await uploadAssetWithConfirmation({
+      const { etag } = await uploadToPresignedUrl({
+        uploadUrl: preparedUpload.upload_url,
+        file: selectedFile,
+        contentType,
+        onProgress: (progress) => setUploadProgress(progress),
+      })
+
+      const completed = await completeUploadedAsset({
+        uploadInfo: preparedUpload,
         upload: {
           category: 'conversation',
           entityId: 'web_user',
@@ -120,7 +156,7 @@ export function UploadPage() {
           contentType,
         },
         file: selectedFile,
-        onProgress: (progress) => setUploadProgress(progress),
+        etag,
       })
 
       const { taskId, summaryId } = createJobIds(completed.object_key)
@@ -162,7 +198,7 @@ export function UploadPage() {
             <CardDescription>Client uploads directly to object storage using presigned PUT URL.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <FileDropzone disabled={isUploading} onFileSelected={handleFileSelected} />
+            <FileDropzone disabled={isUploading || isPreparingUpload} onFileSelected={handleFileSelected} />
 
             {selectedFile ? (
               <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4">
@@ -200,20 +236,25 @@ export function UploadPage() {
             ) : null}
 
             <div className="flex flex-wrap gap-3">
-              <Button type="button" onClick={handleUpload} disabled={!selectedFile || isUploading}>
-                {isUploading ? 'Uploading...' : 'Upload to Storage'}
+              <Button
+                type="button"
+                onClick={handleUpload}
+                disabled={!selectedFile || !preparedUpload || isUploading || isPreparingUpload}
+              >
+                {isPreparingUpload ? 'Preparing Upload URL...' : isUploading ? 'Uploading...' : 'Upload to Storage'}
               </Button>
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => {
                   setSelectedFile(null)
+                  setPreparedUpload(null)
                   setDurationSec(null)
                   setUploadProgress(0)
                   setErrorMessage(null)
                   setSuccessRecord(null)
                 }}
-                disabled={isUploading}
+                disabled={isUploading || isPreparingUpload}
               >
                 Clear
               </Button>

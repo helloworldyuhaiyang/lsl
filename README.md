@@ -103,7 +103,9 @@ uv run uvicorn --app-dir backend/src lsl.main:app --reload --env-file .env
 3. 调试上传 URL
 
 ```bash
-curl -X POST "http://127.0.0.1:8000/assets/upload-url?category=listening&entity_id=test_user&filename=log.txt&content_type=text/plain"
+curl -X POST "http://127.0.0.1:8000/assets/upload-url" \
+  -H "Content-Type: application/json" \
+  -d '{"category":"listening","entity_id":"test_user","filename":"log.txt","content_type":"text/plain"}'
 ```
 
 4. 用返回的 `upload_url` 直传文件

@@ -1,4 +1,22 @@
+from typing import Generic, TypeVar
+
 from pydantic import BaseModel, Field, field_validator
+
+
+T = TypeVar("T")
+
+
+class ApiResponse(BaseModel, Generic[T]):
+    code: int = 0
+    message: str = "successful"
+    data: T
+
+
+class UploadUrlRequest(BaseModel):
+    category: str = Field(..., min_length=1, max_length=64)
+    entity_id: str = Field(..., min_length=1, max_length=128)
+    filename: str = Field(..., min_length=1, max_length=255)
+    content_type: str = Field(..., min_length=1, max_length=128)
 
 
 class CompleteUploadRequest(BaseModel):
@@ -19,8 +37,13 @@ class CompleteUploadRequest(BaseModel):
         return normalized
 
 
-class CompleteUploadResponse(BaseModel):
+class UploadUrlResponseData(BaseModel):
+    object_key: str
+    upload_url: str
+    asset_url: str
+
+
+class CompleteUploadResponseData(BaseModel):
     object_key: str
     asset_url: str
     status: str = "acknowledged"
-    message: str

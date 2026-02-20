@@ -8,7 +8,13 @@ from datetime import timedelta
 
 from lsl.config import Settings
 from lsl.asset import AssetService
-from lsl.asset.schemas import CompleteUploadRequest, CompleteUploadResponse
+from lsl.asset.schemas import (
+    ApiResponse,
+    CompleteUploadRequest,
+    CompleteUploadResponseData,
+    UploadUrlRequest,
+    UploadUrlResponseData,
+)
 from lsl.asset.factory import create_storage_provider
 from lsl.asset.repository import AssetRepository
 
@@ -78,44 +84,43 @@ def get_asset_service(request: Request) -> AssetService:
         raise HTTPException(status_code=500, detail="Asset service is not initialized")
     return cast(AssetService, service)
 
-@app.get("/health")
+@app.get("/health", response_model=ApiResponse[dict[str, str]])
 def health():
-    return {"status": "ok"}
+    return ApiResponse(data={"status": "ok"})
 
 
-@app.post("/assets/upload-url")
+@app.post("/assets/upload-url", response_model=ApiResponse[UploadUrlResponseData])
 def generate_upload_url(
-    category: str,
-    entity_id: str,
-    filename: str,
-    content_type: str,
+    payload: UploadUrlRequest,
     asset_service: AssetService = Depends(get_asset_service),
 ):
     """
     生成上传用 Presigned URL
     """
     object_key = asset_service.generate_object_key(
-        category=category,
-        entity_id=entity_id,
-        filename=filename,
+        category=payload.category,
+        entity_id=payload.entity_id,
+        filename=payload.filename,
     )
 
     upload_url = asset_service.generate_upload_url(
         object_key=object_key,
-        content_type=content_type,
+        content_type=payload.content_type,
         expires=timedelta(minutes=10),
     )
 
     asset_url = asset_service.build_asset_url(object_key)
 
-    return {
-        "object_key": object_key,
-        "upload_url": upload_url,
-        "asset_url": asset_url,
-    }
+    return ApiResponse(
+        data=UploadUrlResponseData(
+            object_key=object_key,
+            upload_url=upload_url,
+            asset_url=asset_url,
+        )
+    )
 
 
-@app.post("/assets/complete-upload", response_model=CompleteUploadResponse)
+@app.post("/assets/complete-upload", response_model=ApiResponse[CompleteUploadResponseData])
 def complete_upload(
     payload: CompleteUploadRequest,
     asset_service: AssetService = Depends(get_asset_service),
@@ -141,9 +146,10 @@ def complete_upload(
 
     asset_url = asset_service.build_asset_url(payload.object_key)
 
-    return CompleteUploadResponse(
-        object_key=payload.object_key,
-        asset_url=asset_url,
-        status="acknowledged",
-        message="Upload completion received.",
+    return ApiResponse(
+        data=CompleteUploadResponseData(
+            object_key=payload.object_key,
+            asset_url=asset_url,
+            status="acknowledged",
+        )
     )
