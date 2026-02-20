@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { PageTitle } from '@/components/common/page-title'
@@ -6,11 +6,11 @@ import { FileDropzone } from '@/components/upload/file-dropzone'
 import { UploadProgress } from '@/components/upload/upload-progress'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { completeUploadedAsset, prepareUploadUrl, uploadToPresignedUrl } from '@/lib/api/upload'
-import { getUploadHistory, saveUploadRecord } from '@/lib/storage/upload-history'
+import { completeUploadedAsset, listAssets, prepareUploadUrl, uploadToPresignedUrl } from '@/lib/api/upload'
+import { saveUploadRecord } from '@/lib/storage/upload-history'
 import { formatBytes, formatDateTime, formatDuration } from '@/lib/utils/format'
 import type { UploadRecord } from '@/types/domain'
-import type { UploadUrlResponse } from '@/types/api'
+import type { AssetListItem, UploadUrlResponse } from '@/types/api'
 
 const ALLOWED_EXTENSIONS = new Set(['mp3', 'wav', 'm4a'])
 
@@ -73,9 +73,10 @@ export function UploadPage() {
   const [uploadProgress, setUploadProgress] = useState(0)
   const [isPreparingUpload, setIsPreparingUpload] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successRecord, setSuccessRecord] = useState<UploadRecord | null>(null)
-  const [history, setHistory] = useState<UploadRecord[]>(() => getUploadHistory())
+  const [history, setHistory] = useState<UploadRecord[]>([])
 
   const selectedExtension = useMemo(() => {
     if (!selectedFile) {
@@ -83,6 +84,42 @@ export function UploadPage() {
     }
     return getExtension(selectedFile.name)
   }, [selectedFile])
+
+  function mapAssetToUploadRecord(item: AssetListItem): UploadRecord {
+    const fallbackFileName = item.object_key.split('/').at(-1) ?? item.object_key
+    const { taskId, summaryId } = createJobIds(item.object_key)
+
+    return {
+      taskId,
+      summaryId,
+      fileName: item.filename || fallbackFileName,
+      fileSize: item.file_size ?? 0,
+      durationSec: null,
+      objectKey: item.object_key,
+      assetUrl: item.asset_url,
+      uploadedAt: item.created_at,
+    }
+  }
+
+  async function refreshRecentUploads() {
+    setIsLoadingHistory(true)
+    try {
+      const items = await listAssets({
+        limit: 20,
+        category: 'conversation',
+        entityId: 'web_user',
+      })
+      setHistory(items.map(mapAssetToUploadRecord))
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to fetch upload history.')
+    } finally {
+      setIsLoadingHistory(false)
+    }
+  }
+
+  useEffect(() => {
+    void refreshRecentUploads()
+  }, [])
 
   async function handleFileSelected(file: File) {
     const extension = getExtension(file.name)
@@ -173,9 +210,9 @@ export function UploadPage() {
       }
 
       saveUploadRecord(record)
-      setHistory(getUploadHistory())
       setSuccessRecord(record)
       setUploadProgress(100)
+      await refreshRecentUploads()
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Upload failed. Please retry.')
     } finally {
@@ -265,10 +302,12 @@ export function UploadPage() {
         <Card className="border-slate-200/80 bg-white/90 shadow-sm">
           <CardHeader>
             <CardTitle className="text-lg">Recent Uploads</CardTitle>
-            <CardDescription>Latest 20 records stored in localStorage.</CardDescription>
+            <CardDescription>Latest 20 records fetched from API.</CardDescription>
           </CardHeader>
           <CardContent>
-            {history.length === 0 ? (
+            {isLoadingHistory ? (
+              <p className="text-sm text-slate-600">Loading...</p>
+            ) : history.length === 0 ? (
               <p className="text-sm text-slate-600">No upload history yet.</p>
             ) : (
               <ul className="space-y-3">

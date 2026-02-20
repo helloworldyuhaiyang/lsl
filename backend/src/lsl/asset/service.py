@@ -1,7 +1,7 @@
 import uuid
 from datetime import timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from lsl.config import Settings
 from lsl.asset.provider import StorageProvider
@@ -102,6 +102,33 @@ class AssetService:
             storage_provider=self._settings.STORAGE_PROVIDER,
             upload_status=0,
         )
+
+    def list_assets(
+        self,
+        *,
+        limit: int = 20,
+        category: Optional[str] = None,
+        entity_id: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        if self._repository is None:
+            raise RuntimeError("Asset repository is not configured. Set DATABASE_URL to enable persistence.")
+        if limit <= 0:
+            raise ValueError("limit must be greater than 0")
+        if limit > 100:
+            raise ValueError("limit must be less than or equal to 100")
+
+        rows = self._repository.list_assets(
+            limit=limit,
+            category=category,
+            entity_id=entity_id,
+        )
+
+        items: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["asset_url"] = self.build_asset_url(item["object_key"])
+            items.append(item)
+        return items
 
     @staticmethod
     def _parse_category_and_entity(object_key: str) -> tuple[str, str]:

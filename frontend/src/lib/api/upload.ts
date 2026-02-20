@@ -1,5 +1,7 @@
 import { requestJson } from '@/lib/api/client'
 import type {
+  AssetListItem,
+  AssetListResponse,
   CompleteUploadRequest,
   CompleteUploadResponse,
   UploadUrlRequest,
@@ -115,4 +117,33 @@ export async function completeUploadedAsset({
     fileSize: file.size,
     etag,
   })
+}
+
+interface ListAssetsParams {
+  limit?: number
+  category?: string
+  entityId?: string
+}
+
+export async function listAssets({
+  limit = 20,
+  category,
+  entityId,
+}: ListAssetsParams = {}): Promise<AssetListItem[]> {
+  const query: Record<string, string> = {
+    limit: String(limit),
+  }
+
+  if (category) {
+    query.category = category
+  }
+  if (entityId) {
+    query.entity_id = entityId
+  }
+
+  const response = await requestJson<ApiResponse<AssetListResponse>>('/assets', {
+    method: 'GET',
+    query,
+  })
+  return response.data.items
 }

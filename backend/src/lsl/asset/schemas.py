@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Generic, TypeVar
 
 from pydantic import BaseModel, Field, field_validator
@@ -47,3 +48,20 @@ class CompleteUploadResponseData(BaseModel):
     object_key: str
     asset_url: str
     status: str = "acknowledged"
+
+
+class AssetListItemData(BaseModel):
+    object_key: str
+    category: str
+    entity_id: str
+    filename: str | None = None
+    content_type: str | None = None
+    file_size: int | None = None
+    etag: str | None = None
+    upload_status: int
+    created_at: datetime
+    asset_url: str
+
+
+class AssetListResponseData(BaseModel):
+    items: list[AssetListItemData]

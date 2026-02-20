@@ -203,6 +203,41 @@ curl -X POST "http://127.0.0.1:8000/assets/complete-upload" \
 }
 ```
 
+### `GET /assets`
+
+获取文件列表（按创建时间倒序）。
+
+请求示例：
+
+```bash
+curl "http://127.0.0.1:8000/assets?limit=20&category=conversation&entity_id=web_user"
+```
+
+返回示例：
+
+```json
+{
+  "code": 0,
+  "message": "successful",
+  "data": {
+    "items": [
+      {
+        "object_key": "conversation/web_user/xxxx.wav",
+        "category": "conversation",
+        "entity_id": "web_user",
+        "filename": "lesson.wav",
+        "content_type": "audio/wav",
+        "file_size": 1024,
+        "etag": "optional-etag",
+        "upload_status": 0,
+        "created_at": "2026-02-20T00:00:00+00:00",
+        "asset_url": "https://cdn-or-bucket-domain/conversation/web_user/xxxx.wav"
+      }
+    ]
+  }
+}
+```
+
 ## 客户端直传示例（OSS）
 
 ```bash

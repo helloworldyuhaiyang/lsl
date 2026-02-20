@@ -10,6 +10,8 @@ from lsl.config import Settings
 from lsl.asset import AssetService
 from lsl.asset.schemas import (
     ApiResponse,
+    AssetListItemData,
+    AssetListResponseData,
     CompleteUploadRequest,
     CompleteUploadResponseData,
     UploadUrlRequest,
@@ -118,6 +120,28 @@ def generate_upload_url(
             asset_url=asset_url,
         )
     )
+
+
+@app.get("/assets", response_model=ApiResponse[AssetListResponseData])
+def list_assets(
+    limit: int = 20,
+    category: str | None = None,
+    entity_id: str | None = None,
+    asset_service: AssetService = Depends(get_asset_service),
+):
+    try:
+        rows = asset_service.list_assets(
+            limit=limit,
+            category=category,
+            entity_id=entity_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    items = [AssetListItemData(**row) for row in rows]
+    return ApiResponse(data=AssetListResponseData(items=items))
 
 
 @app.post("/assets/complete-upload", response_model=ApiResponse[CompleteUploadResponseData])
