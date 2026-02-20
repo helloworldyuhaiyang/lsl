@@ -6,8 +6,7 @@ import { FileDropzone } from '@/components/upload/file-dropzone'
 import { UploadProgress } from '@/components/upload/upload-progress'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { createUploadUrl } from '@/lib/api/assets'
-import { uploadToPresignedUrl } from '@/lib/api/upload'
+import { uploadAssetWithConfirmation } from '@/lib/api/upload'
 import { getUploadHistory, saveUploadRecord } from '@/lib/storage/upload-history'
 import { formatBytes, formatDateTime, formatDuration } from '@/lib/utils/format'
 import type { UploadRecord } from '@/types/domain'
@@ -113,21 +112,18 @@ export function UploadPage() {
     try {
       const contentType = resolveContentType(selectedFile)
 
-      const uploadInfo = await createUploadUrl({
-        category: 'conversation',
-        entityId: 'web_user',
-        filename: selectedFile.name,
-        contentType,
-      })
-
-      await uploadToPresignedUrl({
-        uploadUrl: uploadInfo.upload_url,
+      const { completed } = await uploadAssetWithConfirmation({
+        upload: {
+          category: 'conversation',
+          entityId: 'web_user',
+          filename: selectedFile.name,
+          contentType,
+        },
         file: selectedFile,
-        contentType,
         onProgress: (progress) => setUploadProgress(progress),
       })
 
-      const { taskId, summaryId } = createJobIds(uploadInfo.object_key)
+      const { taskId, summaryId } = createJobIds(completed.object_key)
 
       const record: UploadRecord = {
         taskId,
@@ -135,8 +131,8 @@ export function UploadPage() {
         fileName: selectedFile.name,
         fileSize: selectedFile.size,
         durationSec,
-        objectKey: uploadInfo.object_key,
-        assetUrl: uploadInfo.asset_url,
+        objectKey: completed.object_key,
+        assetUrl: completed.asset_url,
         uploadedAt: new Date().toISOString(),
       }
 

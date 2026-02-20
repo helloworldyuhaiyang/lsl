@@ -88,6 +88,10 @@ OSS_BUCKET=your-real-bucket
 OSS_ACCESS_KEY_ID=your-real-ak
 OSS_ACCESS_KEY_SECRET='your-real-sk'
 ASSET_BASE_URL=https://your-real-bucket.oss-cn-hangzhou.aliyuncs.com
+DATABASE_URL=postgresql://<user>:<password>@<host>:5432/lsl
+DB_POOL_MIN_SIZE=1
+DB_POOL_MAX_SIZE=10
+DB_POOL_TIMEOUT=30
 ```
 
 2. 启动服务
@@ -106,6 +110,14 @@ curl -X POST "http://127.0.0.1:8000/assets/upload-url?category=listening&entity_
 
 ```bash
 curl -X PUT -T /path/to/log.txt -H "Content-Type: text/plain" "<upload_url>"
+```
+
+5. 上传完成后通知后端
+
+```bash
+curl -X POST "http://127.0.0.1:8000/assets/complete-upload" \
+  -H "Content-Type: application/json" \
+  -d '{"object_key":"listening/test_user/xxxx.txt","content_type":"text/plain"}'
 ```
 
 注意：
