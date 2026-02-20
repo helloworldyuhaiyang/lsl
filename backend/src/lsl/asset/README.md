@@ -71,7 +71,6 @@ DB_POOL_TIMEOUT=30
 - `STORAGE_PROVIDER=oss` 时，`OSS_BUCKET/OSS_ACCESS_KEY_ID/OSS_ACCESS_KEY_SECRET` 必填。
 - `ASSET_BASE_URL` 用于生成读 URL，可替换为 CDN 域名。
 - `DATABASE_URL` 用于 `POST /assets/complete-upload` 入库。
-- `DB_POOL_MIN_SIZE/DB_POOL_MAX_SIZE/DB_POOL_TIMEOUT` 用于配置 PostgreSQL 连接池。
 
 ### 3. PostgreSQL 建表（public.assets）
 

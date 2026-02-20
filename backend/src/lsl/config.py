@@ -22,12 +22,22 @@ def _get_env_float(name: str, default: float) -> float:
         raise ValueError(f"{name} must be a number, got: {raw!r}") from exc
 
 
+def _get_env_str(name: str, default: str) -> str:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    value = raw.strip()
+    if value == "":
+        return default
+    return value
+
+
 @dataclass(frozen=True)
 class Settings:
     # 存储相关
     STORAGE_PROVIDER: str = ""
     ASSET_BASE_URL: str = ""
-    DATABASE_URL: str = ""
+    DATABASE_URL: str = "postgresql://yuhaiyang:@127.0.0.1:5432/lsl"
     DB_POOL_MIN_SIZE: int = 1
     DB_POOL_MAX_SIZE: int = 10
     DB_POOL_TIMEOUT: float = 30.0
@@ -45,7 +55,7 @@ class Settings:
         bucket = os.getenv("OSS_BUCKET", cls.OSS_BUCKET).strip()
 
         asset_base_url = os.getenv("ASSET_BASE_URL", cls.ASSET_BASE_URL).strip().rstrip("/")
-        database_url = os.getenv("DATABASE_URL", cls.DATABASE_URL).strip()
+        database_url = _get_env_str("DATABASE_URL", cls.DATABASE_URL)
         db_pool_min_size = _get_env_int("DB_POOL_MIN_SIZE", cls.DB_POOL_MIN_SIZE)
         db_pool_max_size = _get_env_int("DB_POOL_MAX_SIZE", cls.DB_POOL_MAX_SIZE)
         db_pool_timeout = _get_env_float("DB_POOL_TIMEOUT", cls.DB_POOL_TIMEOUT)
