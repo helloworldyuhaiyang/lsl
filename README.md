@@ -89,9 +89,6 @@ OSS_ACCESS_KEY_ID=your-real-ak
 OSS_ACCESS_KEY_SECRET='your-real-sk'
 ASSET_BASE_URL=https://your-real-bucket.oss-cn-hangzhou.aliyuncs.com
 DATABASE_URL=postgresql://<user>:<password>@<host>:5432/lsl
-DB_POOL_MIN_SIZE=1
-DB_POOL_MAX_SIZE=10
-DB_POOL_TIMEOUT=30
 ```
 
 2. 启动服务
@@ -127,14 +124,13 @@ curl -X POST "http://127.0.0.1:8000/assets/complete-upload" \
 - `Content-Type` 必须和签名时一致
 - URL 有过期时间（当前约 10 分钟）
 
-## 建议目录演进
 
 ```text
 backend/src/lsl/
   main.py
   config.py
   asset/
-  job/
+  task/
   asr/
   llm/
   tts/
@@ -145,9 +141,3 @@ frontend/
   components/
   pages/
 ```
-
-## 路线图（Roadmap）
-
-- Phase 1：上传、任务流转、转写展示、句子纠错、Diff、TTS 回听
-- Phase 2：成本治理、缓存策略、失败重试、可观测性
-- Phase 3：Desktop 客户端接入、音色克隆、个性化学习路径
