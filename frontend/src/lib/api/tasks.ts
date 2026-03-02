@@ -1,5 +1,5 @@
 import { requestJson } from '@/lib/api/client'
-import type { CreateTaskRequest, TaskItem, TaskListResponse } from '@/types/api'
+import type { CreateTaskRequest, TaskItem, TaskListResponse, TaskTranscriptData } from '@/types/api'
 
 interface ApiResponse<T> {
   code: number
@@ -73,4 +73,14 @@ export async function listTasks({
     query,
   })
   return response.data.items
+}
+
+export async function getTaskTranscript(taskId: string, includeRaw = false): Promise<TaskTranscriptData> {
+  const response = await requestJson<ApiResponse<TaskTranscriptData>>(`/tasks/${taskId}/transcript`, {
+    method: 'GET',
+    query: {
+      include_raw: String(includeRaw),
+    },
+  })
+  return response.data
 }

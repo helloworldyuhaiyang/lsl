@@ -65,3 +65,20 @@ export interface CreateTaskRequest {
 export interface TaskListResponse {
   items: TaskItem[]
 }
+
+export interface TaskTranscriptUtterance {
+  seq: number
+  text: string
+  speaker?: string | null
+  start_time: number
+  end_time: number
+  additions: Record<string, unknown>
+}
+
+export interface TaskTranscriptData {
+  task_id: string
+  duration_ms?: number | null
+  full_text?: string | null
+  utterances: TaskTranscriptUtterance[]
+  raw_result?: Record<string, unknown> | null
+}
