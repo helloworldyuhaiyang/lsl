@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, cast
 
@@ -31,20 +32,21 @@ from lsl.task.schemas import (
 if TYPE_CHECKING:
     from psycopg_pool import ConnectionPool
 
-_env_settings = Settings.from_env()
-settings = Settings(
-    STORAGE_PROVIDER=_env_settings.STORAGE_PROVIDER or "oss",
-    ASSET_BASE_URL=_env_settings.ASSET_BASE_URL,
-    DATABASE_URL=_env_settings.DATABASE_URL,
-    DB_POOL_MIN_SIZE=_env_settings.DB_POOL_MIN_SIZE,
-    DB_POOL_MAX_SIZE=_env_settings.DB_POOL_MAX_SIZE,
-    DB_POOL_TIMEOUT=_env_settings.DB_POOL_TIMEOUT,
-    OSS_REGION=_env_settings.OSS_REGION,
-    OSS_BUCKET=_env_settings.OSS_BUCKET,
-    OSS_ACCESS_KEY_ID=_env_settings.OSS_ACCESS_KEY_ID,
-    OSS_ACCESS_KEY_SECRET=_env_settings.OSS_ACCESS_KEY_SECRET,
-    ASR_PROVIDER=_env_settings.ASR_PROVIDER,
-)
+LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(pathname)s:%(lineno)d %(message)s"
+
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=logging.INFO,
+        format=LOG_FORMAT,
+    )
+else:
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    formatter = logging.Formatter(LOG_FORMAT)
+    for handler in root_logger.handlers:
+        handler.setFormatter(formatter)
+
+settings = Settings.from_env()
 
 storage = create_storage_provider(settings)
 asr_provider = create_asr_provider(settings)

@@ -50,6 +50,14 @@ class Settings:
 
     # ASR
     ASR_PROVIDER: str = "noop"
+    VOLC_APP_KEY: str = ""
+    VOLC_ACCESS_KEY: str = ""
+    VOLC_RESOURCE_ID: str = "volc.bigasr.auc"
+    VOLC_SUBMIT_URL: str = "https://openspeech-direct.zijieapi.com/api/v3/auc/bigmodel/submit"
+    VOLC_QUERY_URL: str = "https://openspeech-direct.zijieapi.com/api/v3/auc/bigmodel/query"
+    VOLC_MODEL_NAME: str = "bigmodel"
+    VOLC_UID: str = "lsl_user"
+    VOLC_HTTP_TIMEOUT: float = 15.0
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -62,6 +70,7 @@ class Settings:
         db_pool_min_size = _get_env_int("DB_POOL_MIN_SIZE", cls.DB_POOL_MIN_SIZE)
         db_pool_max_size = _get_env_int("DB_POOL_MAX_SIZE", cls.DB_POOL_MAX_SIZE)
         db_pool_timeout = _get_env_float("DB_POOL_TIMEOUT", cls.DB_POOL_TIMEOUT)
+        volc_http_timeout = _get_env_float("VOLC_HTTP_TIMEOUT", cls.VOLC_HTTP_TIMEOUT)
 
         if db_pool_min_size <= 0:
             raise ValueError("DB_POOL_MIN_SIZE must be greater than 0")
@@ -69,6 +78,8 @@ class Settings:
             raise ValueError("DB_POOL_MAX_SIZE must be greater than or equal to DB_POOL_MIN_SIZE")
         if db_pool_timeout <= 0:
             raise ValueError("DB_POOL_TIMEOUT must be greater than 0")
+        if volc_http_timeout <= 0:
+            raise ValueError("VOLC_HTTP_TIMEOUT must be greater than 0")
     
         return cls(
             STORAGE_PROVIDER=provider,
@@ -82,4 +93,12 @@ class Settings:
             OSS_ACCESS_KEY_ID=os.getenv("OSS_ACCESS_KEY_ID", cls.OSS_ACCESS_KEY_ID).strip(),
             OSS_ACCESS_KEY_SECRET=os.getenv("OSS_ACCESS_KEY_SECRET", cls.OSS_ACCESS_KEY_SECRET).strip(),
             ASR_PROVIDER=os.getenv("ASR_PROVIDER", cls.ASR_PROVIDER).strip().lower() or cls.ASR_PROVIDER,
+            VOLC_APP_KEY=_get_env_str("VOLC_APP_KEY", cls.VOLC_APP_KEY),
+            VOLC_ACCESS_KEY=_get_env_str("VOLC_ACCESS_KEY", cls.VOLC_ACCESS_KEY),
+            VOLC_RESOURCE_ID=_get_env_str("VOLC_RESOURCE_ID", cls.VOLC_RESOURCE_ID),
+            VOLC_SUBMIT_URL=_get_env_str("VOLC_SUBMIT_URL", cls.VOLC_SUBMIT_URL),
+            VOLC_QUERY_URL=_get_env_str("VOLC_QUERY_URL", cls.VOLC_QUERY_URL),
+            VOLC_MODEL_NAME=_get_env_str("VOLC_MODEL_NAME", cls.VOLC_MODEL_NAME),
+            VOLC_UID=_get_env_str("VOLC_UID", cls.VOLC_UID),
+            VOLC_HTTP_TIMEOUT=volc_http_timeout,
         )

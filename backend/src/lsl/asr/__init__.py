@@ -9,6 +9,7 @@ from lsl.asr.provider import (
     AsrUtterance,
     NoopAsrProvider,
 )
+from lsl.asr.volc_provider import VolcAsrProvider
 
 __all__ = [
     "AsrProvider",
@@ -19,5 +20,6 @@ __all__ = [
     "AsrQueryResult",
     "NoopAsrProvider",
     "FakeAsrProvider",
+    "VolcAsrProvider",
     "create_asr_provider",
 ]

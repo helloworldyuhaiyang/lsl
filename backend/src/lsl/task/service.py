@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -15,6 +16,7 @@ from lsl.task.repository import TaskRepository
 from lsl.task.schemas import TaskData, TaskTranscriptData, TaskTranscriptUtterance
 from lsl.task.status import TaskStatus
 
+logger = logging.getLogger(__name__)
 
 class TaskService:
     """
@@ -212,6 +214,12 @@ class TaskService:
         latest = self._repository.get_task_by_id(task_id)
         if latest is None:
             raise RuntimeError("Task is missing after refresh")
+        
+        logger.info("Refreshed task %s: provider_status=%s, provider_message=%s",
+            task_id,
+            latest.get("provider_status_code"),
+            latest.get("provider_message"),
+        )
         return TaskData.from_row(latest)
 
     def list_tasks(
@@ -266,7 +274,7 @@ class TaskService:
 
     @staticmethod
     def _should_poll(next_poll_at: Any) -> bool:
-        # 对异常/脏数据采取“允许轮询”的容错策略，避免任务长期卡住。
+        # 对异常/脏数据采取 允许轮询 的容错策略，避免任务长期卡住。
         if next_poll_at is None:
             return True
         if not isinstance(next_poll_at, datetime):
