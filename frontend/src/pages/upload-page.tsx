@@ -4,13 +4,14 @@ import { Link } from 'react-router-dom'
 import { PageTitle } from '@/components/common/page-title'
 import { FileDropzone } from '@/components/upload/file-dropzone'
 import { UploadProgress } from '@/components/upload/upload-progress'
+import { createTask, listTasks } from '@/lib/api/tasks'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { completeUploadedAsset, listAssets, prepareUploadUrl, uploadToPresignedUrl } from '@/lib/api/upload'
 import { saveUploadRecord } from '@/lib/storage/upload-history'
 import { formatBytes, formatDateTime, formatDuration } from '@/lib/utils/format'
 import type { UploadRecord } from '@/types/domain'
-import type { AssetListItem, UploadUrlResponse } from '@/types/api'
+import type { AssetListItem, TaskItem, UploadUrlResponse } from '@/types/api'
 
 const ALLOWED_EXTENSIONS = new Set(['mp3', 'wav', 'm4a'])
 
@@ -66,6 +67,10 @@ function createJobIds(objectKey: string): { taskId: string; summaryId: string } 
   }
 }
 
+function createSummaryId(taskId: string): string {
+  return `summary_${taskId}`
+}
+
 export function UploadPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [preparedUpload, setPreparedUpload] = useState<UploadUrlResponse | null>(null)
@@ -85,13 +90,14 @@ export function UploadPage() {
     return getExtension(selectedFile.name)
   }, [selectedFile])
 
-  function mapAssetToUploadRecord(item: AssetListItem): UploadRecord {
+  function mapAssetToUploadRecord(item: AssetListItem, taskIdByObjectKey: Map<string, string>): UploadRecord {
     const fallbackFileName = item.object_key.split('/').at(-1) ?? item.object_key
-    const { taskId, summaryId } = createJobIds(item.object_key)
+    const fallbackIds = createJobIds(item.object_key)
+    const taskId = taskIdByObjectKey.get(item.object_key) ?? fallbackIds.taskId
 
     return {
       taskId,
-      summaryId,
+      summaryId: createSummaryId(taskId),
       fileName: item.filename || fallbackFileName,
       fileSize: item.file_size ?? 0,
       durationSec: null,
@@ -104,12 +110,23 @@ export function UploadPage() {
   async function refreshRecentUploads() {
     setIsLoadingHistory(true)
     try {
-      const items = await listAssets({
-        limit: 20,
-        category: 'conversation',
-        entityId: 'web_user',
-      })
-      setHistory(items.map(mapAssetToUploadRecord))
+      const [items, tasks] = await Promise.all([
+        listAssets({
+          limit: 20,
+          category: 'conversation',
+          entityId: 'web_user',
+        }),
+        listTasks({
+          limit: 100,
+          category: 'conversation',
+          entityId: 'web_user',
+        }),
+      ])
+      const taskIdByObjectKey = tasks.reduce((acc, item: TaskItem) => {
+        acc.set(item.object_key, item.task_id)
+        return acc
+      }, new Map<string, string>())
+      setHistory(items.map((item) => mapAssetToUploadRecord(item, taskIdByObjectKey)))
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to fetch upload history.')
     } finally {
@@ -196,11 +213,15 @@ export function UploadPage() {
         etag,
       })
 
-      const { taskId, summaryId } = createJobIds(completed.object_key)
+      const task = await createTask({
+        objectKey: completed.object_key,
+        language: 'en-US',
+      })
+      const taskId = task.task_id
 
       const record: UploadRecord = {
         taskId,
-        summaryId,
+        summaryId: createSummaryId(taskId),
         fileName: selectedFile.name,
         fileSize: selectedFile.size,
         durationSec,

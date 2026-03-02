@@ -34,7 +34,7 @@ curl -s -X POST "$BASE_URL/tasks" \
 ```bash
 TASK_ID=$(curl -s -X POST "$BASE_URL/tasks" \
   -H "Content-Type: application/json" \
-  -d '{"object_key":"conversation/web_user/demo-audio.m4a","language":"en-US"}' \
+  -d '{"object_key":"conversation/web_user/196f132e85f34227a6d7274dfb310b39.m4a","language":"en-US"}' \
   | jq -r '.data.task_id')
 echo "$TASK_ID"
 ```

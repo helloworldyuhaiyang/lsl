@@ -17,6 +17,13 @@ from lsl.task.status import TaskStatus
 
 
 class TaskService:
+    """
+    任务编排层：
+    - 管理任务状态流转（uploaded -> transcribing -> completed/failed）
+    - 协调 ASR provider 与持久化层
+    - 对外返回稳定的 TaskData / Transcript 结构
+    """
+
     def __init__(
         self,
         *,
@@ -29,10 +36,12 @@ class TaskService:
         self._asr_provider = asr_provider
 
     def create_task(self, *, object_key: str, language: str | None = None) -> TaskData:
+        # 统一 object_key 规范，避免同一资源因前后斜杠差异导致重复任务。
         object_key = object_key.strip().lstrip("/")
         if not object_key:
             raise ValueError("object_key is required")
 
+        # 以 object_key 做幂等：同一音频重复提交时直接返回既有任务。
         existing = self._repository.get_task_by_object_key(object_key)
         if existing is not None:
             return TaskData.from_row(existing)
@@ -47,6 +56,7 @@ class TaskService:
         )
 
         try:
+            # 先创建本地任务，再提交到 provider，确保提交失败也可追踪失败原因。
             submit_result = self._asr_provider.submit(
                 AsrSubmitRequest(
                     task_id=task_id,
@@ -62,6 +72,7 @@ class TaskService:
                 next_poll_at=self._next_poll_time(poll_count=0),
             )
         except NotImplementedError as exc:
+            # provider 未接入时标记为 failed，便于前端明确展示不可用原因。
             self._repository.mark_failed(
                 task_id=task_id,
                 error_code="PROVIDER_NOT_IMPLEMENTED",
@@ -71,6 +82,7 @@ class TaskService:
                 x_tt_logid=None,
             )
         except Exception as exc:
+            # 提交阶段兜底异常：持久化为 failed，避免任务悬空。
             self._repository.mark_failed(
                 task_id=task_id,
                 error_code="PROVIDER_SUBMIT_ERROR",
@@ -90,6 +102,7 @@ class TaskService:
         if row is None:
             raise ValueError("task not found")
 
+        # 仅在 transcribing 状态触发自动刷新，避免对终态任务产生无意义查询。
         if auto_refresh and int(row["status"]) == int(TaskStatus.TRANSCRIBING):
             next_poll_at = row.get("next_poll_at")
             if self._should_poll(next_poll_at):
@@ -103,11 +116,13 @@ class TaskService:
         row = self._repository.get_task_by_id(task_id)
         if row is None:
             raise ValueError("task not found")
+        # 非进行中任务直接返回，保证 refresh 是幂等、安全的。
         if int(row["status"]) != int(TaskStatus.TRANSCRIBING):
             return TaskData.from_row(row)
 
         provider_request_id = row.get("provider_request_id")
         if not provider_request_id:
+            # transcribing 却缺少 provider_request_id 说明数据已不一致，直接失败止损。
             self._repository.mark_failed(
                 task_id=task_id,
                 error_code="MISSING_PROVIDER_REQUEST_ID",
@@ -150,6 +165,7 @@ class TaskService:
                 x_tt_logid=None,
             )
         else:
+            # 按 provider 回包驱动状态机迁移。
             if query_result.status in (AsrJobStatus.QUEUED, AsrJobStatus.PROCESSING):
                 self._repository.mark_processing(
                     task_id=task_id,
@@ -169,6 +185,7 @@ class TaskService:
                 )
             elif query_result.status == AsrJobStatus.SUCCEEDED:
                 if query_result.raw_result is None:
+                    # 成功态必须带原始结果；否则视为非法回包。
                     self._repository.mark_failed(
                         task_id=task_id,
                         error_code="INVALID_PROVIDER_RESULT",
@@ -178,6 +195,7 @@ class TaskService:
                         x_tt_logid=query_result.x_tt_logid,
                     )
                 else:
+                    # 落库转写明细并将任务置为 completed。
                     utterances = [item.model_dump() for item in query_result.utterances]
                     self._repository.mark_completed_with_result(
                         task_id=task_id,
@@ -248,6 +266,7 @@ class TaskService:
 
     @staticmethod
     def _should_poll(next_poll_at: Any) -> bool:
+        # 对异常/脏数据采取“允许轮询”的容错策略，避免任务长期卡住。
         if next_poll_at is None:
             return True
         if not isinstance(next_poll_at, datetime):

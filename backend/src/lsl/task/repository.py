@@ -173,7 +173,7 @@ class TaskRepository:
         x_tt_logid: str | None,
         next_poll_at: datetime,
     ) -> None:
-        query = sql.SQL("""
+        update_sql = sql.SQL("""
             UPDATE public.tasks
             SET
                 x_status = 1,
@@ -193,7 +193,7 @@ class TaskRepository:
             with self._pool.connection() as conn:
                 with conn.cursor() as cursor:
                     cursor.execute(
-                        query,
+                        update_sql,
                         (
                             provider_request_id,
                             provider_resource_id,
@@ -214,7 +214,7 @@ class TaskRepository:
         x_tt_logid: str | None,
         next_poll_at: datetime,
     ) -> None:
-        query = sql.SQL("""
+        update_sql = sql.SQL("""
             UPDATE public.tasks
             SET
                 x_status = 1,
@@ -230,7 +230,7 @@ class TaskRepository:
             with self._pool.connection() as conn:
                 with conn.cursor() as cursor:
                     cursor.execute(
-                        query,
+                        update_sql,
                         (
                             provider_status_code,
                             provider_message,
@@ -252,7 +252,7 @@ class TaskRepository:
         provider_message: str | None,
         x_tt_logid: str | None,
     ) -> None:
-        query = sql.SQL("""
+        update_sql = sql.SQL("""
             UPDATE public.tasks
             SET
                 x_status = 4,
@@ -269,7 +269,7 @@ class TaskRepository:
             with self._pool.connection() as conn:
                 with conn.cursor() as cursor:
                     cursor.execute(
-                        query,
+                        update_sql,
                         (
                             error_code,
                             error_message,

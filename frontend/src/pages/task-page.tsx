@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { PageTitle } from '@/components/common/page-title'
 import { StatusBadge } from '@/components/common/status-badge'
+import { getTask, refreshTask } from '@/lib/api/tasks'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { getUploadByTaskId } from '@/lib/storage/upload-history'
 import { formatBytes, formatDateTime, formatDuration } from '@/lib/utils/format'
 import type { TaskStatus } from '@/types/domain'
+import type { TaskItem } from '@/types/api'
 
 const STEP_ORDER: Exclude<TaskStatus, 'failed'>[] = ['uploaded', 'transcribing', 'analyzing', 'completed']
 
@@ -19,41 +21,61 @@ const STATUS_PRIORITY: Record<TaskStatus, number> = {
   failed: -1,
 }
 
-function inferTaskStatus(uploadedAt: string): TaskStatus {
-  const elapsedSec = Math.floor((Date.now() - Date.parse(uploadedAt)) / 1000)
-
-  if (elapsedSec < 12) {
-    return 'uploaded'
-  }
-
-  if (elapsedSec < 45) {
-    return 'transcribing'
-  }
-
-  if (elapsedSec < 80) {
-    return 'analyzing'
-  }
-
-  return 'completed'
+function parseTaskStatus(statusName: string | undefined): TaskStatus {
+  if (statusName === 'uploaded') return 'uploaded'
+  if (statusName === 'transcribing') return 'transcribing'
+  if (statusName === 'analyzing') return 'analyzing'
+  if (statusName === 'completed') return 'completed'
+  if (statusName === 'failed') return 'failed'
+  return 'uploaded'
 }
 
 export function TaskPage() {
   const { taskId = 'unknown-task' } = useParams()
-  const [, setTick] = useState(0)
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setTick((value) => value + 1)
-    }, 1000)
-
-    return () => window.clearInterval(timer)
-  }, [])
-
+  const [task, setTask] = useState<TaskItem | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const uploadRecord = useMemo(() => getUploadByTaskId(taskId), [taskId])
 
-  const currentStatus: TaskStatus = uploadRecord ? inferTaskStatus(uploadRecord.uploadedAt) : 'uploaded'
+  const fetchTask = useCallback(
+    async (refresh = true) => {
+      try {
+        const result = await getTask(taskId, { refresh })
+        setTask(result)
+        setErrorMessage(null)
+      } catch (error) {
+        setErrorMessage(error instanceof Error ? error.message : 'Failed to load task details.')
+      } finally {
+        setIsLoading(false)
+      }
+    },
+    [taskId],
+  )
 
-  const targetSummaryId = uploadRecord?.summaryId ?? `summary_${taskId.replace(/^task_/, '')}`
+  useEffect(() => {
+    setIsLoading(true)
+    void fetchTask(true)
+  }, [fetchTask])
+
+  useEffect(() => {
+    if (!task) {
+      return
+    }
+    const status = parseTaskStatus(task.status_name)
+    if (status === 'completed' || status === 'failed') {
+      return
+    }
+
+    const timer = window.setInterval(() => {
+      void fetchTask(true)
+    }, 3000)
+
+    return () => window.clearInterval(timer)
+  }, [fetchTask, task])
+
+  const currentStatus: TaskStatus = parseTaskStatus(task?.status_name)
+  const targetSummaryId = uploadRecord?.summaryId ?? `summary_${taskId}`
 
   return (
     <section className="space-y-6">
@@ -68,12 +90,18 @@ export function TaskPage() {
         <Card className="bg-white/90 shadow-sm lg:col-span-2">
           <CardHeader>
             <CardTitle className="text-lg">Pipeline Timeline</CardTitle>
-            <CardDescription>Simulated status flow until backend task APIs are available.</CardDescription>
+            <CardDescription>Realtime task status from backend APIs.</CardDescription>
           </CardHeader>
           <CardContent>
+            {isLoading ? <p className="pb-3 text-sm text-slate-600">Loading task...</p> : null}
+            {errorMessage ? (
+              <div className="mb-3 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                {errorMessage}
+              </div>
+            ) : null}
             <ol className="space-y-3">
               {STEP_ORDER.map((step, index) => {
-                const isDone = STATUS_PRIORITY[step] <= STATUS_PRIORITY[currentStatus]
+                const isDone = currentStatus !== 'failed' && STATUS_PRIORITY[step] <= STATUS_PRIORITY[currentStatus]
 
                 return (
                   <li
@@ -96,6 +124,35 @@ export function TaskPage() {
             <CardTitle className="text-lg">Task Context</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-slate-700">
+            {task ? (
+              <>
+                <p>
+                  <span className="font-medium">Backend Task ID:</span> {task.task_id}
+                </p>
+                <p>
+                  <span className="font-medium">Status:</span> {task.status_name} ({task.status})
+                </p>
+                <p className="break-all text-xs text-slate-600">
+                  <span className="font-medium text-slate-700">object_key:</span> {task.object_key}
+                </p>
+                {task.provider ? (
+                  <p>
+                    <span className="font-medium">Provider:</span> {task.provider}
+                  </p>
+                ) : null}
+                <p>
+                  <span className="font-medium">Created:</span> {formatDateTime(task.created_at)}
+                </p>
+                <p>
+                  <span className="font-medium">Updated:</span> {formatDateTime(task.updated_at)}
+                </p>
+                {task.error_message ? (
+                  <p className="rounded border border-rose-200 bg-rose-50 p-2 text-rose-700">
+                    <span className="font-medium">Error:</span> {task.error_message}
+                  </p>
+                ) : null}
+              </>
+            ) : null}
             {uploadRecord ? (
               <>
                 <p>
@@ -114,13 +171,37 @@ export function TaskPage() {
                   <span className="font-medium text-slate-700">object_key:</span> {uploadRecord.objectKey}
                 </p>
               </>
+            ) : !task ? (
+              <p className="text-slate-600">
+                No task data available yet.
+              </p>
             ) : (
               <p className="text-slate-600">
-                No local upload record found for this task. You can still preview summary layout with demo data.
+                No local upload record found for this task.
               </p>
             )}
 
-            <div className="pt-2">
+            <div className="flex flex-wrap gap-2 pt-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={isRefreshing || isLoading}
+                onClick={async () => {
+                  try {
+                    setIsRefreshing(true)
+                    const result = await refreshTask(taskId)
+                    setTask(result)
+                    setErrorMessage(null)
+                  } catch (error) {
+                    setErrorMessage(error instanceof Error ? error.message : 'Failed to refresh task status.')
+                  } finally {
+                    setIsRefreshing(false)
+                  }
+                }}
+              >
+                {isRefreshing ? 'Refreshing...' : 'Refresh Now'}
+              </Button>
               <Button asChild size="sm" disabled={currentStatus !== 'completed'}>
                 <Link to={`/summaries/${targetSummaryId}`}>Open Summary</Link>
               </Button>

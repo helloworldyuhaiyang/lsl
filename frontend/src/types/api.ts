@@ -43,3 +43,25 @@ export interface AssetListItem {
 export interface AssetListResponse {
   items: AssetListItem[]
 }
+
+export interface TaskItem {
+  task_id: string
+  object_key: string
+  status: number
+  status_name: string
+  language?: string | null
+  provider?: string | null
+  error_code?: string | null
+  error_message?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateTaskRequest {
+  objectKey: string
+  language?: string
+}
+
+export interface TaskListResponse {
+  items: TaskItem[]
+}
