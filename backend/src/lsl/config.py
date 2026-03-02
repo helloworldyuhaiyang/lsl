@@ -48,6 +48,9 @@ class Settings:
     OSS_ACCESS_KEY_ID: str = ""
     OSS_ACCESS_KEY_SECRET: str = ""
 
+    # ASR
+    ASR_PROVIDER: str = "noop"
+
     @classmethod
     def from_env(cls) -> "Settings":
         provider = os.getenv("STORAGE_PROVIDER", cls.STORAGE_PROVIDER).strip().lower()
@@ -78,4 +81,5 @@ class Settings:
             OSS_BUCKET=bucket,
             OSS_ACCESS_KEY_ID=os.getenv("OSS_ACCESS_KEY_ID", cls.OSS_ACCESS_KEY_ID).strip(),
             OSS_ACCESS_KEY_SECRET=os.getenv("OSS_ACCESS_KEY_SECRET", cls.OSS_ACCESS_KEY_SECRET).strip(),
+            ASR_PROVIDER=os.getenv("ASR_PROVIDER", cls.ASR_PROVIDER).strip().lower() or cls.ASR_PROVIDER,
         )

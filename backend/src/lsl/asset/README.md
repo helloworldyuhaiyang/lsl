@@ -125,12 +125,6 @@ EXECUTE FUNCTION public.set_updated_at();
 - `3` completed
 - `4` failed
 
-### 4. 启动服务
-
-```bash
-uv run uvicorn --app-dir backend/src lsl.main:app --reload --env-file .env
-```
-
 ### 5. 健康检查
 
 ```bash
@@ -245,47 +239,6 @@ curl -X PUT -T /path/to/log.txt \
   -H "Content-Type: text/plain" \
   "<upload_url>"
 ```
-
-注意：
-- `PUT` 时 `Content-Type` 要和生成 URL 时的 `content_type` 完全一致。
-- `upload_url` 必须原样使用，不要手动改 host/path/query。
-- URL 默认 10 分钟过期。
-
-## 存储切换
-
-通过配置切换，不改业务代码：
-
-- `STORAGE_PROVIDER=fake`
-- `STORAGE_PROVIDER=oss`
-
-`asset_url` 始终由 `ASSET_BASE_URL + object_key` 生成。
-
-## 常见问题
-
-### 1) `ModuleNotFoundError: No module named 'dotenv'`
-
-原因：使用了 `--env-file`，但没安装 `python-dotenv`。
-
-处理：
-
-```bash
-uv pip install python-dotenv
-```
-
-### 2) `Bucket name is invalid`
-
-原因：`OSS_BUCKET` 为空或未加载 `.env`。
-
-处理：检查 `.env`，并确认启动命令包含 `--env-file .env`。
-
-### 3) `SignatureDoesNotMatch`
-
-常见原因：
-- `PUT` 请求头 `Content-Type` 与签名时不一致
-- 手动修改了 `upload_url`
-- `OSS_REGION`、AK/SK 与 bucket 不匹配
-- 上传时 URL 已过期
-
 ## 后续扩展
 
 - S3 / MinIO / R2 provider

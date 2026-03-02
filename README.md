@@ -97,34 +97,6 @@ DATABASE_URL=postgresql://<user>:<password>@<host>:5432/lsl
 uv run uvicorn --app-dir backend/src lsl.main:app --reload --env-file .env
 ```
 
-3. 调试上传 URL
-
-```bash
-curl -X POST "http://127.0.0.1:8000/assets/upload-url" \
-  -H "Content-Type: application/json" \
-  -d '{"category":"listening","entity_id":"test_user","filename":"log.txt","content_type":"text/plain"}'
-```
-
-4. 用返回的 `upload_url` 直传文件
-
-```bash
-curl -X PUT -T /path/to/log.txt -H "Content-Type: text/plain" "<upload_url>"
-```
-
-5. 上传完成后通知后端
-
-```bash
-curl -X POST "http://127.0.0.1:8000/assets/complete-upload" \
-  -H "Content-Type: application/json" \
-  -d '{"object_key":"listening/test_user/xxxx.txt","content_type":"text/plain"}'
-```
-
-注意：
-- `upload_url` 不能手动改动
-- `Content-Type` 必须和签名时一致
-- URL 有过期时间（当前约 10 分钟）
-
-
 ```text
 backend/src/lsl/
   main.py

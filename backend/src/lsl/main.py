@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, cast
 from fastapi import Depends, FastAPI, HTTPException, Request
 from datetime import timedelta
 
+from lsl.asr import create_asr_provider
 from lsl.config import Settings
 from lsl.asset import AssetService
 from lsl.asset.schemas import (
@@ -19,6 +20,13 @@ from lsl.asset.schemas import (
 )
 from lsl.asset.factory import create_storage_provider
 from lsl.asset.repository import AssetRepository
+from lsl.task import TaskRepository, TaskService
+from lsl.task.schemas import (
+    CreateTaskRequest,
+    TaskData,
+    TaskListResponseData,
+    TaskTranscriptData,
+)
 
 if TYPE_CHECKING:
     from psycopg_pool import ConnectionPool
@@ -35,15 +43,18 @@ settings = Settings(
     OSS_BUCKET=_env_settings.OSS_BUCKET,
     OSS_ACCESS_KEY_ID=_env_settings.OSS_ACCESS_KEY_ID,
     OSS_ACCESS_KEY_SECRET=_env_settings.OSS_ACCESS_KEY_SECRET,
+    ASR_PROVIDER=_env_settings.ASR_PROVIDER,
 )
 
 storage = create_storage_provider(settings)
+asr_provider = create_asr_provider(settings)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     pool: ConnectionPool | None = None
-    repository: AssetRepository | None = None
+    asset_repository: AssetRepository | None = None
+    task_repository: TaskRepository | None = None
 
     if settings.DATABASE_URL:
         try:
@@ -61,12 +72,22 @@ async def lifespan(app: FastAPI):
             open=False,
         )
         pool.open(wait=True)
-        repository = AssetRepository(pool)
+        asset_repository = AssetRepository(pool)
+        task_repository = TaskRepository(pool)
 
     app.state.asset_service = AssetService(
         settings=settings,
         storage=storage,
-        repository=repository,
+        repository=asset_repository,
+    )
+    app.state.task_service = (
+        TaskService(
+            settings=settings,
+            repository=task_repository,
+            asr_provider=asr_provider,
+        )
+        if task_repository is not None
+        else None
     )
     app.state.db_pool = pool
 
@@ -85,6 +106,14 @@ def get_asset_service(request: Request) -> AssetService:
     if service is None:
         raise HTTPException(status_code=500, detail="Asset service is not initialized")
     return cast(AssetService, service)
+
+
+def get_task_service(request: Request) -> TaskService:
+    service = getattr(request.app.state, "task_service", None)
+    if service is None:
+        raise HTTPException(status_code=500, detail="Task service is not initialized")
+    return cast(TaskService, service)
+
 
 @app.get("/health", response_model=ApiResponse[dict[str, str]])
 def health():
@@ -151,7 +180,6 @@ def complete_upload(
 ):
     """
     前端上传成功后通知后端确认。
-    当前阶段：写入 assets 表并返回确认结果。
     """
     try:
         asset_service.complete_upload(
@@ -177,3 +205,86 @@ def complete_upload(
             status="acknowledged",
         )
     )
+
+
+@app.post("/tasks", response_model=ApiResponse[TaskData])
+def create_task(
+    payload: CreateTaskRequest,
+    task_service: TaskService = Depends(get_task_service),
+):
+    try:
+        task = task_service.create_task(
+            object_key=payload.object_key,
+            language=payload.language,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return ApiResponse(data=task)
+
+
+@app.get("/tasks", response_model=ApiResponse[TaskListResponseData])
+def list_tasks(
+    limit: int = 20,
+    status: int | None = None,
+    category: str | None = None,
+    entity_id: str | None = None,
+    task_service: TaskService = Depends(get_task_service),
+):
+    try:
+        items = task_service.list_tasks(
+            limit=limit,
+            status=status,
+            category=category,
+            entity_id=entity_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return ApiResponse(data=TaskListResponseData(items=items))
+
+
+@app.get("/tasks/{task_id}", response_model=ApiResponse[TaskData])
+def get_task(
+    task_id: str,
+    refresh: bool = True,
+    task_service: TaskService = Depends(get_task_service),
+):
+    try:
+        task = task_service.get_task(task_id=task_id, auto_refresh=refresh)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return ApiResponse(data=task)
+
+
+@app.post("/tasks/{task_id}/refresh", response_model=ApiResponse[TaskData])
+def refresh_task(
+    task_id: str,
+    task_service: TaskService = Depends(get_task_service),
+):
+    try:
+        task = task_service.refresh_task(task_id=task_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return ApiResponse(data=task)
+
+
+@app.get("/tasks/{task_id}/transcript", response_model=ApiResponse[TaskTranscriptData])
+def get_task_transcript(
+    task_id: str,
+    include_raw: bool = False,
+    task_service: TaskService = Depends(get_task_service),
+):
+    try:
+        transcript = task_service.get_transcript(task_id=task_id, include_raw=include_raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return ApiResponse(data=transcript)
