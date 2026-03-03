@@ -47,6 +47,7 @@ export interface AssetListResponse {
 export interface TaskItem {
   task_id: string
   object_key: string
+  audio_url?: string | null
   status: number
   status_name: string
   language?: string | null
@@ -59,6 +60,7 @@ export interface TaskItem {
 
 export interface CreateTaskRequest {
   objectKey: string
+  audioUrl: string
   language?: string
 }
 

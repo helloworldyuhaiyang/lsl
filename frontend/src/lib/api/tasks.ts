@@ -26,6 +26,7 @@ export async function createTask(payload: CreateTaskRequest): Promise<TaskItem> 
     },
     body: JSON.stringify({
       object_key: payload.objectKey,
+      audio_url: payload.audioUrl,
       language: payload.language,
     }),
   })

@@ -11,7 +11,6 @@ from lsl.asr.provider import (
     AsrProvider,
     AsrSubmitRequest,
 )
-from lsl.config import Settings
 from lsl.task.repository import TaskRepository
 from lsl.task.schemas import TaskData, TaskTranscriptData, TaskTranscriptUtterance
 from lsl.task.status import TaskStatus
@@ -29,19 +28,20 @@ class TaskService:
     def __init__(
         self,
         *,
-        settings: Settings,
         repository: TaskRepository,
         asr_provider: AsrProvider,
     ) -> None:
-        self._settings = settings
         self._repository = repository
         self._asr_provider = asr_provider
 
-    def create_task(self, *, object_key: str, language: str | None = None) -> TaskData:
+    def create_task(self, *, object_key: str, audio_url: str, language: str | None = None) -> TaskData:
         # 统一 object_key 规范，避免同一资源因前后斜杠差异导致重复任务。
         object_key = object_key.strip().lstrip("/")
         if not object_key:
             raise ValueError("object_key is required")
+        audio_url = audio_url.strip()
+        if not audio_url:
+            raise ValueError("audio_url is required")
 
         # 以 object_key 做幂等：同一音频重复提交时直接返回既有任务。
         existing = self._repository.get_task_by_object_key(object_key)
@@ -53,6 +53,7 @@ class TaskService:
         self._repository.create_task(
             task_id=task_id,
             object_key=object_key,
+            audio_url=audio_url,
             language=language,
             provider=provider_name,
         )
@@ -62,7 +63,7 @@ class TaskService:
             submit_result = self._asr_provider.submit(
                 AsrSubmitRequest(
                     task_id=task_id,
-                    audio_url=self._build_asset_url(object_key),
+                    audio_url=audio_url,
                     language=language,
                 )
             )
@@ -288,11 +289,6 @@ class TaskService:
         # 轻量退避：2s -> 4s -> 6s ... 上限 15s
         interval_sec = min(2 * max(1, poll_count + 1), 15)
         return datetime.now(timezone.utc) + timedelta(seconds=interval_sec)
-
-    def _build_asset_url(self, object_key: str) -> str:
-        if not self._settings.ASSET_BASE_URL:
-            raise RuntimeError("ASSET_BASE_URL is required for task submit")
-        return f"{self._settings.ASSET_BASE_URL.rstrip('/')}/{object_key}"
 
     def _provider_name(self) -> str:
         return getattr(self._asr_provider, "provider_name", "unknown")

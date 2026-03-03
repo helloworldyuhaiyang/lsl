@@ -215,6 +215,7 @@ export function UploadPage() {
 
       const task = await createTask({
         objectKey: completed.object_key,
+        audioUrl: completed.asset_url,
         language: 'en-US',
       })
       const taskId = task.task_id

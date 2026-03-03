@@ -84,7 +84,6 @@ async def lifespan(app: FastAPI):
     )
     app.state.task_service = (
         TaskService(
-            settings=settings,
             repository=task_repository,
             asr_provider=asr_provider,
         )
@@ -217,6 +216,7 @@ def create_task(
     try:
         task = task_service.create_task(
             object_key=payload.object_key,
+            audio_url=payload.audio_url,
             language=payload.language,
         )
     except ValueError as exc:

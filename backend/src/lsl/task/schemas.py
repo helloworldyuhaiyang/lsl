@@ -10,6 +10,7 @@ from lsl.task.status import status_code_to_name
 
 class CreateTaskRequest(BaseModel):
     object_key: str = Field(..., min_length=1, max_length=1024)
+    audio_url: str = Field(..., min_length=1, max_length=4096)
     language: str | None = Field(default=None, max_length=16)
 
     @field_validator("object_key")
@@ -20,10 +21,19 @@ class CreateTaskRequest(BaseModel):
             raise ValueError("object_key is required")
         return normalized
 
+    @field_validator("audio_url")
+    @classmethod
+    def normalize_audio_url(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("audio_url is required")
+        return normalized
+
 
 class TaskData(BaseModel):
     task_id: str
     object_key: str
+    audio_url: str | None = None
     status: int
     status_name: str
     language: str | None = None
@@ -39,6 +49,7 @@ class TaskData(BaseModel):
         return cls(
             task_id=str(row["task_id"]),
             object_key=row["object_key"],
+            audio_url=row.get("audio_url"),
             status=status_code,
             status_name=status_code_to_name(status_code),
             language=row.get("language"),

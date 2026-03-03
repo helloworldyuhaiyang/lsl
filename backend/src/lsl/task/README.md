@@ -25,6 +25,7 @@ curl -s -X POST "$BASE_URL/tasks" \
   -H "Content-Type: application/json" \
   -d '{
     "object_key": "conversation/web_user/demo-audio.m4a",
+    "audio_url": "https://your-bucket.oss-cn-hangzhou.aliyuncs.com/conversation/web_user/demo-audio.m4a",
     "language": "en-US"
   }'
 ```
@@ -34,7 +35,7 @@ curl -s -X POST "$BASE_URL/tasks" \
 ```bash
 TASK_ID=$(curl -s -X POST "$BASE_URL/tasks" \
   -H "Content-Type: application/json" \
-  -d '{"object_key":"conversation/web_user/196f132e85f34227a6d7274dfb310b39.m4a","language":"en-US"}' \
+  -d '{"object_key":"conversation/web_user/196f132e85f34227a6d7274dfb310b39.m4a","audio_url":"https://your-bucket.oss-cn-hangzhou.aliyuncs.com/conversation/web_user/196f132e85f34227a6d7274dfb310b39.m4a","language":"en-US"}' \
   | jq -r '.data.task_id')
 echo "$TASK_ID"
 ```
@@ -81,6 +82,7 @@ curl -s "$BASE_URL/tasks?limit=20&status=3"
 CREATE TABLE IF NOT EXISTS public.tasks (
     task_id               UUID PRIMARY KEY,
     object_key            TEXT NOT NULL UNIQUE,
+    audio_url             TEXT NOT NULL,
     x_status              SMALLINT NOT NULL DEFAULT 0 CHECK (x_status IN (0,1,2,3,4)),
     x_language            VARCHAR(16),
     x_provider            VARCHAR(32) NOT NULL DEFAULT 'noop',

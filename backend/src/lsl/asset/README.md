@@ -141,7 +141,7 @@ curl "http://127.0.0.1:8000/health"
 curl -X POST "http://127.0.0.1:8000/assets/upload-url" \
   -H "Content-Type: application/json" \
   -d '{
-    "category": "listening",
+    "category": "conversation",
     "entity_id": "test_user",
     "filename": "log.txt",
     "content_type": "text/plain"

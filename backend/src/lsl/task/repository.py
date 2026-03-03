@@ -21,6 +21,7 @@ class TaskRepository:
         *,
         task_id: str,
         object_key: str,
+        audio_url: str,
         language: Optional[str],
         provider: str,
     ) -> None:
@@ -28,18 +29,19 @@ class TaskRepository:
             INSERT INTO public.tasks (
                 task_id,
                 object_key,
+                audio_url,
                 x_status,
                 x_language,
                 x_provider
             )
-            VALUES (%s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s)
         """ )
         try:
             with self._pool.connection() as conn:
                 with conn.cursor() as cursor:
                     cursor.execute(
                         query,
-                        (task_id, object_key, 0, language, provider),
+                        (task_id, object_key, audio_url, 0, language, provider),
                     )
         except psycopg.Error as exc:  # pragma: no cover
             raise RuntimeError(f"Failed to create task: {exc}") from exc
@@ -49,6 +51,7 @@ class TaskRepository:
             SELECT
                 task_id,
                 object_key,
+                audio_url,
                 x_status AS status,
                 x_language AS language,
                 x_provider AS provider,
@@ -82,6 +85,7 @@ class TaskRepository:
             SELECT
                 task_id,
                 object_key,
+                audio_url,
                 x_status AS status,
                 x_language AS language,
                 x_provider AS provider,
@@ -140,6 +144,7 @@ class TaskRepository:
             SELECT
                 task_id,
                 object_key,
+                audio_url,
                 x_status AS status,
                 x_language AS language,
                 x_provider AS provider,
