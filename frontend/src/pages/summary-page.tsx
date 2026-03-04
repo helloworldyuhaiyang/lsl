@@ -186,7 +186,7 @@ export function SummaryPage() {
       {section === 'transcript' ? (
         <Card className="bg-white/90 shadow-sm">
           <CardHeader>
-            <CardTitle className="text-lg">Transcript Timeline</CardTitle>
+            <CardTitle className="text-lg">Transcript</CardTitle>
             {transcript?.duration_ms ? (
               <CardDescription>Total Duration: {formatTimeFromMs(transcript.duration_ms)}</CardDescription>
             ) : null}
@@ -194,8 +194,6 @@ export function SummaryPage() {
           <CardContent className="space-y-3">
             {task?.audio_url ? (
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <p className="mb-2 text-xs text-slate-600">Click any utterance to seek and play from that timestamp.</p>
-                <p className="mb-2 text-xs text-slate-500">Press Space to start/continue or pause playback.</p>
                 <audio ref={audioRef} className="w-full" controls src={task.audio_url} onTimeUpdate={handleAudioTimeUpdate}>
                   <track kind="captions" />
                 </audio>
@@ -218,16 +216,15 @@ export function SummaryPage() {
                       tabIndex={0}
                       onClick={() => playFromUtterance(item.start_time, item.seq)}
                       onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') {
+                        if (event.key === 'Enter') {
                           event.preventDefault()
                           playFromUtterance(item.start_time, item.seq)
                         }
                       }}
-                      className={`rounded-lg border p-4 transition ${
-                        activeUtteranceSeq === item.seq
+                      className={`rounded-lg border p-4 transition ${activeUtteranceSeq === item.seq
                           ? 'border-cyan-300 bg-cyan-50/80'
                           : 'border-slate-200 bg-slate-50/70'
-                      } ${task?.audio_url ? 'cursor-pointer hover:border-cyan-200' : 'cursor-default'}`}
+                        } ${task?.audio_url ? 'cursor-pointer hover:border-cyan-200' : 'cursor-default'}`}
                     >
                       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                         {formatTimeFromMs(item.start_time)}-{formatTimeFromMs(item.end_time)} ·{' '}
