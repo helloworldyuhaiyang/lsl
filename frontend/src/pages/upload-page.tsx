@@ -8,7 +8,6 @@ import { createTask, listTasks } from '@/lib/api/tasks'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { completeUploadedAsset, listAssets, prepareUploadUrl, uploadToPresignedUrl } from '@/lib/api/upload'
-import { saveUploadRecord } from '@/lib/storage/upload-history'
 import { formatBytes, formatDateTime, formatDuration } from '@/lib/utils/format'
 import type { UploadRecord } from '@/types/domain'
 import type { AssetListItem, TaskItem, UploadUrlResponse } from '@/types/api'
@@ -231,7 +230,6 @@ export function UploadPage() {
         uploadedAt: new Date().toISOString(),
       }
 
-      saveUploadRecord(record)
       setSuccessRecord(record)
       setUploadProgress(100)
       await refreshRecentUploads()

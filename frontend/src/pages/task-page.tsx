@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { PageTitle } from '@/components/common/page-title'
@@ -6,8 +6,7 @@ import { StatusBadge } from '@/components/common/status-badge'
 import { getTask, refreshTask } from '@/lib/api/tasks'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { getUploadByTaskId } from '@/lib/storage/upload-history'
-import { formatBytes, formatDateTime, formatDuration } from '@/lib/utils/format'
+import { formatDateTime } from '@/lib/utils/format'
 import type { TaskStatus } from '@/types/domain'
 import type { TaskItem } from '@/types/api'
 
@@ -36,7 +35,6 @@ export function TaskPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const uploadRecord = useMemo(() => getUploadByTaskId(taskId), [taskId])
 
   const fetchTask = useCallback(
     async (refresh = true) => {
@@ -75,7 +73,7 @@ export function TaskPage() {
   }, [fetchTask, task])
 
   const currentStatus: TaskStatus = parseTaskStatus(task?.status_name)
-  const targetSummaryId = uploadRecord?.summaryId ?? `summary_${taskId}`
+  const targetSummaryId = `summary_${taskId}`
 
   return (
     <section className="space-y-6">
@@ -135,6 +133,11 @@ export function TaskPage() {
                 <p className="break-all text-xs text-slate-600">
                   <span className="font-medium text-slate-700">object_key:</span> {task.object_key}
                 </p>
+                {task.audio_url ? (
+                  <p className="break-all text-xs text-slate-600">
+                    <span className="font-medium text-slate-700">audio_url:</span> {task.audio_url}
+                  </p>
+                ) : null}
                 {task.provider ? (
                   <p>
                     <span className="font-medium">Provider:</span> {task.provider}
@@ -152,32 +155,13 @@ export function TaskPage() {
                   </p>
                 ) : null}
               </>
-            ) : null}
-            {uploadRecord ? (
-              <>
-                <p>
-                  <span className="font-medium">File:</span> {uploadRecord.fileName}
-                </p>
-                <p>
-                  <span className="font-medium">Size:</span> {formatBytes(uploadRecord.fileSize)}
-                </p>
-                <p>
-                  <span className="font-medium">Duration:</span> {formatDuration(uploadRecord.durationSec)}
-                </p>
-                <p>
-                  <span className="font-medium">Uploaded:</span> {formatDateTime(uploadRecord.uploadedAt)}
-                </p>
-                <p className="break-all text-xs text-slate-600">
-                  <span className="font-medium text-slate-700">object_key:</span> {uploadRecord.objectKey}
-                </p>
-              </>
             ) : !task ? (
               <p className="text-slate-600">
                 No task data available yet.
               </p>
             ) : (
               <p className="text-slate-600">
-                No local upload record found for this task.
+                No extra task context available.
               </p>
             )}
 

@@ -140,6 +140,9 @@ SummaryPage
    └─ Listening Replay(audio + URL)
 ```
 
+快捷键：
+- 在 `SummaryPage` 中，存在音频播放器时，按 `Space` 可切换“开始/继续”与“暂停”。
+
 ## 上传流程（当前实现）
 
 ```text

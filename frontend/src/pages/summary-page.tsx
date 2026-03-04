@@ -1,22 +1,18 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { PageTitle } from '@/components/common/page-title'
 import { getTask, getTaskTranscript } from '@/lib/api/tasks'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { getUploadBySummaryId } from '@/lib/storage/upload-history'
 import { formatDuration } from '@/lib/utils/format'
-import type { TaskTranscriptData } from '@/types/api'
+import type { TaskItem, TaskTranscriptData } from '@/types/api'
 
 const SECTIONS = ['transcript', 'improvements', 'listening'] as const
 
 type Section = (typeof SECTIONS)[number]
 
-function extractTaskId(summaryId: string, recordTaskId?: string): string | null {
-  if (recordTaskId) {
-    return recordTaskId
-  }
+function extractTaskId(summaryId: string): string | null {
   if (summaryId.startsWith('summary_')) {
     return summaryId.slice('summary_'.length)
   }
@@ -27,6 +23,20 @@ function formatTimeFromMs(milliseconds: number): string {
   return formatDuration(milliseconds / 1000)
 }
 
+function isEditableElement(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false
+  }
+  const tag = target.tagName
+  return (
+    target.isContentEditable ||
+    tag === 'INPUT' ||
+    tag === 'TEXTAREA' ||
+    tag === 'SELECT' ||
+    target.closest('[contenteditable="true"]') !== null
+  )
+}
+
 export function SummaryPage() {
   const { summaryId = 'unknown-summary' } = useParams()
   const [section, setSection] = useState<Section>('transcript')
@@ -34,9 +44,58 @@ export function SummaryPage() {
   const [isLoadingTranscript, setIsLoadingTranscript] = useState(false)
   const [transcriptError, setTranscriptError] = useState<string | null>(null)
   const [taskStatusName, setTaskStatusName] = useState<string | null>(null)
+  const [task, setTask] = useState<TaskItem | null>(null)
+  const [activeUtteranceSeq, setActiveUtteranceSeq] = useState<number | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  const record = useMemo(() => getUploadBySummaryId(summaryId), [summaryId])
-  const taskId = useMemo(() => extractTaskId(summaryId, record?.taskId), [record?.taskId, summaryId])
+  const taskId = useMemo(() => extractTaskId(summaryId), [summaryId])
+
+  function playFromUtterance(startTimeMs: number, seq: number) {
+    if (!audioRef.current || !task?.audio_url) {
+      return
+    }
+    audioRef.current.currentTime = startTimeMs / 1000
+    setActiveUtteranceSeq(seq)
+    void audioRef.current.play().catch(() => {
+      // Ignore autoplay rejection; user can press play manually after seeking.
+    })
+  }
+
+  function handleAudioTimeUpdate() {
+    if (!audioRef.current || !transcript) {
+      return
+    }
+    const positionMs = audioRef.current.currentTime * 1000
+    const current = transcript.utterances.find(
+      (item) => positionMs >= item.start_time && positionMs <= item.end_time + 120,
+    )
+    setActiveUtteranceSeq(current?.seq ?? null)
+  }
+
+  useEffect(() => {
+    function handleGlobalSpaceToggle(event: KeyboardEvent) {
+      if (event.code !== 'Space' || event.defaultPrevented) {
+        return
+      }
+      if (isEditableElement(event.target) || !audioRef.current || !task?.audio_url) {
+        return
+      }
+
+      event.preventDefault()
+      if (audioRef.current.paused) {
+        void audioRef.current.play().catch(() => {
+          // Ignore autoplay rejection; user can press play manually after interaction.
+        })
+        return
+      }
+      audioRef.current.pause()
+    }
+
+    window.addEventListener('keydown', handleGlobalSpaceToggle)
+    return () => {
+      window.removeEventListener('keydown', handleGlobalSpaceToggle)
+    }
+  }, [task?.audio_url])
 
   useEffect(() => {
     if (!taskId) {
@@ -56,6 +115,7 @@ export function SummaryPage() {
         if (cancelled) {
           return
         }
+        setTask(task)
         setTaskStatusName(task.status_name)
 
         if (task.status_name !== 'completed') {
@@ -131,7 +191,16 @@ export function SummaryPage() {
               <CardDescription>Total Duration: {formatTimeFromMs(transcript.duration_ms)}</CardDescription>
             ) : null}
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
+            {task?.audio_url ? (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <p className="mb-2 text-xs text-slate-600">Click any utterance to seek and play from that timestamp.</p>
+                <p className="mb-2 text-xs text-slate-500">Press Space to start/continue or pause playback.</p>
+                <audio ref={audioRef} className="w-full" controls src={task.audio_url} onTimeUpdate={handleAudioTimeUpdate}>
+                  <track kind="captions" />
+                </audio>
+              </div>
+            ) : null}
             {isLoadingTranscript ? <p className="text-sm text-slate-600">Loading transcript...</p> : null}
             {transcriptError ? (
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
@@ -143,7 +212,23 @@ export function SummaryPage() {
               transcript.utterances.length > 0 ? (
                 <ul className="space-y-3">
                   {transcript.utterances.map((item) => (
-                    <li key={`${item.seq}-${item.start_time}`} className="rounded-lg border border-slate-200 bg-slate-50/70 p-4">
+                    <li
+                      key={`${item.seq}-${item.start_time}`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => playFromUtterance(item.start_time, item.seq)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          playFromUtterance(item.start_time, item.seq)
+                        }
+                      }}
+                      className={`rounded-lg border p-4 transition ${
+                        activeUtteranceSeq === item.seq
+                          ? 'border-cyan-300 bg-cyan-50/80'
+                          : 'border-slate-200 bg-slate-50/70'
+                      } ${task?.audio_url ? 'cursor-pointer hover:border-cyan-200' : 'cursor-default'}`}
+                    >
                       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                         {formatTimeFromMs(item.start_time)}-{formatTimeFromMs(item.end_time)} ·{' '}
                         {(item.speaker || 'speaker').replace('_', ' ')}
@@ -191,24 +276,26 @@ export function SummaryPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {record ? (
+            {task?.audio_url ? (
               <>
-                <p className="text-sm text-slate-700">Source file: {record.fileName}</p>
-                <audio className="w-full" controls src={record.assetUrl}>
+                <p className="text-sm text-slate-700">
+                  Source file: {task?.object_key?.split('/').at(-1) ?? 'task audio'}
+                </p>
+                <audio ref={audioRef} className="w-full" controls src={task?.audio_url ?? undefined} onTimeUpdate={handleAudioTimeUpdate}>
                   <track kind="captions" />
                 </audio>
                 <Button asChild size="sm" variant="outline">
-                  <a href={record.assetUrl} target="_blank" rel="noreferrer">
+                  <a href={task?.audio_url ?? '#'} target="_blank" rel="noreferrer">
                     Open Source Audio URL
                   </a>
                 </Button>
               </>
             ) : (
               <p className="text-sm text-slate-600">
-                No matching upload record in localStorage. Upload a file first to preview listening replay.
+                No audio URL found for this task.
               </p>
             )}
-            {!record && taskStatusName ? (
+            {taskStatusName ? (
               <p className="text-xs text-slate-500">Current task status: {taskStatusName}</p>
             ) : null}
           </CardContent>
