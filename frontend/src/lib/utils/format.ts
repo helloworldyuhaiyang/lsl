@@ -43,3 +43,32 @@ export function formatDateTime(iso: string): string {
     second: '2-digit',
   }).format(date)
 }
+
+export function formatMonthDay(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) {
+    return '--'
+  }
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: '2-digit',
+  }).format(date)
+}
+
+export function formatClock(seconds: number | null): string {
+  if (seconds === null || Number.isNaN(seconds) || seconds < 0) {
+    return '--:--'
+  }
+
+  const total = Math.floor(seconds)
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const remainSeconds = total % 60
+
+  if (hours > 0) {
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(remainSeconds).padStart(2, '0')}`
+  }
+
+  return `${String(minutes).padStart(2, '0')}:${String(remainSeconds).padStart(2, '0')}`
+}

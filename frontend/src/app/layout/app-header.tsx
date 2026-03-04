@@ -5,14 +5,14 @@ import { cn } from '@/lib/utils'
 
 export function AppHeader() {
   return (
-    <header className="border-b border-slate-200/80 bg-white/80 backdrop-blur">
+    <header className="border-b border-slate-200/80 bg-white/90 backdrop-blur">
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
         <div className="space-y-0.5">
-          <p className="text-sm font-semibold tracking-[0.16em] text-slate-900">LSL CHAT REPLAY</p>
-          <p className="text-xs text-slate-500">Conversation audio upload and smart summary workspace</p>
+          <p className="text-sm font-semibold tracking-[0.16em] text-slate-900">LSL</p>
+          <p className="text-xs text-slate-500">Listening and speaking training workspace</p>
         </div>
 
-        <nav className="hidden items-center gap-2 sm:flex">
+        <nav className="flex items-center gap-2">
           {NAV_ITEMS.map((item) => (
             <NavLink
               key={item.href}

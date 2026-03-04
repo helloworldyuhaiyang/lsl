@@ -1,12 +1,25 @@
 export const ROUTES = {
   root: '/',
+  dashboard: '/dashboard',
   upload: '/upload',
-  task: '/tasks/:taskId',
-  summary: '/summaries/:summaryId',
+  session: '/sessions/:sessionId',
+  revise: '/sessions/:sessionId/revise',
+  listening: '/sessions/:sessionId/listening',
 } as const
 
 export const NAV_ITEMS = [
+  { label: 'Dashboard', href: ROUTES.dashboard },
   { label: 'Upload', href: ROUTES.upload },
-  { label: 'Task', href: '/tasks/demo-task' },
-  { label: 'Summary', href: '/summaries/demo-summary' },
 ] as const
+
+export function getSessionPath(sessionId: string): string {
+  return `/sessions/${sessionId}`
+}
+
+export function getRevisePath(sessionId: string): string {
+  return `/sessions/${sessionId}/revise`
+}
+
+export function getListeningPath(sessionId: string): string {
+  return `/sessions/${sessionId}/listening`
+}

@@ -1,19 +1,18 @@
 # LSL Frontend
 
-LSL 前端是一个"聊天录音上传与总结"工作台，负责文件上传、任务状态展示、总结页展示。
+LSL 前端是一个口语录音学习工作台，核心流程：
 
-## 技术栈
+`Dashboard -> Upload -> Session(Transcript) -> Revise -> Listening`
+
+## Tech Stack
 
 - React 19 + TypeScript 5
-- Vite 7（构建与开发服务器）
-- React Router 7（页面路由）
-- Tailwind CSS 4（样式系统）
-- shadcn/ui（基础 UI 组件）
-- ESLint 9 + typescript-eslint（代码规范）
+- Vite 7
+- React Router 7
+- Tailwind CSS 4
+- shadcn/ui
 
-## 本地启动
-
-在仓库根目录执行：
+## Local Run
 
 ```bash
 cd frontend
@@ -21,156 +20,88 @@ npm install
 npm run dev
 ```
 
-默认开发地址：`http://127.0.0.1:5173`
+默认地址：`http://127.0.0.1:5173`
 
-## 后端联调配置
+## Routes
 
-前端通过 `src/lib/api/client.ts` 统一请求 API：
+- `/dashboard` Dashboard：Session 管理 + 状态展示 + 搜索
+- `/upload` Upload：会话信息 + 音频上传
+- `/sessions/:sessionId` Session：转写主页面（Transcript）
+- `/sessions/:sessionId/revise` Revise：句子优化学习
+- `/sessions/:sessionId/listening` Listening：听力练习模式
 
-- 默认 `VITE_API_BASE_URL=/api`
-- `vite.config.ts` 中已配置代理：`/api -> http://127.0.0.1:8000`
+兼容旧路由：
 
-如果你不使用 Vite 代理，可显式设置：
+- `/tasks/:taskId` -> `/sessions/:taskId`
+- `/summaries/:summaryId` -> `/sessions/:sessionId`（支持 `summary_` 前缀）
 
-```bash
-VITE_API_BASE_URL=http://127.0.0.1:8000
-```
+## Current Data Strategy
 
-## 目录结构
+后端尚未提供独立 `sessions` 资源，前端当前采用兼容映射：
 
-```text
-frontend/
-  src/
-    app/
-      layout/
-        app-header.tsx
-        app-shell.tsx
-      providers.tsx
-      router.tsx
-    pages/
-      upload-page.tsx
-      task-page.tsx
-      summary-page.tsx
-      not-found-page.tsx
-    components/
-      common/
-        page-title.tsx
-        status-badge.tsx
-      upload/
-        file-dropzone.tsx
-        upload-progress.tsx
-      ui/
-        button.tsx
-        card.tsx
-    lib/
-      api/
-        client.ts
-        upload.ts
-      constants/
-        routes.ts
-      storage/
-        upload-history.ts
-      utils/
-        format.ts
-      utils.ts
-    mocks/
-      summary.mock.ts
-    types/
-      api.ts
-      domain.ts
-    main.tsx
-    index.css
-```
+- `sessionId = task_id`
+- 标题/描述/时长等会话元数据保存在浏览器 `localStorage`
+- Session 列表通过 `tasks + assets` 聚合生成
 
-## 路由
+本地存储 key：`lsl.session-metadata.v1`
 
-- `/upload`：上传页（主入口）
-- `/tasks/:taskId`：任务状态页（当前为前端模拟状态流）
-- `/summaries/:summaryId`：总结页（当前为 mock 总结数据 + 源音频回放）
-- `/`：重定向到 `/upload`
+## Implemented Interaction
 
-## 组件关系与组合关系
+### Dashboard
 
-### 全局装配关系
+- Session 列表（Title / Duration / Status / Created）
+- Search Session（标题、描述、文件名、object_key）
+- Refresh
 
-```text
-main.tsx
-└─ AppProviders
-   └─ RouterProvider(router)
-      └─ AppShell
-         ├─ AppHeader
-         └─ Outlet(当前路由页面)
-```
+### Upload
 
-### 页面级组合关系
+- Session Name（必填）
+- Session Description（可选）
+- Drag & Drop 上传（mp3 / wav / m4a）
+- File Info：Name / Duration / Size / Format
+- Upload Session 后可直接进入 Session
 
-`UploadPage`：
+### Session (Transcript)
 
-```text
-UploadPage
-├─ PageTitle
-├─ Card (Audio Input)
-│  ├─ FileDropzone
-│  ├─ UploadProgress
-│  └─ Button(Upload/Clear/跳转)
-└─ Card (Recent Uploads)
-   └─ Button(Task/Summary 跳转)
-```
+- 音频播放器（快退/快进 + 播放暂停）
+- 转写表格（Speaker + Conversation）
+- 点击句子可跳播
+- `Space` 切换播放/暂停
 
-`TaskPage`：
+### Revise
 
-```text
-TaskPage
-├─ PageTitle(actions: StatusBadge)
-├─ Card (Pipeline Timeline)
-│  └─ StatusBadge(各阶段状态)
-└─ Card (Task Context)
-   └─ Button(Open Summary)
-```
+- 句子卡片浏览（Original / Suggested / Diff / Explanation）
+- `Previous` / `Next` 与左右方向键切换
+- `Play Original`（源音频切片）
+- `Play Improved`（浏览器 TTS 回放）
 
-`SummaryPage`：
+### Listening
 
-```text
-SummaryPage
-├─ PageTitle(actions: Back Button)
-├─ Card (Section Switcher)
-└─ 条件渲染 Card
-   ├─ Transcript Timeline
-   ├─ Expression Improvements
-   └─ Listening Replay(audio + URL)
-```
+- Mode：Full conversation / Sentence repeat / Shadowing
+- Script 区域（全文或句子列表）
+- 音频控制 + 0.75x / 1x / 1.25x
+- Shadowing 模式句子回放后自动跳到下一句
+- `Space` 切换播放/暂停
 
-快捷键：
-- 在 `SummaryPage` 中，存在音频播放器时，按 `Space` 可切换“开始/继续”与“暂停”。
+## API Used By Frontend
 
-## 上传流程（当前实现）
+- `POST /assets/upload-url`
+- `POST /assets/complete-upload`
+- `GET /assets`
+- `POST /tasks`
+- `GET /tasks`
+- `GET /tasks/{task_id}`
+- `POST /tasks/{task_id}/refresh`
+- `GET /tasks/{task_id}/transcript`
 
-```text
-选择文件(FileDropzone)
-  -> prepareUploadUrl (/assets/upload-url)
-  -> uploadToPresignedUrl (PUT upload_url)
-  -> completeUploadedAsset (/assets/complete-upload)
-  -> refreshRecentUploads (/assets)
-  -> 写入本地 upload-history（用于 Task/Summary 串联）
-```
+返回体统一按：`{ code, message, data }`
 
-## API 使用（当前前端）
+## Recommended Backend Next Steps
 
-- `POST /assets/upload-url`：申请上传 URL
-- `POST /assets/complete-upload`：上传完成确认
-- `GET /assets`：获取历史上传记录
+为了彻底匹配产品语义，建议后端补充：
 
-说明：前端当前按 `ApiResponse<T>` 结构解析，即 `{ code, message, data }`。
-
-## 当前状态与后续
-
-已完成：
-- 上传闭环（申请上传 URL、直传、完成确认）
-- 最近上传记录展示
-- 任务状态页框架
-- 总结页三分区框架（mock 数据）
-
-待完成：
-- 真实任务轮询接口替换 TaskPage 模拟状态
-- 真实总结接口替换 SummaryPage mock 内容
-- TTS 音频与句级播放器能力
+- `GET /sessions`（支持 query/status/page）
+- `POST /sessions`（title/description）
+- `GET /sessions/{session_id}`
+- `GET /sessions/{session_id}/revisions`
+- `GET /sessions/{session_id}/listening`

@@ -1,16 +1,17 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useMemo, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 
 import { PageTitle } from '@/components/common/page-title'
 import { FileDropzone } from '@/components/upload/file-dropzone'
 import { UploadProgress } from '@/components/upload/upload-progress'
-import { createTask, listTasks } from '@/lib/api/tasks'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { completeUploadedAsset, listAssets, prepareUploadUrl, uploadToPresignedUrl } from '@/lib/api/upload'
-import { formatBytes, formatDateTime, formatDuration } from '@/lib/utils/format'
-import type { UploadRecord } from '@/types/domain'
-import type { AssetListItem, TaskItem, UploadUrlResponse } from '@/types/api'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { getSessionPath, ROUTES } from '@/lib/constants/routes'
+import { upsertSessionMetadata } from '@/lib/session/session-storage'
+import { completeUploadedAsset, prepareUploadUrl, uploadToPresignedUrl } from '@/lib/api/upload'
+import { createTask } from '@/lib/api/tasks'
+import { formatBytes, formatDuration } from '@/lib/utils/format'
+import type { UploadUrlResponse } from '@/types/api'
 
 const ALLOWED_EXTENSIONS = new Set(['mp3', 'wav', 'm4a'])
 
@@ -30,8 +31,7 @@ function resolveContentType(file: File): string {
     return file.type
   }
 
-  const extension = getExtension(file.name)
-  return EXTENSION_CONTENT_TYPE[extension] ?? 'application/octet-stream'
+  return EXTENSION_CONTENT_TYPE[getExtension(file.name)] ?? 'application/octet-stream'
 }
 
 async function getAudioDuration(file: File): Promise<number | null> {
@@ -39,13 +39,11 @@ async function getAudioDuration(file: File): Promise<number | null> {
 
   return new Promise<number | null>((resolve) => {
     const audio = new Audio()
-
     audio.preload = 'metadata'
 
     audio.onloadedmetadata = () => {
       URL.revokeObjectURL(objectUrl)
-      const duration = Number.isFinite(audio.duration) ? audio.duration : null
-      resolve(duration)
+      resolve(Number.isFinite(audio.duration) ? audio.duration : null)
     }
 
     audio.onerror = () => {
@@ -57,90 +55,31 @@ async function getAudioDuration(file: File): Promise<number | null> {
   })
 }
 
-function createJobIds(objectKey: string): { taskId: string; summaryId: string } {
-  const fileSegment = objectKey.split('/').at(-1) ?? crypto.randomUUID()
-  const base = fileSegment.split('.')[0]
-  return {
-    taskId: `task_${base}`,
-    summaryId: `summary_${base}`,
-  }
-}
-
-function createSummaryId(taskId: string): string {
-  return `summary_${taskId}`
-}
-
 export function UploadPage() {
+  const navigate = useNavigate()
+  const [sessionName, setSessionName] = useState('')
+  const [sessionDescription, setSessionDescription] = useState('')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [preparedUpload, setPreparedUpload] = useState<UploadUrlResponse | null>(null)
   const [durationSec, setDurationSec] = useState<number | null>(null)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [isPreparingUpload, setIsPreparingUpload] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
-  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [successRecord, setSuccessRecord] = useState<UploadRecord | null>(null)
-  const [history, setHistory] = useState<UploadRecord[]>([])
+  const [uploadedSessionId, setUploadedSessionId] = useState<string | null>(null)
 
-  const selectedExtension = useMemo(() => {
-    if (!selectedFile) {
-      return ''
-    }
-    return getExtension(selectedFile.name)
-  }, [selectedFile])
+  const canUpload =
+    sessionName.trim().length > 0 &&
+    Boolean(selectedFile) &&
+    Boolean(preparedUpload) &&
+    !isUploading &&
+    !isPreparingUpload
 
-  function mapAssetToUploadRecord(item: AssetListItem, taskIdByObjectKey: Map<string, string>): UploadRecord {
-    const fallbackFileName = item.object_key.split('/').at(-1) ?? item.object_key
-    const fallbackIds = createJobIds(item.object_key)
-    const taskId = taskIdByObjectKey.get(item.object_key) ?? fallbackIds.taskId
-
-    return {
-      taskId,
-      summaryId: createSummaryId(taskId),
-      fileName: item.filename || fallbackFileName,
-      fileSize: item.file_size ?? 0,
-      durationSec: null,
-      objectKey: item.object_key,
-      assetUrl: item.asset_url,
-      uploadedAt: item.created_at,
-    }
-  }
-
-  async function refreshRecentUploads() {
-    setIsLoadingHistory(true)
-    try {
-      const [items, tasks] = await Promise.all([
-        listAssets({
-          limit: 20,
-          category: 'conversation',
-          entityId: 'web_user',
-        }),
-        listTasks({
-          limit: 100,
-          category: 'conversation',
-          entityId: 'web_user',
-        }),
-      ])
-      const taskIdByObjectKey = tasks.reduce((acc, item: TaskItem) => {
-        acc.set(item.object_key, item.task_id)
-        return acc
-      }, new Map<string, string>())
-      setHistory(items.map((item) => mapAssetToUploadRecord(item, taskIdByObjectKey)))
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to fetch upload history.')
-    } finally {
-      setIsLoadingHistory(false)
-    }
-  }
-
-  useEffect(() => {
-    void refreshRecentUploads()
-  }, [])
+  const extension = useMemo(() => (selectedFile ? getExtension(selectedFile.name).toUpperCase() : ''), [selectedFile])
 
   async function handleFileSelected(file: File) {
-    const extension = getExtension(file.name)
-
-    if (!ALLOWED_EXTENSIONS.has(extension)) {
+    const fileExtension = getExtension(file.name)
+    if (!ALLOWED_EXTENSIONS.has(fileExtension)) {
       setErrorMessage('Only mp3, wav, and m4a files are supported.')
       setSelectedFile(null)
       setPreparedUpload(null)
@@ -148,51 +87,46 @@ export function UploadPage() {
       return
     }
 
+    setErrorMessage(null)
+    setUploadedSessionId(null)
     setIsPreparingUpload(true)
     setSelectedFile(null)
     setPreparedUpload(null)
     setDurationSec(null)
     setUploadProgress(0)
-    setSuccessRecord(null)
-    setErrorMessage(null)
 
     try {
-      const duration = await getAudioDuration(file)
-      const contentType = resolveContentType(file)
-
-      const uploadInfo = await prepareUploadUrl({
-        category: 'conversation',
-        entityId: 'web_user',
-        filename: file.name,
-        contentType,
-      })
+      const [duration, uploadInfo] = await Promise.all([
+        getAudioDuration(file),
+        prepareUploadUrl({
+          category: 'conversation',
+          entityId: 'web_user',
+          filename: file.name,
+          contentType: resolveContentType(file),
+        }),
+      ])
 
       setSelectedFile(file)
       setPreparedUpload(uploadInfo)
       setDurationSec(duration)
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Failed to create upload URL. Please retry.')
-      setSelectedFile(null)
-      setPreparedUpload(null)
-      setDurationSec(null)
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to prepare upload.')
     } finally {
       setIsPreparingUpload(false)
     }
   }
 
-  async function handleUpload() {
-    if (!selectedFile || !preparedUpload || isUploading || isPreparingUpload) {
+  async function handleUploadSession() {
+    if (!selectedFile || !preparedUpload || sessionName.trim().length === 0 || isUploading || isPreparingUpload) {
       return
     }
 
     setIsUploading(true)
     setErrorMessage(null)
-    setSuccessRecord(null)
-    setUploadProgress(0)
+    setUploadedSessionId(null)
 
     try {
       const contentType = resolveContentType(selectedFile)
-
       const { etag } = await uploadToPresignedUrl({
         uploadUrl: preparedUpload.upload_url,
         file: selectedFile,
@@ -200,7 +134,7 @@ export function UploadPage() {
         onProgress: (progress) => setUploadProgress(progress),
       })
 
-      const completed = await completeUploadedAsset({
+      const uploaded = await completeUploadedAsset({
         uploadInfo: preparedUpload,
         upload: {
           category: 'conversation',
@@ -213,26 +147,21 @@ export function UploadPage() {
       })
 
       const task = await createTask({
-        objectKey: completed.object_key,
-        audioUrl: completed.asset_url,
+        objectKey: uploaded.object_key,
+        audioUrl: uploaded.asset_url,
         language: 'en-US',
       })
-      const taskId = task.task_id
 
-      const record: UploadRecord = {
-        taskId,
-        summaryId: createSummaryId(taskId),
+      upsertSessionMetadata(task.task_id, {
+        title: sessionName.trim(),
+        description: sessionDescription.trim(),
         fileName: selectedFile.name,
         fileSize: selectedFile.size,
         durationSec,
-        objectKey: completed.object_key,
-        assetUrl: completed.asset_url,
-        uploadedAt: new Date().toISOString(),
-      }
+      })
 
-      setSuccessRecord(record)
+      setUploadedSessionId(task.task_id)
       setUploadProgress(100)
-      await refreshRecentUploads()
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Upload failed. Please retry.')
     } finally {
@@ -244,115 +173,140 @@ export function UploadPage() {
     <section className="space-y-6">
       <PageTitle
         eyebrow="Step 1"
-        title="Upload Conversation Recording"
-        description="Upload mp3, wav, or m4a from meetings, interviews, calls, or casual chats. We will turn it into a structured summary workflow."
+        title="Upload Session"
+        description="Create a session with name/description, then upload an audio file for transcript and learning workflow."
+        actions={
+          <Button asChild variant="outline" size="sm">
+            <Link to={ROUTES.dashboard}>Back to Dashboard</Link>
+          </Button>
+        }
       />
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="border-slate-200/80 bg-white/90 shadow-sm lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-lg">Audio Input</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <FileDropzone disabled={isUploading || isPreparingUpload} onFileSelected={handleFileSelected} />
+      <Card className="border-slate-200/80 bg-white/95 shadow-sm">
+        <CardHeader>
+          <CardTitle>Upload Session</CardTitle>
+        </CardHeader>
 
+        <CardContent className="space-y-6">
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <label htmlFor="session-name" className="text-sm font-medium text-slate-800">
+                Session Name
+              </label>
+              <input
+                id="session-name"
+                value={sessionName}
+                onChange={(event) => setSessionName(event.target.value)}
+                placeholder="Client Meeting"
+                className="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none placeholder:text-slate-400 focus:border-slate-900"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label htmlFor="session-description" className="text-sm font-medium text-slate-800">
+                Session Description (optional)
+              </label>
+              <textarea
+                id="session-description"
+                value={sessionDescription}
+                onChange={(event) => setSessionDescription(event.target.value)}
+                placeholder="Short context for this conversation"
+                className="min-h-24 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:border-slate-900"
+              />
+            </div>
+          </div>
+
+          <div className="h-px bg-slate-200" />
+
+          <div className="space-y-3">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">Audio File</h3>
+              <p className="text-xs text-slate-500">Supported format: mp3 / wav / m4a</p>
+            </div>
+            <FileDropzone disabled={isUploading || isPreparingUpload} onFileSelected={handleFileSelected} />
+          </div>
+
+          {isPreparingUpload ? <p className="text-sm text-slate-600">Preparing upload URL...</p> : null}
+
+          <div className="h-px bg-slate-200" />
+
+          <div className="space-y-2 rounded-md border border-slate-200 bg-slate-50 p-4">
+            <h3 className="text-sm font-semibold text-slate-900">File Info</h3>
             {selectedFile ? (
-              <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4">
-                <p className="text-sm font-medium text-slate-800">{selectedFile.name}</p>
-                <p className="mt-1 text-xs text-slate-600">
-                  {selectedExtension.toUpperCase()} · {formatBytes(selectedFile.size)} · {formatDuration(durationSec)}
+              <div className="space-y-1 text-sm text-slate-700">
+                <p>
+                  <span className="font-medium text-slate-900">Name:</span> {selectedFile.name}
+                </p>
+                <p>
+                  <span className="font-medium text-slate-900">Duration:</span> {formatDuration(durationSec)}
+                </p>
+                <p>
+                  <span className="font-medium text-slate-900">Size:</span> {formatBytes(selectedFile.size)}
+                </p>
+                <p>
+                  <span className="font-medium text-slate-900">Format:</span> {extension || '--'}
                 </p>
               </div>
-            ) : null}
+            ) : (
+              <p className="text-sm text-slate-500">No file selected yet.</p>
+            )}
+          </div>
 
-            {isUploading || uploadProgress > 0 ? <UploadProgress value={uploadProgress} /> : null}
+          {isUploading || uploadProgress > 0 ? <UploadProgress value={uploadProgress} /> : null}
 
-            {errorMessage ? (
-              <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{errorMessage}</div>
-            ) : null}
+          {errorMessage ? (
+            <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{errorMessage}</div>
+          ) : null}
 
-            {successRecord ? (
-              <div className="space-y-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-                <p className="font-medium">Upload completed successfully.</p>
-                <p className="text-xs break-all">object_key: {successRecord.objectKey}</p>
-                <div className="flex flex-wrap gap-2">
-                  <Button asChild size="sm">
-                    <Link to={`/tasks/${successRecord.taskId}`}>View Task</Link>
-                  </Button>
-                  <Button asChild size="sm" variant="outline">
-                    <Link to={`/summaries/${successRecord.summaryId}`}>Open Summary</Link>
-                  </Button>
-                  <Button asChild size="sm" variant="ghost">
-                    <a href={successRecord.assetUrl} target="_blank" rel="noreferrer">
-                      Open Asset URL
-                    </a>
-                  </Button>
-                </div>
+          {uploadedSessionId ? (
+            <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+              <p className="font-medium">Session uploaded successfully.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button asChild size="sm">
+                  <Link to={getSessionPath(uploadedSessionId)}>Open Session</Link>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setSessionName('')
+                    setSessionDescription('')
+                    setSelectedFile(null)
+                    setPreparedUpload(null)
+                    setDurationSec(null)
+                    setUploadProgress(0)
+                    setErrorMessage(null)
+                    setUploadedSessionId(null)
+                  }}
+                >
+                  Upload Another
+                </Button>
               </div>
-            ) : null}
+            </div>
+          ) : null}
 
-            <div className="flex flex-wrap gap-3">
+          <div className="flex justify-center sm:justify-end">
+            <Button type="button" onClick={handleUploadSession} disabled={!canUpload}>
+              {isUploading ? 'Uploading...' : 'Upload Session'}
+            </Button>
+          </div>
+
+          {uploadedSessionId ? (
+            <div className="flex justify-center sm:justify-end">
               <Button
                 type="button"
-                onClick={handleUpload}
-                disabled={!selectedFile || !preparedUpload || isUploading || isPreparingUpload}
-              >
-                {isPreparingUpload ? 'Preparing Upload URL...' : isUploading ? 'Uploading...' : 'Upload to Storage'}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
+                variant="ghost"
+                size="sm"
                 onClick={() => {
-                  setSelectedFile(null)
-                  setPreparedUpload(null)
-                  setDurationSec(null)
-                  setUploadProgress(0)
-                  setErrorMessage(null)
-                  setSuccessRecord(null)
+                  navigate(getSessionPath(uploadedSessionId))
                 }}
-                disabled={isUploading || isPreparingUpload}
               >
-                Clear
+                Continue to Session
               </Button>
             </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-slate-200/80 bg-white/90 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-lg">Recent Uploads</CardTitle>
-            <CardDescription>Latest 20 records order by upload time (newest first).</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {isLoadingHistory ? (
-              <p className="text-sm text-slate-600">Loading...</p>
-            ) : history.length === 0 ? (
-              <p className="text-sm text-slate-600">No upload history yet.</p>
-            ) : (
-              <ul className="space-y-3">
-                {history.slice(0, 5).map((item) => (
-                  <li key={item.taskId} className="rounded-lg border border-slate-200 p-3">
-                    <p className="truncate text-sm font-medium text-slate-800">{item.fileName}</p>
-                    <p className="mt-1 text-xs text-slate-600">{formatDateTime(item.uploadedAt)}</p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <Button asChild size="xs" variant="outline">
-                        <Link to={`/tasks/${item.taskId}`}>Task</Link>
-                      </Button>
-                      <Button asChild size="xs" variant="outline">
-                        <Link to={`/summaries/${item.summaryId}`}>Summary</Link>
-                      </Button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <p className="text-xs text-slate-500">
-        API base URL: <code>{import.meta.env.VITE_API_BASE_URL ?? '/api'}</code>
-      </p>
+          ) : null}
+        </CardContent>
+      </Card>
     </section>
   )
 }

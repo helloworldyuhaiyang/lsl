@@ -13,7 +13,7 @@ export function NotFoundPage() {
         <CardContent className="space-y-4 text-sm text-slate-600">
           <p>The requested path does not exist in the current frontend skeleton.</p>
           <Button asChild>
-            <Link to="/upload">Back to Upload</Link>
+            <Link to="/dashboard">Back to Dashboard</Link>
           </Button>
         </CardContent>
       </Card>
