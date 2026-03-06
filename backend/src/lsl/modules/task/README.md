@@ -10,6 +10,20 @@ Task 模块负责 ASR 任务编排，不直接依赖具体厂商实现。
 - `GET /tasks/{task_id}/transcript` 获取转写结果
 - `GET /tasks` 查询任务列表
 
+## 模块结构
+
+```text
+task/
+|- api.py
+|- service.py
+|- repo.py
+|- model.py
+|- schema.py
+|- types.py
+|- providers.py
+|- result.json
+```
+
 ## 接口测试（curl）
 
 先设置基础地址：

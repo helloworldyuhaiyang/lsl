@@ -5,15 +5,15 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from lsl.asr.provider import (
+from lsl.modules.task.repo import TaskRepository
+from lsl.modules.task.schema import TaskData, TaskTranscriptData, TaskTranscriptUtterance
+from lsl.modules.task.types import (
     AsrJobRef,
     AsrJobStatus,
     AsrProvider,
     AsrSubmitRequest,
+    TaskStatus,
 )
-from lsl.task.repository import TaskRepository
-from lsl.task.schemas import TaskData, TaskTranscriptData, TaskTranscriptUtterance
-from lsl.task.status import TaskStatus
 
 logger = logging.getLogger(__name__)
 

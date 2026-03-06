@@ -1,8 +1,18 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+T = TypeVar("T")
+
+
+class ApiResponse(BaseModel, Generic[T]):
+    code: int = 0
+    message: str = "successful"
+    data: T
 
 
 class CreateSessionRequest(BaseModel):

@@ -9,7 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session as OrmSession
 from sqlalchemy.orm import sessionmaker
 
-from lsl.session.models import SessionModel
+from lsl.modules.session.model import SessionModel
 
 
 class SessionRepository:

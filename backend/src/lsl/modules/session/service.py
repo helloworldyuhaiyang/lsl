@@ -3,12 +3,19 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from lsl.asset import AssetService
-from lsl.session.models import SessionModel
-from lsl.session.repository import SessionRepository
-from lsl.session.schemas import AssetSchema, CreateSessionRequest, SessionData, SessionSchema, TaskSchema, UpdateSessionRequest
-from lsl.task import TaskService
-from lsl.task.schemas import TaskData
+from lsl.modules.asset.service import AssetService
+from lsl.modules.session.model import SessionModel
+from lsl.modules.session.repo import SessionRepository
+from lsl.modules.session.schema import (
+    AssetSchema,
+    CreateSessionRequest,
+    SessionData,
+    SessionSchema,
+    TaskSchema,
+    UpdateSessionRequest,
+)
+from lsl.modules.task.schema import TaskData
+from lsl.modules.task.service import TaskService
 
 
 class SessionService:

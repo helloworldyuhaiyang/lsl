@@ -32,16 +32,17 @@ LSL 「口语录音的智能复盘工具」。
         ↓
 
 [ Thin Backend ]
-  - 文件服务（OSS 直传签名）
+  - 文件服务（Asset moudle, 前端使用生成好的预签名 url , put 文件到云端）
+  - 任务状态管理(Task module)
+  - 聊天管理(Session module)
   - ASR / LLM / TTS 调度
-  - 任务状态管理
   - 鉴权
 
         ↓
 
 [ External Services ]
-  - OSS（音频存储）
-  - 火山引擎 ASR / TTS
+  - 音频存储(S3, OSS)
+  - ASR / TTS
   - LLM 服务
 ```
 
@@ -70,12 +71,15 @@ LSL 「口语录音的智能复盘工具」。
 ## 当前实现范围（截至目前）
 
 - 已完成：对象存储上传模块（Asset Module）
-- 已完成：`POST /assets/upload-url` 生成 OSS Presigned PUT URL
-- 已完成：`object_key` 生成与 `asset_url = ASSET_BASE_URL + object_key`
-- 已完成：存储 provider 抽象（`fake` / `oss`）
-- 未完成：ASR/LLM/TTS 调度、任务系统、鉴权、前端页面
+- 已完成：ASR 任务模块（Task Module）
+- 已完成：会话管理模块（Session Module）
+- 已完成：模块化后端结构（`core` + `modules`）
+- 未完成：LLM/TTS 调度、鉴权、前端页面
 
-Asset 模块详细文档见：`backend/src/lsl/asset/README.md`
+模块详细文档见：
+- `backend/src/lsl/modules/asset/README.md`
+- `backend/src/lsl/modules/task/README.md`
+- `backend/src/lsl/modules/session/README.md`
 
 ## 本地启动（当前后端原型）
 
@@ -97,19 +101,44 @@ DATABASE_URL=postgresql://<user>:<password>@<host>:5432/lsl
 uv run uvicorn --app-dir backend/src lsl.main:app --reload --env-file .env
 ```
 
-```text
-backend/src/lsl/
-  main.py
-  config.py
-  asset/
-  task/
-  asr/
-  llm/
-  tts/
-  auth/
-
-frontend/
-  src/
-  components/
-  pages/
+3. 后端规范
 ```
+backend/
+│
+├─ main.py
+│
+├─ core/
+│   ├─ db.py
+│   ├─ config.py
+│   └─ logger.py
+│
+├─ modules/
+│
+│   ├─ asset/
+│   │   ├─ api.py
+│   │   ├─ service.py
+│   │   ├─ repo.py
+│   │   ├─ model.py
+│   │   ├─ schema.py
+│   │   ├─ types.py
+│   │   └─ README.md
+│   │
+│   ├─ task/
+│   │   ├─ api.py
+│   │   ├─ service.py
+│   │   ├─ repo.py
+│   │   ├─ model.py
+│   │   ├─ schema.py
+│   │   └─ README.md
+│   │
+│   ├─ session/
+│   │   ├─ api.py
+│   │   ├─ service.py
+│   │   ├─ repo.py
+│   │   ├─ model.py
+│   │   ├─ schema.py
+│   │   └─ README.md
+│
+└─ tests/
+```
+每个功能模块相对独立，可以单独开发

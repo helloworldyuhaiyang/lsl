@@ -1,11 +1,20 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, Field, field_validator
 
-from lsl.task.status import status_code_to_name
+from lsl.modules.task.types import status_code_to_name
+
+
+T = TypeVar("T")
+
+
+class ApiResponse(BaseModel, Generic[T]):
+    code: int = 0
+    message: str = "successful"
+    data: T
 
 
 class CreateTaskRequest(BaseModel):

@@ -15,6 +15,18 @@ Session 模块负责会话级数据管理（标题、描述）以及与 `assets/
 - `GET /sessions/{session_id}` 查询会话详情
 - `PATCH /sessions/{session_id}` 更新会话与关联关系
 
+## 模块结构
+
+```text
+session/
+|- api.py
+|- service.py
+|- repo.py
+|- model.py
+|- schema.py
+|- types.py
+```
+
 ## 建表 SQL
 
 ```sql

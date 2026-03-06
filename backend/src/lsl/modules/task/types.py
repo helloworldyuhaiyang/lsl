@@ -1,11 +1,41 @@
 from __future__ import annotations
 
-from enum import Enum
+from dataclasses import dataclass
+from enum import Enum, IntEnum
 from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
-# ASR(Automatic Speech Recognition)自动语音识别
+
+class TaskStatus(IntEnum):
+    UPLOADED = 0
+    TRANSCRIBING = 1
+    ANALYZING = 2
+    COMPLETED = 3
+    FAILED = 4
+
+
+TASK_STATUS_NAME_MAP: dict[int, str] = {
+    TaskStatus.UPLOADED: "uploaded",
+    TaskStatus.TRANSCRIBING: "transcribing",
+    TaskStatus.ANALYZING: "analyzing",
+    TaskStatus.COMPLETED: "completed",
+    TaskStatus.FAILED: "failed",
+}
+
+
+def status_code_to_name(status_code: int) -> str:
+    return TASK_STATUS_NAME_MAP.get(status_code, "unknown")
+
+
+@dataclass(frozen=True, slots=True)
+class TaskListFilters:
+    limit: int = 20
+    status: int | None = None
+    category: str | None = None
+    entity_id: str | None = None
+
+
 class AsrProvider(Protocol):
     def submit(self, req: AsrSubmitRequest) -> AsrJobRef:
         ...
@@ -58,10 +88,6 @@ class AsrQueryResult(BaseModel):
 
 
 class NoopAsrProvider:
-    """
-    占位 provider：仅保留接口依赖，不提供实际 ASR 能力。
-    """
-
     provider_name = "noop"
 
     def submit(self, req: AsrSubmitRequest) -> AsrJobRef:

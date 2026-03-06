@@ -3,9 +3,9 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any, Optional
 
-from lsl.config import Settings
-from lsl.asset.provider import StorageProvider
-from lsl.asset.repository import AssetRepository
+from lsl.core.config import Settings
+from lsl.modules.asset.repo import AssetRepository
+from lsl.modules.asset.types import StorageProvider
 
 
 class AssetService:

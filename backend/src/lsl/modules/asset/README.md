@@ -35,13 +35,17 @@ DB
 ```text
 backend/src/lsl/
 |- main.py                # FastAPI 入口
-|- config.py              # 配置定义
-|- asset/
-   |- provider.py         # StorageProvider Protocol
-   |- service.py          # 业务层（key / upload_url / asset_url）
-   |- factory.py          # provider 选择
-   |- fake_provider.py    # 本地 fake provider
-   |- oss_provider.py     # 阿里云 OSS provider
+|- core/
+|  |- config.py           # 配置定义
+|- modules/
+   |- asset/
+      |- api.py           # FastAPI router
+      |- service.py       # 业务层（key / upload_url / asset_url）
+      |- repo.py          # 资产查询与持久化
+      |- model.py         # ORM 映射
+      |- schema.py        # Pydantic schema
+      |- types.py         # 协议与领域类型
+      |- providers.py     # fake / oss provider 与工厂
 ```
 
 ## 快速开始
