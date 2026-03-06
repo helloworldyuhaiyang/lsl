@@ -47,29 +47,7 @@ LSL 「口语录音的智能复盘工具」。
 ```
 
 ## 功能设计
-
-### Web Frontend
-
-- 音频文件上传：单文件代表一个口语录音，上传前显示时长与大小
-- 上传与任务触发：前端拿 PUT URL 直传 OSS，后端创建异步任务
-- 任务状态页：`uploaded` → `transcribing` → `analyzing` → `completed/failed`
-- 转写结果展示：按时间顺序展示，支持老师/学员区分与片段回放
-- 表达纠错与优化：句子级输出原句、问题点、优化句
-- Diff 学习视图：高亮新增/删除并展示修改原因
-- 听力材料生成：TTS 生成可反复收听音频并缓存
-
-### Thin Backend
-
-- STS/签名服务：隐藏云厂商凭证，提供上传授权能力
-- ASR 调度：提交转写、管理异步任务、存储结果
-- 任务管理：记录音频地址、文件 hash、处理状态，避免重复提交
-- 文本结构化：句子切分、角色区分、保留时间戳
-- LLM 分析：输出结构化纠错与优化结果
-- Diff 数据生成：后端产出统一 diff 数据结构，前端只渲染
-- TTS 调度：控制频率和成本，预留音色扩展
-
 ## 当前实现范围（截至目前）
-
 - 已完成：对象存储上传模块（Asset Module）
 - 已完成：ASR 任务模块（Task Module）
 - 已完成：会话管理模块（Session Module）
@@ -142,3 +120,72 @@ backend/
 └─ tests/
 ```
 每个功能模块相对独立，可以单独开发
+
+说明：当前仓库实际采用 `src layout`，上面的逻辑结构在代码中对应 `backend/src/lsl/`。
+
+### 3.1 分层职责
+
+| 文件         | 职责                                      | 不应该做的事                       |
+| ------------ | ----------------------------------------- | ---------------------------------- |
+| `api.py`     | FastAPI router、参数接收、HTTP 错误码转换 | 不直接访问 DB，不写核心业务        |
+| `service.py` | 业务编排、领域规则、跨模块协作            | 不写 HTTP 细节，不直接拼装 SQL     |
+| `repo.py`    | 持久化读写、SQL/ORM 查询、事务落库        | 不做业务决策，不抛 `HTTPException` |
+| `model.py`   | SQLAlchemy ORM / 表结构映射               | 不写接口协议和业务流程             |
+| `schema.py`  | Pydantic 请求/响应模型                    | 不写数据库逻辑                     |
+| `types.py`   | domain type / protocol / enum / dataclass | 不依赖 FastAPI                     |
+| `README.md`  | 模块设计说明、表结构、接口约束            | 不替代代码实现                     |
+
+### 3.2 依赖方向
+
+后端必须遵守单向依赖：
+
+`API -> Service -> Repository -> DB`
+
+补充约束：
+
+- `api.py` 只能依赖当前模块的 `service.py`、`schema.py`，以及少量框架依赖。
+- `service.py` 可以依赖当前模块的 `repo.py`，也可以依赖别的模块的 `Service`，但不能跨模块直接依赖别人的 `Repo`。
+- `repo.py` 只依赖 `model.py`、数据库驱动、SQLAlchemy，不依赖 `api.py`。
+- `core/` 不能反向依赖 `modules/`。
+- 外部厂商适配代码放在所属模块内部，例如 `asset/providers.py`、`task/providers.py`，不要散落到全局。
+
+### 3.3 模块边界
+
+- 一个模块对外暴露的主入口是 `api.py` 和 `service.py`。
+
+### 3.4 命名规范
+
+- Router 统一命名为 `router`。
+- Service 类统一命名为 `XxxService`。
+- Repository 类统一命名为 `XxxRepository`。
+- ORM 类统一命名为 `XxxModel`。
+- Schema 命名按语义区分：`CreateXxxRequest`、`UpdateXxxRequest`、`XxxData`、`XxxResponseData`。
+
+### 3.5 接口与错误处理规范
+
+- `api.py` 负责把领域异常转换成 HTTP 状态码。
+- `service.py` 只抛业务异常，例如 `ValueError`、`RuntimeError`，不直接抛 `HTTPException`。
+- `repo.py` 负责把底层数据库异常包装成稳定的持久化错误，不向上暴露驱动细节。
+- 所有对外接口优先返回稳定的 schema，而不是裸字典。
+- 新接口默认补充输入校验、边界校验和错误语义，不允许"成功/失败全靠 message 猜"。
+
+### 3.6 配置与日志规范
+
+- 所有环境变量统一从 `core/config.py` 读取，不允许在业务代码里直接 `os.getenv(...)`。
+- 日志初始化统一放在 `core/logger.py`。
+- 业务代码获取 logger 统一使用 `logging.getLogger(__name__)`。
+- 日志里可以记录 provider 状态、task_id、session_id 等追踪信息，但不能输出密钥、token、完整 AK/SK。
+
+### 3.7 数据访问规范
+
+- 简单单表 CRUD 由 `repo.py` 负责。
+- 查询条件、排序、分页规则必须在 repo 层显式实现，不把 SQL 片段拼到 API 层。
+- 如果后续同一模块同时存在 ORM 和原生 SQL，仍然要求都由 `repo.py` 统一收口。
+
+### 3.9 新增模块准入要求
+
+新增业务模块时，默认至少包含以下内容：
+
+- 目录结构遵守 `api/service/repo/model/schema/README`。
+- 在 `README.md` 中写清楚模块职责、核心流程、依赖外部服务、主要数据表。
+- 在 `main.py` 中完成 router 注册和服务装配。
