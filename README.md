@@ -13,7 +13,7 @@
 LSL 「口语录音的智能复盘工具」。
 
 输入：
-- 已有口语录音文件（mp3 / wav / m4a）
+- 上传语录音文件（mp3 / wav / m4a）
 
 输出：
 - 可读的文本(转写的)
@@ -63,14 +63,23 @@ LSL 「口语录音的智能复盘工具」。
 
 1. 配置 `.env`
 
+
 ```env
+基本配置
+DATABASE_URL=postgresql://<user>:<password>@<host>:5432/lsl
+
+文件存储
 STORAGE_PROVIDER=oss
 OSS_REGION=cn-hangzhou
 OSS_BUCKET=your-real-bucket
 OSS_ACCESS_KEY_ID=your-real-ak
 OSS_ACCESS_KEY_SECRET='your-real-sk'
 ASSET_BASE_URL=https://your-real-bucket.oss-cn-hangzhou.aliyuncs.com
-DATABASE_URL=postgresql://<user>:<password>@<host>:5432/lsl
+
+# ASR(Automatic Speech Recognition)自动语音识别
+ASR_PROVIDER='volc'
+VOLC_APP_KEY='1805848308'
+VOLC_ACCESS_KEY='Bxge8EJzR7jVBuqxG3G_bZGTVMlq40AQ'
 ```
 
 2. 启动服务
@@ -116,7 +125,7 @@ backend/
 │   │   ├─ model.py
 │   │   ├─ schema.py
 │   │   └─ README.md
-│
+│   |- ...
 └─ tests/
 ```
 每个功能模块相对独立，可以单独开发
@@ -143,9 +152,9 @@ backend/
 
 补充约束：
 
-- `api.py` 只能依赖当前模块的 `service.py`、`schema.py`，以及少量框架依赖。
+- `api.py` 返回统一使用 ApiResponse[XxxData] 返回 json 数据,其中XxxData 是Pydantic. 只能依赖当前模块的 `service.py`、`schema.py`，以及少量框架依赖。
 - `service.py` 可以依赖当前模块的 `repo.py`，也可以依赖别的模块的 `Service`，但不能跨模块直接依赖别人的 `Repo`。
-- `repo.py` 只依赖 `model.py`、数据库驱动、SQLAlchemy，不依赖 `api.py`。
+- `repo.py` 只依赖 `model.py`、数据库驱动、SQLAlchemy，返回ORM Model, 不要返回 dict[str, Any]。
 - `core/` 不能反向依赖 `modules/`。
 - 外部厂商适配代码放在所属模块内部，例如 `asset/providers.py`、`task/providers.py`，不要散落到全局。
 
