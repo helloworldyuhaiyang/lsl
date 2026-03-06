@@ -156,7 +156,7 @@ backend/
 - `service.py` 可以依赖当前模块的 `repo.py`，也可以依赖别的模块的 `Service`，但不能跨模块直接依赖别人的 `Repo`。
 - `repo.py` 只依赖 `model.py`、数据库驱动、SQLAlchemy，返回ORM Model, 不要返回 dict[str, Any]。
 - `core/` 不能反向依赖 `modules/`。
-- 外部厂商适配代码放在所属模块内部，例如 `asset/providers.py`、`task/providers.py`，不要散落到全局。
+- 外部厂商适配代码放在所属模块内部，例如 `asset/providers.py`、`task/asr_provider.py` 与 `task/asr/*.py`，不要散落到全局。
 
 ### 3.3 模块边界
 

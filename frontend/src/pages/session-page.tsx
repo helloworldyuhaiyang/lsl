@@ -30,7 +30,6 @@ export function SessionPage() {
   const [session, setSession] = useState<SessionSummary | null>(null)
   const [transcript, setTranscript] = useState<TaskTranscriptData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [isRefreshing, setIsRefreshing] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [activeSeq, setActiveSeq] = useState<number | null>(null)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -40,46 +39,39 @@ export function SessionPage() {
 
   const isCompleted = session?.status === 'completed'
 
-  const loadSession = useCallback(
-    async (options: { refresh?: boolean; showLoading?: boolean; showRefreshing?: boolean } = {}) => {
-      if (!sessionId) {
-        setErrorMessage('Missing session id.')
-        setIsLoading(false)
-        return
-      }
+  const loadSession = useCallback(async (options: { showLoading?: boolean } = {}) => {
+    if (!sessionId) {
+      setErrorMessage('Missing session id.')
+      setIsLoading(false)
+      return
+    }
 
-      const { refresh = true, showLoading = true, showRefreshing = false } = options
+    const { showLoading = true } = options
 
-      if (showLoading) {
-        setIsLoading(true)
-      }
-      if (showRefreshing) {
-        setIsRefreshing(true)
-      }
+    if (showLoading) {
+      setIsLoading(true)
+    }
 
-      try {
-        const detail = await getSessionSummary(sessionId, refresh)
-        setSession(detail)
-        setErrorMessage(null)
+    try {
+      const detail = await getSessionSummary(sessionId)
+      setSession(detail)
+      setErrorMessage(null)
 
-        if (detail.status === 'completed') {
-          const transcriptData = await getSessionTranscript(sessionId)
-          setTranscript(transcriptData)
-        } else {
-          setTranscript(null)
-        }
-      } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : 'Failed to load session.')
-      } finally {
-        setIsLoading(false)
-        setIsRefreshing(false)
+      if (detail.status === 'completed') {
+        const transcriptData = await getSessionTranscript(sessionId)
+        setTranscript(transcriptData)
+      } else {
+        setTranscript(null)
       }
-    },
-    [sessionId],
-  )
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to load session.')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [sessionId])
 
   useEffect(() => {
-    void loadSession({ refresh: true, showLoading: true })
+    void loadSession()
   }, [loadSession])
 
   useEffect(() => {
@@ -88,7 +80,7 @@ export function SessionPage() {
     }
 
     const timer = window.setInterval(() => {
-      void loadSession({ refresh: true, showLoading: false })
+      void loadSession({ showLoading: false })
     }, 3000)
 
     return () => window.clearInterval(timer)
@@ -271,17 +263,9 @@ export function SessionPage() {
           ) : (
             <p className="text-sm text-slate-600">Audio URL is not available for this session yet.</p>
           )}
-
-          {isRefreshing ? <p className="text-xs text-slate-500">Refreshing status...</p> : null}
           {errorMessage ? (
             <div className="rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{errorMessage}</div>
           ) : null}
-
-          <div>
-            <Button type="button" variant="outline" size="sm" onClick={() => void loadSession({ showRefreshing: true })}>
-              Refresh Session
-            </Button>
-          </div>
         </CardContent>
       </Card>
 
@@ -336,9 +320,11 @@ export function SessionPage() {
                         tabIndex={0}
                         role="button"
                       >
-                        <td className="py-3 pr-3 text-xs uppercase tracking-wide text-slate-500">
-                          {(row.speaker || 'speaker').replace('_', ' ')}
-                          <p className="mt-1 text-[11px] text-slate-400">{formatDuration(row.start_time / 1000)}</p>
+                        <td className="py-3 pr-3 text-xs text-slate-500">
+                          <div className="flex items-center gap-2 whitespace-nowrap">
+                            <span className="uppercase tracking-wide">{(row.speaker || 'speaker').replace('_', ' ')}</span>
+                            <span className="text-[11px] text-slate-400">{formatDuration(row.start_time / 1000)}</span>
+                          </div>
                         </td>
                         <td className="py-3 pr-3 text-slate-800">{row.text}</td>
                       </tr>

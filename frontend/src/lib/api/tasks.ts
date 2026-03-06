@@ -43,13 +43,6 @@ export async function getTask(taskId: string, { refresh = true }: GetTaskParams 
   return response.data
 }
 
-export async function refreshTask(taskId: string): Promise<TaskItem> {
-  const response = await requestJson<ApiResponse<TaskItem>>(`/tasks/${taskId}/refresh`, {
-    method: 'POST',
-  })
-  return response.data
-}
-
 export async function listTasks({
   limit = 20,
   status,

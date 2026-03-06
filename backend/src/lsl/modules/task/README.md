@@ -20,7 +20,11 @@ task/
 |- model.py
 |- schema.py
 |- types.py
-|- providers.py
+|- asr_provider.py
+|- asr/
+|  |- __init__.py
+|  |- fake_asr.py
+|  `- volc_asr.py
 |- result.json
 ```
 

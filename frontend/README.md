@@ -63,8 +63,8 @@ npm run dev
 
 ### Session (Transcript)
 
-- 音频播放器（快退/快进 + 播放暂停）
-- 转写表格（Speaker + Conversation）
+- 音频播放器（快退/快进 + 播放暂停，处理中自动轮询状态）
+- 转写表格（Speaker + Time / Conversation）
 - 点击句子可跳播
 - `Space` 切换播放/暂停
 
@@ -91,7 +91,6 @@ npm run dev
 - `POST /tasks`
 - `GET /tasks`
 - `GET /tasks/{task_id}`
-- `POST /tasks/{task_id}/refresh`
 - `GET /tasks/{task_id}/transcript`
 
 返回体统一按：`{ code, message, data }`
