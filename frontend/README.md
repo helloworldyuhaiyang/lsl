@@ -70,10 +70,11 @@ npm run dev
 
 ### Revise
 
-- 句子卡片浏览（Original / Suggested / Diff / Explanation）
-- `Previous` / `Next` 与左右方向键切换
-- `Play Original`（源音频切片）
-- `Play Improved`（浏览器 TTS 回放）
+- 多句卡片布局（大屏多列展示）
+- Suggested 文本可直接编辑
+- 分数标签（绿 / 黄 / 红）直接显示句子质量，点击可展开问题详情
+- `Original`（源音频切片）+ `Synthesize`（浏览器 TTS 预听）
+- `Expression Cue` 提示合成语境（情绪 / 语气 / 场景）
 
 ### Listening
 

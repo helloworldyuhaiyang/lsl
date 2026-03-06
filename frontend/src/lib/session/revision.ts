@@ -8,9 +8,17 @@ export interface RevisionItem {
   endTimeMs: number
   original: string
   suggested: string
-  removedTokens: string[]
-  addedTokens: string[]
+  cue: string
+  score: number
+  issues: string[]
   explanations: string[]
+}
+
+export interface ExpressionCue {
+  emoji: string
+  emotion: string
+  tone: string
+  scene: string
 }
 
 function ensureSentencePunctuation(text: string): string {
@@ -31,7 +39,76 @@ function capitalizeFirst(text: string): string {
   return `${trimmed[0].toUpperCase()}${trimmed.slice(1)}`
 }
 
-function suggestSentence(original: string): { suggested: string; explanations: string[] } {
+function normalizeSpeaker(speaker: string | null | undefined): string {
+  const normalized = (speaker || 'Speaker').replace(/_/g, ' ').trim()
+
+  if (/^\d+$/.test(normalized)) {
+    return `User ${normalized}`
+  }
+
+  return normalized
+    .split(/\s+/)
+    .map((part) => `${part[0]?.toUpperCase() ?? ''}${part.slice(1)}`)
+    .join(' ')
+}
+
+function inferIssues(explanations: string[]): string[] {
+  const issues = new Set<string>()
+
+  explanations.forEach((line) => {
+    if (/past tense|adjective form/i.test(line)) {
+      issues.add('语法错误')
+    }
+
+    if (/natural phrasing|expression clarity/i.test(line)) {
+      issues.add('不够自然')
+    }
+
+    if (/non-standard word/i.test(line)) {
+      issues.add('用词错误')
+    }
+
+    if (/Capitalized sentence start/i.test(line)) {
+      issues.add('大小写问题')
+    }
+
+    if (/ending punctuation/i.test(line)) {
+      issues.add('标点问题')
+    }
+  })
+
+  if (issues.size === 0) {
+    issues.add('表达基本自然')
+  }
+
+  return Array.from(issues)
+}
+
+export function scoreRevisionIssues(issues: string[]): number {
+  let score = 96
+
+  issues.forEach((issue) => {
+    if (issue === '语法错误') {
+      score -= 24
+    } else if (issue === '用词错误') {
+      score -= 18
+    } else if (issue === '不够自然') {
+      score -= 14
+    } else if (issue === '标点问题') {
+      score -= 8
+    } else if (issue === '大小写问题') {
+      score -= 6
+    }
+  })
+
+  if (issues.includes('表达基本自然')) {
+    score = Math.max(score, 92)
+  }
+
+  return Math.max(35, Math.min(score, 99))
+}
+
+function suggestSentence(original: string): { suggested: string; explanations: string[]; issues: string[] } {
   let next = original.trim()
   const explanations: string[] = []
 
@@ -65,84 +142,115 @@ function suggestSentence(original: string): { suggested: string; explanations: s
   return {
     suggested: next,
     explanations: explanations.length > 0 ? explanations : ['No strong rewrite needed; kept sentence natural and clear.'],
+    issues: inferIssues(explanations),
   }
 }
 
-function tokenize(text: string): string[] {
-  return text
-    .trim()
-    .split(/\s+/)
-    .filter((token) => token.length > 0)
+export function inferExpressionCue(text: string): ExpressionCue {
+  const normalized = text.trim().toLowerCase()
+  const hasQuestion = /[?？]/.test(text)
+  const hasExcitement = /[!！]/.test(text)
+
+  if (!normalized) {
+    return {
+      emoji: '🙂',
+      emotion: '自然的',
+      tone: '平稳的',
+      scene: '日常对话',
+    }
+  }
+
+  if (/\b(thank|thanks|appreciate)\b/.test(normalized)) {
+    return {
+      emoji: '🙏',
+      emotion: '真诚的',
+      tone: '礼貌的',
+      scene: '表达感谢',
+    }
+  }
+
+  if (/\b(sorry|apologize|excuse me)\b/.test(normalized)) {
+    return {
+      emoji: '😅',
+      emotion: '抱歉的',
+      tone: '柔和的',
+      scene: '修复关系',
+    }
+  }
+
+  if (/\b(hello|hi|good morning|good afternoon|good evening)\b/.test(normalized)) {
+    return {
+      emoji: '🙂',
+      emotion: '友好的',
+      tone: '轻松的',
+      scene: '打招呼',
+    }
+  }
+
+  if (/\b(weekend|friends?|park|beach|trip|travel|party|holiday|vacation)\b/.test(normalized)) {
+    return {
+      emoji: '😄',
+      emotion: '有点兴奋的',
+      tone: '肯定的',
+      scene: '分享经历',
+    }
+  }
+
+  if (hasQuestion) {
+    return {
+      emoji: '🤔',
+      emotion: '关心的',
+      tone: '好奇的',
+      scene: '日常对话',
+    }
+  }
+
+  if (/\b(think|believe|guess|probably|maybe)\b/.test(normalized)) {
+    return {
+      emoji: '🧐',
+      emotion: '思考中的',
+      tone: '解释性的',
+      scene: '表达观点',
+    }
+  }
+
+  if (hasExcitement) {
+    return {
+      emoji: '😄',
+      emotion: '积极的',
+      tone: '强调的',
+      scene: '情绪表达',
+    }
+  }
+
+  return {
+    emoji: '🙂',
+    emotion: '自然的',
+    tone: '平稳的',
+    scene: '日常对话',
+  }
 }
 
-function computeDiff(originalText: string, suggestedText: string): { removedTokens: string[]; addedTokens: string[] } {
-  const original = tokenize(originalText)
-  const suggested = tokenize(suggestedText)
-
-  const m = original.length
-  const n = suggested.length
-  const dp: number[][] = Array.from({ length: m + 1 }, () => Array.from({ length: n + 1 }, () => 0))
-
-  for (let i = m - 1; i >= 0; i -= 1) {
-    for (let j = n - 1; j >= 0; j -= 1) {
-      if (original[i] === suggested[j]) {
-        dp[i][j] = dp[i + 1][j + 1] + 1
-      } else {
-        dp[i][j] = Math.max(dp[i + 1][j], dp[i][j + 1])
-      }
-    }
-  }
-
-  const removedTokens: string[] = []
-  const addedTokens: string[] = []
-
-  let i = 0
-  let j = 0
-
-  while (i < m && j < n) {
-    if (original[i] === suggested[j]) {
-      i += 1
-      j += 1
-      continue
-    }
-
-    if (dp[i + 1][j] >= dp[i][j + 1]) {
-      removedTokens.push(original[i])
-      i += 1
-    } else {
-      addedTokens.push(suggested[j])
-      j += 1
-    }
-  }
-
-  while (i < m) {
-    removedTokens.push(original[i])
-    i += 1
-  }
-
-  while (j < n) {
-    addedTokens.push(suggested[j])
-    j += 1
-  }
-
-  return { removedTokens, addedTokens }
+export function formatExpressionCue(cue: ExpressionCue): string {
+  return `[${cue.emoji} ${cue.emotion} / ${cue.tone} / ${cue.scene}]`
 }
 
 export function buildRevisionItems(utterances: TaskTranscriptUtterance[]): RevisionItem[] {
   return utterances.map((item) => {
     const suggestion = suggestSentence(item.text)
-    const diff = computeDiff(item.text, suggestion.suggested)
+    const cue = formatExpressionCue(inferExpressionCue(suggestion.suggested))
 
     return {
       id: `${item.seq}-${item.start_time}`,
       seq: item.seq,
-      speaker: (item.speaker || 'Speaker').replace('_', ' '),
+      speaker: normalizeSpeaker(item.speaker),
       startTimeMs: item.start_time,
       endTimeMs: item.end_time,
       original: item.text,
       suggested: suggestion.suggested,
-      removedTokens: diff.removedTokens,
-      addedTokens: diff.addedTokens,
+      cue,
+      score: scoreRevisionIssues(suggestion.issues),
+      issues: suggestion.issues,
       explanations: suggestion.explanations,
     }
   })
