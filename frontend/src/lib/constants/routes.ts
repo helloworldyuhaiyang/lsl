@@ -9,7 +9,6 @@ export const ROUTES = {
 
 export const NAV_ITEMS = [
   { label: 'Dashboard', href: ROUTES.dashboard },
-  { label: 'Upload', href: ROUTES.upload },
 ] as const
 
 export function getSessionPath(sessionId: string): string {

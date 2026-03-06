@@ -10,6 +10,7 @@ import { getSessionPath, ROUTES } from '@/lib/constants/routes'
 import { upsertSessionMetadata } from '@/lib/session/session-storage'
 import { completeUploadedAsset, prepareUploadUrl, uploadToPresignedUrl } from '@/lib/api/upload'
 import { createTask } from '@/lib/api/tasks'
+import { createSession } from '@/lib/api/sessions'
 import { formatBytes, formatDuration } from '@/lib/utils/format'
 import type { UploadUrlResponse } from '@/types/api'
 
@@ -150,6 +151,15 @@ export function UploadPage() {
         objectKey: uploaded.object_key,
         audioUrl: uploaded.asset_url,
         language: 'en-US',
+      })
+
+      await createSession({
+        title: sessionName.trim(),
+        description: sessionDescription.trim() || undefined,
+        language: 'en-US',
+        fType: 1,
+        assetObjectKey: uploaded.object_key,
+        currentTaskId: task.task_id,
       })
 
       upsertSessionMetadata(task.task_id, {

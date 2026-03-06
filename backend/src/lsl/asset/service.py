@@ -130,6 +130,38 @@ class AssetService:
             items.append(item)
         return items
 
+    def get_asset_by_object_key(self, *, object_key: str) -> dict[str, Any]:
+        if self._repository is None:
+            raise RuntimeError("Asset repository is not configured. Set DATABASE_URL to enable persistence.")
+
+        normalized = object_key.strip().lstrip("/")
+        if not normalized:
+            raise ValueError("object_key is required")
+
+        row = self._repository.get_asset_by_object_key(object_key=normalized)
+        if row is None:
+            raise ValueError("asset not found")
+
+        item = dict(row)
+        item["asset_url"] = self.build_asset_url(item["object_key"])
+        return item
+
+    def list_assets_by_object_keys(self, *, object_keys: list[str]) -> dict[str, dict[str, Any]]:
+        if self._repository is None:
+            raise RuntimeError("Asset repository is not configured. Set DATABASE_URL to enable persistence.")
+
+        normalized = sorted({item.strip().lstrip("/") for item in object_keys if item and item.strip()})
+        if not normalized:
+            return {}
+
+        rows = self._repository.list_assets_by_object_keys(object_keys=normalized)
+        result: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            item = dict(row)
+            item["asset_url"] = self.build_asset_url(item["object_key"])
+            result[str(item["object_key"])] = item
+        return result
+
     @staticmethod
     def _parse_category_and_entity(object_key: str) -> tuple[str, str]:
         parts = [p for p in object_key.strip("/").split("/") if p]

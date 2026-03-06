@@ -37,11 +37,11 @@ npm run dev
 
 ## Current Data Strategy
 
-后端尚未提供独立 `sessions` 资源，前端当前采用兼容映射：
+当前数据策略：
 
-- `sessionId = task_id`
-- 标题/描述/时长等会话元数据保存在浏览器 `localStorage`
-- Session 列表通过 `tasks + assets` 聚合生成
+- Dashboard 列表：使用后端 `GET /sessions` 真实接口
+- Session/Revise/Listening 页面：仍基于 `tasks(+transcript)` 兼容读取
+- 上传页标题/描述仍写入浏览器 `localStorage`（等待上传流程接入 `POST /sessions`）
 
 本地存储 key：`lsl.session-metadata.v1`
 

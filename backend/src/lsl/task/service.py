@@ -243,6 +243,25 @@ class TaskService:
         )
         return [TaskData.from_row(item) for item in rows]
 
+    def list_tasks_by_ids(self, *, task_ids: list[str], auto_refresh: bool = False) -> dict[str, TaskData]:
+        normalized = sorted({item.strip() for item in task_ids if item and item.strip()})
+        if not normalized:
+            return {}
+
+        rows = self._repository.list_tasks_by_ids(task_ids=normalized)
+        items = {str(item["task_id"]): TaskData.from_row(item) for item in rows}
+
+        if not auto_refresh:
+            return items
+
+        refreshed: dict[str, TaskData] = {}
+        for task_id, item in items.items():
+            if item.status == int(TaskStatus.TRANSCRIBING):
+                refreshed[task_id] = self.get_task(task_id=task_id, auto_refresh=True)
+            else:
+                refreshed[task_id] = item
+        return refreshed
+
     def get_transcript(self, *, task_id: str, include_raw: bool = False) -> TaskTranscriptData:
         task_row = self._repository.get_task_by_id(task_id)
         if task_row is None:

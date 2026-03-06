@@ -5,9 +5,11 @@ import { PageTitle } from '@/components/common/page-title'
 import { StatusBadge } from '@/components/common/status-badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { listSessions } from '@/lib/api/sessions'
 import { getSessionPath, ROUTES } from '@/lib/constants/routes'
-import { listSessionSummaries, type SessionSummary } from '@/lib/session/sessions'
 import { formatMonthDay } from '@/lib/utils/format'
+import type { SessionItem } from '@/types/api'
+import type { TaskStatus } from '@/types/domain'
 
 function formatDurationMinutes(durationSec: number | null): string {
   if (durationSec === null || durationSec <= 0) {
@@ -19,7 +21,7 @@ function formatDurationMinutes(durationSec: number | null): string {
 }
 
 export function DashboardPage() {
-  const [sessions, setSessions] = useState<SessionSummary[]>([])
+  const [sessions, setSessions] = useState<SessionItem[]>([])
   const [search, setSearch] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -33,7 +35,7 @@ export function DashboardPage() {
         setIsLoading(true)
       }
 
-      const next = await listSessionSummaries({ limit: 200 })
+      const next = await listSessions({ limit: 100 })
       setSessions(next)
       setErrorMessage(null)
     } catch (error) {
@@ -54,11 +56,37 @@ export function DashboardPage() {
       return sessions
     }
 
-    return sessions.filter((session) => {
-      const target = [session.title, session.description, session.fileName, session.objectKey].join(' ').toLowerCase()
+    return sessions.filter((item) => {
+      const target = [
+        item.session.title,
+        item.session.description,
+        item.asset?.filename,
+        item.asset?.object_key,
+        item.session.asset_object_key,
+      ]
+        .join(' ')
+        .toLowerCase()
       return target.includes(normalized)
     })
   }, [search, sessions])
+
+  function resolveStatus(item: SessionItem): TaskStatus {
+    const name = item.task?.status_name
+    if (name === 'uploaded' || name === 'transcribing' || name === 'analyzing' || name === 'completed' || name === 'failed') {
+      return name
+    }
+    return 'uploaded'
+  }
+
+  function resolveDurationSec(item: SessionItem): number | null {
+    if (typeof item.task?.duration_sec === 'number') {
+      return item.task.duration_sec
+    }
+    if (typeof item.task?.duration_ms === 'number') {
+      return item.task.duration_ms / 1000
+    }
+    return null
+  }
 
   return (
     <section className="space-y-6">
@@ -111,20 +139,20 @@ export function DashboardPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filtered.map((session) => (
-                        <tr key={session.sessionId} className="border-b border-slate-100 align-middle last:border-none">
+                      {filtered.map((item) => (
+                        <tr key={item.session.session_id} className="border-b border-slate-100 align-middle last:border-none">
                           <td className="py-3 pr-3">
-                            <p className="font-medium text-slate-900">{session.title}</p>
-                            <p className="truncate text-xs text-slate-500">{session.fileName}</p>
+                            <p className="font-medium text-slate-900">{item.session.title}</p>
+                            <p className="truncate text-xs text-slate-500">{item.asset?.filename ?? '--'}</p>
                           </td>
-                          <td className="py-3 pr-3 text-slate-700">{formatDurationMinutes(session.durationSec)}</td>
+                          <td className="py-3 pr-3 text-slate-700">{formatDurationMinutes(resolveDurationSec(item))}</td>
                           <td className="py-3 pr-3">
-                            <StatusBadge status={session.status} />
+                            <StatusBadge status={resolveStatus(item)} />
                           </td>
-                          <td className="py-3 pr-3 text-slate-700">{formatMonthDay(session.createdAt)}</td>
+                          <td className="py-3 pr-3 text-slate-700">{formatMonthDay(item.session.created_at)}</td>
                           <td className="py-3 text-right">
                             <Button asChild size="sm" variant="outline">
-                              <Link to={getSessionPath(session.sessionId)}>Open</Link>
+                              <Link to={getSessionPath(item.task?.task_id ?? item.session.session_id)}>Open</Link>
                             </Button>
                           </td>
                         </tr>
@@ -134,16 +162,16 @@ export function DashboardPage() {
                 </div>
 
                 <ul className="space-y-3 md:hidden">
-                  {filtered.map((session) => (
-                    <li key={session.sessionId} className="rounded-lg border border-slate-200 p-3">
-                      <p className="text-sm font-medium text-slate-900">{session.title}</p>
+                  {filtered.map((item) => (
+                    <li key={item.session.session_id} className="rounded-lg border border-slate-200 p-3">
+                      <p className="text-sm font-medium text-slate-900">{item.session.title}</p>
                       <p className="mt-1 text-xs text-slate-500">
-                        {formatDurationMinutes(session.durationSec)} · {formatMonthDay(session.createdAt)}
+                        {formatDurationMinutes(resolveDurationSec(item))} · {formatMonthDay(item.session.created_at)}
                       </p>
                       <div className="mt-3 flex items-center justify-between">
-                        <StatusBadge status={session.status} />
+                        <StatusBadge status={resolveStatus(item)} />
                         <Button asChild size="sm" variant="outline">
-                          <Link to={getSessionPath(session.sessionId)}>Open</Link>
+                          <Link to={getSessionPath(item.task?.task_id ?? item.session.session_id)}>Open</Link>
                         </Button>
                       </div>
                     </li>
@@ -153,9 +181,6 @@ export function DashboardPage() {
             ) : (
               <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
                 <p className="text-sm text-slate-600">No session found.</p>
-                <Button asChild className="mt-3" size="sm">
-                  <Link to={ROUTES.upload}>Upload your first session</Link>
-                </Button>
               </div>
             )
           ) : null}

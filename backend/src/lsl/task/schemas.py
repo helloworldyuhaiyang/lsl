@@ -34,6 +34,8 @@ class TaskData(BaseModel):
     task_id: str
     object_key: str
     audio_url: str | None = None
+    duration_ms: int | None = None
+    duration_sec: float | None = None
     status: int
     status_name: str
     language: str | None = None
@@ -46,10 +48,14 @@ class TaskData(BaseModel):
     @classmethod
     def from_row(cls, row: dict[str, Any]) -> TaskData:
         status_code = int(row["status"])
+        duration_ms_raw = row.get("duration_ms")
+        duration_ms = int(duration_ms_raw) if duration_ms_raw is not None else None
         return cls(
             task_id=str(row["task_id"]),
             object_key=row["object_key"],
             audio_url=row.get("audio_url"),
+            duration_ms=duration_ms,
+            duration_sec=(duration_ms / 1000) if duration_ms is not None else None,
             status=status_code,
             status_name=status_code_to_name(status_code),
             language=row.get("language"),

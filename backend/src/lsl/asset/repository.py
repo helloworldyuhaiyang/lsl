@@ -91,7 +91,7 @@ class AssetRepository:
         if clauses:
             where_sql = "WHERE " + " AND ".join(clauses)
 
-        sql = f"""
+        query_sql = f"""
             SELECT
                 object_key,
                 category,
@@ -112,8 +112,62 @@ class AssetRepository:
         try:
             with self._pool.connection() as conn:
                 with conn.cursor(row_factory=dict_row) as cursor:
-                    cursor.execute(sql, tuple(params))
+                    cursor.execute(query_sql, tuple(params))
                     rows = cursor.fetchall()
                     return [dict(row) for row in rows]
         except psycopg.Error as exc:  # pragma: no cover
             raise RuntimeError(f"Failed to list asset records: {exc}") from exc
+
+    def get_asset_by_object_key(self, *, object_key: str) -> dict[str, Any] | None:
+        sql = """
+            SELECT
+                object_key,
+                category,
+                entity_id,
+                filename,
+                content_type,
+                file_size,
+                etag,
+                upload_status,
+                created_at
+            FROM public.assets
+            WHERE object_key = %s
+            LIMIT 1
+        """
+
+        try:
+            with self._pool.connection() as conn:
+                with conn.cursor(row_factory=dict_row) as cursor:
+                    cursor.execute(sql, (object_key,))
+                    row = cursor.fetchone()
+                    return dict(row) if row else None
+        except psycopg.Error as exc:  # pragma: no cover
+            raise RuntimeError(f"Failed to query asset by object_key: {exc}") from exc
+
+    def list_assets_by_object_keys(self, *, object_keys: list[str]) -> list[dict[str, Any]]:
+        if not object_keys:
+            return []
+
+        sql = """
+            SELECT
+                object_key,
+                category,
+                entity_id,
+                filename,
+                content_type,
+                file_size,
+                etag,
+                upload_status,
+                created_at
+            FROM public.assets
+            WHERE object_key = ANY(%s)
+        """
+
+        try:
+            with self._pool.connection() as conn:
+                with conn.cursor(row_factory=dict_row) as cursor:
+                    cursor.execute(sql, (object_keys,))
+                    rows = cursor.fetchall()
+                    return [dict(row) for row in rows]
+        except psycopg.Error as exc:  # pragma: no cover
+            raise RuntimeError(f"Failed to query assets by object_keys: {exc}") from exc

@@ -52,6 +52,7 @@ class TaskRepository:
                 task_id,
                 object_key,
                 audio_url,
+                x_duration_ms AS duration_ms,
                 x_status AS status,
                 x_language AS language,
                 x_provider AS provider,
@@ -86,6 +87,7 @@ class TaskRepository:
                 task_id,
                 object_key,
                 audio_url,
+                x_duration_ms AS duration_ms,
                 x_status AS status,
                 x_language AS language,
                 x_provider AS provider,
@@ -113,6 +115,35 @@ class TaskRepository:
                     return dict(row) if row else None
         except psycopg.Error as exc:  # pragma: no cover
             raise RuntimeError(f"Failed to query task by object_key: {exc}") from exc
+
+    def list_tasks_by_ids(self, *, task_ids: list[str]) -> list[dict[str, Any]]:
+        if not task_ids:
+            return []
+
+        query = sql.SQL("""
+            SELECT
+                task_id,
+                object_key,
+                audio_url,
+                x_duration_ms AS duration_ms,
+                x_status AS status,
+                x_language AS language,
+                x_provider AS provider,
+                error_code,
+                error_message,
+                created_at,
+                updated_at
+            FROM public.tasks
+            WHERE task_id::text = ANY(%s)
+        """ )
+        try:
+            with self._pool.connection() as conn:
+                with conn.cursor(row_factory=dict_row) as cursor:
+                    cursor.execute(query, (task_ids,))
+                    rows = cursor.fetchall()
+                    return [dict(row) for row in rows]
+        except psycopg.Error as exc:  # pragma: no cover
+            raise RuntimeError(f"Failed to query tasks by ids: {exc}") from exc
 
     def list_tasks(
         self,
@@ -145,6 +176,7 @@ class TaskRepository:
                 task_id,
                 object_key,
                 audio_url,
+                x_duration_ms AS duration_ms,
                 x_status AS status,
                 x_language AS language,
                 x_provider AS provider,
@@ -185,6 +217,7 @@ class TaskRepository:
                 x_provider_request_id = %s,
                 x_provider_resource_id = %s,
                 x_tt_logid = %s,
+                x_duration_ms = NULL,
                 x_provider_status_code = NULL,
                 x_provider_message = NULL,
                 error_code = NULL,
@@ -266,6 +299,7 @@ class TaskRepository:
                 x_provider_status_code = %s,
                 x_provider_message = %s,
                 x_tt_logid = COALESCE(%s, x_tt_logid),
+                x_duration_ms = NULL,
                 last_polled_at = NOW(),
                 next_poll_at = NULL
             WHERE task_id = %s
@@ -296,6 +330,7 @@ class TaskRepository:
                 x_provider_resource_id = NULL,
                 x_provider_status_code = NULL,
                 x_provider_message = NULL,
+                x_duration_ms = NULL,
                 error_code = NULL,
                 error_message = NULL,
                 poll_count = 0,
@@ -355,6 +390,7 @@ class TaskRepository:
             UPDATE public.tasks
             SET
                 x_status = 3,
+                x_duration_ms = %s,
                 x_provider_status_code = %s,
                 x_provider_message = %s,
                 x_tt_logid = COALESCE(%s, x_tt_logid),
@@ -395,6 +431,7 @@ class TaskRepository:
                         cursor.execute(
                             update_task_sql,
                             (
+                                duration_ms,
                                 provider_status_code,
                                 provider_message,
                                 x_tt_logid,

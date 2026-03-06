@@ -48,6 +48,8 @@ export interface TaskItem {
   task_id: string
   object_key: string
   audio_url?: string | null
+  duration_ms?: number | null
+  duration_sec?: number | null
   status: number
   status_name: string
   language?: string | null
@@ -66,6 +68,37 @@ export interface CreateTaskRequest {
 
 export interface TaskListResponse {
   items: TaskItem[]
+}
+
+export interface SessionEntity {
+  session_id: string
+  title: string
+  description?: string | null
+  language?: string | null
+  f_type: number
+  asset_object_key?: string | null
+  current_task_id?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SessionItem {
+  session: SessionEntity
+  asset?: AssetListItem | null
+  task?: TaskItem | null
+}
+
+export interface SessionListResponse {
+  items: SessionItem[]
+}
+
+export interface CreateSessionRequest {
+  title: string
+  description?: string
+  language?: string
+  fType?: 1 | 2
+  assetObjectKey?: string
+  currentTaskId?: string
 }
 
 export interface TaskTranscriptUtterance {

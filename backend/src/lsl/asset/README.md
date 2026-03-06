@@ -77,31 +77,38 @@ DB_POOL_TIMEOUT=30
 连接到 `lsl` 数据库后执行：
 
 ```sql
+-- 资产主表：保存 object_key 与文件元数据，不保存完整访问域名
 CREATE TABLE IF NOT EXISTS public.assets (
-    id                BIGSERIAL PRIMARY KEY,
-    object_key        TEXT NOT NULL UNIQUE,
-    category          VARCHAR(64) NOT NULL,
-    entity_id         VARCHAR(128) NOT NULL,
-    filename          VARCHAR(255),
-    content_type      VARCHAR(128),
-    file_size         BIGINT CHECK (file_size IS NULL OR file_size >= 0),
-    etag              VARCHAR(128),
-    storage_provider  VARCHAR(16) NOT NULL DEFAULT 'oss',
-    upload_status     SMALLINT NOT NULL DEFAULT 0,
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    id                BIGSERIAL PRIMARY KEY,                      -- 内部自增主键
+    object_key        TEXT NOT NULL UNIQUE,                       -- 对象存储路径（业务唯一键）
+    category          VARCHAR(64) NOT NULL,                       -- 业务分类（conversation/listening 等）
+    entity_id         VARCHAR(128) NOT NULL,                      -- 业务实体 ID（如 user/session）
+    filename          VARCHAR(255),                               -- 原始文件名
+    content_type      VARCHAR(128),                               -- MIME 类型
+    file_size         BIGINT CHECK (file_size IS NULL OR file_size >= 0), -- 文件大小（字节）
+    etag              VARCHAR(128),                               -- 对象存储返回的 ETag
+    storage_provider  VARCHAR(16) NOT NULL DEFAULT 'oss',         -- 存储后端类型
+    upload_status     SMALLINT NOT NULL DEFAULT 0,                -- 处理状态码
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),         -- 创建时间
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),         -- 更新时间
+
+    -- 限制可用的存储后端
     CONSTRAINT ck_assets_storage_provider
         CHECK (storage_provider IN ('oss', 's3', 'gcs', 'fake')),
+    -- 限制状态码范围
     CONSTRAINT ck_assets_upload_status
         CHECK (upload_status IN (0,1,2,3,4))
 );
 
+-- 按业务分类/实体查询最近上传文件
 CREATE INDEX IF NOT EXISTS idx_assets_category_entity_created_at
     ON public.assets (category, entity_id, created_at DESC);
 
+-- 按创建时间倒序分页
 CREATE INDEX IF NOT EXISTS idx_assets_created_at
     ON public.assets (created_at DESC);
 
+-- 统一更新时间函数：每次 UPDATE 自动刷新 updated_at
 CREATE OR REPLACE FUNCTION public.set_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -110,8 +117,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- 幂等创建触发器前先删除旧触发器
 DROP TRIGGER IF EXISTS trg_assets_set_updated_at ON public.assets;
 
+-- 更新前触发：自动维护 updated_at 字段
 CREATE TRIGGER trg_assets_set_updated_at
 BEFORE UPDATE ON public.assets
 FOR EACH ROW
