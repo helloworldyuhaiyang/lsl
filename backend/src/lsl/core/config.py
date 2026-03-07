@@ -59,6 +59,13 @@ class Settings:
     VOLC_UID: str = "lsl_user"
     VOLC_HTTP_TIMEOUT: float = 15.0
 
+    # Revision / LLM
+    REVISION_PROVIDER: str = "fake"
+    REVISION_LLM_API_KEY: str = ""
+    REVISION_LLM_BASE_URL: str = "https://ark.cn-beijing.volces.com/api/v3"
+    REVISION_LLM_MODEL: str = "doubao-1-5-pro-32k-250115"
+    REVISION_LLM_HTTP_TIMEOUT: float = 60.0
+
     @classmethod
     def from_env(cls) -> "Settings":
         provider = os.getenv("STORAGE_PROVIDER", cls.STORAGE_PROVIDER).strip().lower()
@@ -71,6 +78,10 @@ class Settings:
         db_pool_max_size = _get_env_int("DB_POOL_MAX_SIZE", cls.DB_POOL_MAX_SIZE)
         db_pool_timeout = _get_env_float("DB_POOL_TIMEOUT", cls.DB_POOL_TIMEOUT)
         volc_http_timeout = _get_env_float("VOLC_HTTP_TIMEOUT", cls.VOLC_HTTP_TIMEOUT)
+        revision_llm_http_timeout = _get_env_float(
+            "REVISION_LLM_HTTP_TIMEOUT",
+            cls.REVISION_LLM_HTTP_TIMEOUT,
+        )
 
         if db_pool_min_size <= 0:
             raise ValueError("DB_POOL_MIN_SIZE must be greater than 0")
@@ -80,6 +91,8 @@ class Settings:
             raise ValueError("DB_POOL_TIMEOUT must be greater than 0")
         if volc_http_timeout <= 0:
             raise ValueError("VOLC_HTTP_TIMEOUT must be greater than 0")
+        if revision_llm_http_timeout <= 0:
+            raise ValueError("REVISION_LLM_HTTP_TIMEOUT must be greater than 0")
     
         return cls(
             STORAGE_PROVIDER=provider,
@@ -101,4 +114,9 @@ class Settings:
             VOLC_MODEL_NAME=_get_env_str("VOLC_MODEL_NAME", cls.VOLC_MODEL_NAME),
             VOLC_UID=_get_env_str("VOLC_UID", cls.VOLC_UID),
             VOLC_HTTP_TIMEOUT=volc_http_timeout,
+            REVISION_PROVIDER=os.getenv("REVISION_PROVIDER", cls.REVISION_PROVIDER).strip().lower() or cls.REVISION_PROVIDER,
+            REVISION_LLM_API_KEY=_get_env_str("REVISION_LLM_API_KEY", cls.REVISION_LLM_API_KEY),
+            REVISION_LLM_BASE_URL=_get_env_str("REVISION_LLM_BASE_URL", cls.REVISION_LLM_BASE_URL),
+            REVISION_LLM_MODEL=_get_env_str("REVISION_LLM_MODEL", cls.REVISION_LLM_MODEL),
+            REVISION_LLM_HTTP_TIMEOUT=revision_llm_http_timeout,
         )

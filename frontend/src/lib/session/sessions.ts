@@ -1,11 +1,12 @@
-import { getTask, getTaskTranscript, listTasks } from '@/lib/api/tasks'
-import { listAssets } from '@/lib/api/upload'
-import { getSessionMetadata, listSessionMetadata } from '@/lib/session/session-storage'
-import type { AssetListItem, TaskItem, TaskTranscriptData } from '@/types/api'
+import { getSession, listSessions } from '@/lib/api/sessions'
+import { getTaskTranscript } from '@/lib/api/tasks'
+import { getSessionMetadata } from '@/lib/session/session-storage'
+import type { SessionItem, TaskTranscriptData } from '@/types/api'
 import type { TaskStatus } from '@/types/domain'
 
 export interface SessionSummary {
   sessionId: string
+  taskId: string | null
   title: string
   description: string
   fileName: string
@@ -24,20 +25,6 @@ interface ListSessionSummariesParams {
   limit?: number
 }
 
-function getBaseName(value: string): string {
-  const lastSegment = value.split('/').at(-1) ?? value
-  const dotIndex = lastSegment.lastIndexOf('.')
-  return dotIndex > 0 ? lastSegment.slice(0, dotIndex) : lastSegment
-}
-
-function toTitleCase(input: string): string {
-  return input
-    .replace(/[-_]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/\b\w/g, (char) => char.toUpperCase())
-}
-
 function normalizeTaskStatus(statusName: string | undefined): TaskStatus {
   if (statusName === 'uploaded') return 'uploaded'
   if (statusName === 'transcribing') return 'transcribing'
@@ -47,93 +34,94 @@ function normalizeTaskStatus(statusName: string | undefined): TaskStatus {
   return 'uploaded'
 }
 
-function resolveTitle(task: TaskItem, asset?: AssetListItem, localTitle?: string): string {
-  if (localTitle && localTitle.trim().length > 0) {
-    return localTitle.trim()
-  }
-
-  const fileName = asset?.filename ?? task.object_key.split('/').at(-1) ?? task.task_id
-  return toTitleCase(getBaseName(fileName))
+function getObjectFileName(objectKey: string | null | undefined, fallback: string): string {
+  const lastSegment = objectKey?.split('/').at(-1)?.trim()
+  return lastSegment || fallback
 }
 
-function mapTaskToSessionSummary(task: TaskItem, assetsByObjectKey: Map<string, AssetListItem>): SessionSummary {
-  const asset = assetsByObjectKey.get(task.object_key)
-  const local = getSessionMetadata(task.task_id)
+function getSessionLocalMetadata(item: SessionItem) {
+  return getSessionMetadata(item.session.session_id) ?? (
+    item.session.current_task_id ? getSessionMetadata(item.session.current_task_id) : null
+  )
+}
+
+function mapSessionItemToSummary(item: SessionItem): SessionSummary {
+  const local = getSessionLocalMetadata(item)
+  const taskId = item.task?.task_id ?? item.session.current_task_id ?? null
+  const objectKey = item.asset?.object_key ?? item.task?.object_key ?? item.session.asset_object_key ?? ''
+
+  let durationSec: number | null = null
+  if (typeof item.task?.duration_sec === 'number') {
+    durationSec = item.task.duration_sec
+  } else if (typeof item.task?.duration_ms === 'number') {
+    durationSec = item.task.duration_ms / 1000
+  } else if (typeof local?.durationSec === 'number') {
+    durationSec = local.durationSec
+  }
 
   return {
-    sessionId: task.task_id,
-    title: resolveTitle(task, asset, local?.title),
-    description: local?.description?.trim() ?? '',
-    fileName: local?.fileName ?? asset?.filename ?? task.object_key.split('/').at(-1) ?? task.task_id,
-    fileSize: typeof local?.fileSize === 'number' ? local.fileSize : (asset?.file_size ?? null),
-    durationSec: typeof local?.durationSec === 'number' ? local.durationSec : (local?.durationSec ?? null),
-    status: normalizeTaskStatus(task.status_name),
-    statusName: task.status_name,
-    createdAt: task.created_at,
-    updatedAt: task.updated_at,
-    objectKey: task.object_key,
-    audioUrl: task.audio_url ?? asset?.asset_url ?? null,
+    sessionId: item.session.session_id,
+    taskId,
+    title: local?.title?.trim() || item.session.title,
+    description: local?.description?.trim() || item.session.description?.trim() || '',
+    fileName: local?.fileName || item.asset?.filename || getObjectFileName(objectKey, item.session.session_id),
+    fileSize: typeof local?.fileSize === 'number' ? local.fileSize : (item.asset?.file_size ?? null),
+    durationSec,
+    status: normalizeTaskStatus(item.task?.status_name),
+    statusName: item.task?.status_name ?? 'uploaded',
+    createdAt: item.session.created_at,
+    updatedAt: item.session.updated_at,
+    objectKey,
+    audioUrl: item.task?.audio_url ?? item.asset?.asset_url ?? null,
   }
+}
+
+function isSessionNotFoundError(error: unknown): boolean {
+  return error instanceof Error && /session not found/i.test(error.message)
+}
+
+async function resolveSessionItem(sessionIdOrTaskId: string): Promise<SessionItem> {
+  try {
+    return await getSession(sessionIdOrTaskId)
+  } catch (error) {
+    if (!isSessionNotFoundError(error)) {
+      throw error
+    }
+  }
+
+  const sessions = await listSessions({ limit: 100 })
+  const matched = sessions.find(
+    (item) => item.session.current_task_id === sessionIdOrTaskId || item.task?.task_id === sessionIdOrTaskId,
+  )
+
+  if (!matched) {
+    throw new Error('session not found')
+  }
+
+  return matched
 }
 
 export async function listSessionSummaries({ query = '', limit = 50 }: ListSessionSummariesParams = {}): Promise<SessionSummary[]> {
-  const [tasks, assets] = await Promise.all([
-    listTasks({
-      limit: Math.max(limit, 50),
-      category: 'conversation',
-      entityId: 'web_user',
-    }),
-    listAssets({
-      limit: Math.max(limit, 50),
-      category: 'conversation',
-      entityId: 'web_user',
-    }),
-  ])
+  const sessions = await listSessions({
+    limit: Math.min(Math.max(limit, 1), 100),
+    query: query.trim() || undefined,
+  })
 
-  const assetsByObjectKey = assets.reduce((acc, item) => {
-    acc.set(item.object_key, item)
-    return acc
-  }, new Map<string, AssetListItem>())
-
-  const sessions = tasks
-    .map((task) => mapTaskToSessionSummary(task, assetsByObjectKey))
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-
-  const normalizedQuery = query.trim().toLowerCase()
-  if (!normalizedQuery) {
-    return sessions.slice(0, limit)
-  }
-
-  return sessions
-    .filter((item) => {
-      const target = [item.title, item.description, item.fileName, item.objectKey].join(' ').toLowerCase()
-      return target.includes(normalizedQuery)
-    })
-    .slice(0, limit)
+  return sessions.map(mapSessionItemToSummary)
 }
 
-export async function getSessionSummary(sessionId: string, refresh = true): Promise<SessionSummary> {
-  const task = await getTask(sessionId, { refresh })
-
-  const localMap = listSessionMetadata()
-  const local = localMap[sessionId]
-
-  return {
-    sessionId: task.task_id,
-    title: resolveTitle(task, undefined, local?.title),
-    description: local?.description?.trim() ?? '',
-    fileName: local?.fileName ?? task.object_key.split('/').at(-1) ?? task.task_id,
-    fileSize: typeof local?.fileSize === 'number' ? local.fileSize : null,
-    durationSec: typeof local?.durationSec === 'number' ? local.durationSec : (local?.durationSec ?? null),
-    status: normalizeTaskStatus(task.status_name),
-    statusName: task.status_name,
-    createdAt: task.created_at,
-    updatedAt: task.updated_at,
-    objectKey: task.object_key,
-    audioUrl: task.audio_url ?? null,
-  }
+export async function getSessionSummary(sessionId: string): Promise<SessionSummary> {
+  const item = await resolveSessionItem(sessionId)
+  return mapSessionItemToSummary(item)
 }
 
 export async function getSessionTranscript(sessionId: string): Promise<TaskTranscriptData> {
-  return getTaskTranscript(sessionId)
+  const item = await resolveSessionItem(sessionId)
+  const taskId = item.task?.task_id ?? item.session.current_task_id
+
+  if (!taskId) {
+    throw new Error('session current_task_id is missing')
+  }
+
+  return getTaskTranscript(taskId)
 }

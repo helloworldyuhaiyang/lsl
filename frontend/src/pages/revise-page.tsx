@@ -4,10 +4,12 @@ import { Link, useParams } from 'react-router-dom'
 import { PageTitle } from '@/components/common/page-title'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { createRevision } from '@/lib/api/revisions'
 import { getListeningPath, getSessionPath, ROUTES } from '@/lib/constants/routes'
 import { formatExpressionCue, inferExpressionCue, scoreRevisionIssues, type RevisionItem } from '@/lib/session/revision'
 import { getSessionSummary, type SessionSummary } from '@/lib/session/sessions'
 import { formatDuration } from '@/lib/utils/format'
+import type { RevisionResponse } from '@/types/api'
 
 function toggleById(value: Record<string, boolean>, id: string): Record<string, boolean> {
   return {
@@ -43,60 +45,21 @@ function buildEditableDraft(sentence: string, cue?: string): string {
   return `${sentence.trim()}\n${resolvedCue}`.trim()
 }
 
-const MOCK_REVISION_ITEMS: RevisionItem[] = [
-  {
-    id: 'mock-1',
-    seq: 1,
-    speaker: 'User 1',
-    startTimeMs: 12000,
-    endTimeMs: 15000,
-    original: 'I go to to the park with my friends.',
-    suggested: 'I went to the park with my friends last weekend.',
-    cue: '[有点犹豫但友好的 / 回答问题的 / 周末聊天]',
-    score: 52,
-    issues: ['语法错误', '不够自然'],
-    explanations: ['根据上下文对方问的是 "What did you do last weekend?"，这里应该用过去时来回答。', '原句里重复了 "to"，而且缺少时间信息，表达不够完整自然。'],
-  },
-  {
-    id: 'mock-2',
-    seq: 2,
-    speaker: 'User 2',
-    startTimeMs: 16000,
-    endTimeMs: 19000,
-    original: 'I very like this city because people is friendly.',
-    suggested: 'I really like this city because the people are friendly.',
-    cue: '[真诚的 / 描述感受的 / 城市话题]',
-    score: 61,
-    issues: ['语法错误', '不够自然'],
-    explanations: ['"I very like" 不是自然表达，通常改成 "I really like"。', '"people is" 应改成 "people are"R,里有人称和谓语搭配问题。'],
-  },
-  {
-    id: 'mock-3',
-    seq: 3,
-    speaker: 'User 1',
-    startTimeMs: 20000,
-    endTimeMs: 23000,
-    original: 'I do not have much free time on weekdays.',
-    suggested: 'I do not have much free time on weekdays.',
-    cue: '[自然的 / 平稳的 / 日常对话]',
-    score: 88,
-    issues: ['表达基本自然'],
-    explanations: ['这句话语法和表达都比较自然，基本可以直接通过。'],
-  },
-  {
-    id: 'mock-4',
-    seq: 4,
-    speaker: 'User 2',
-    startTimeMs: 24000,
-    endTimeMs: 28000,
-    original: 'Actually I want improve my spoken english more quickly',
-    suggested: 'Actually, I want to improve my spoken English more quickly.',
-    cue: '[认真的 / 表达目标的 / 学习计划]',
-    score: 58,
-    issues: ['语法错误', '大小写问题', '标点问题'],
-    explanations: ['“want improve” 中间需要补上 “to”，否则语法不完整。', '“English” 需要大写。', '句子开头后的停顿和结尾标点需要补上，读起来会更自然。'],
-  },
-]
+function mapRevisionResponseToItems(revision: RevisionResponse): RevisionItem[] {
+  return revision.items.map((item) => ({
+    id: item.item_id,
+    seq: item.utterance_seq,
+    speaker: item.speaker?.trim() || 'Speaker',
+    startTimeMs: item.start_time,
+    endTimeMs: item.end_time,
+    original: item.original_text,
+    suggested: item.draft_text?.trim() || item.suggested_text,
+    cue: item.draft_cue?.trim() || item.suggested_cue?.trim() || formatExpressionCue(inferExpressionCue(item.suggested_text)),
+    score: item.score,
+    issues: item.issue_tags,
+    explanations: item.explanations,
+  }))
+}
 
 function getScoreButtonClassName(score: number): string {
   if (score >= 80) {
@@ -115,14 +78,18 @@ export function RevisePage() {
   const [session, setSession] = useState<SessionSummary | null>(null)
   const [items, setItems] = useState<RevisionItem[]>([])
   const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [userPrompt, setUserPrompt] = useState('')
   const [expandedExplanation, setExpandedExplanation] = useState<Record<string, boolean>>({})
   const [isLoading, setIsLoading] = useState(true)
+  const [isRevising, setIsRevising] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [playbackMessage, setPlaybackMessage] = useState<string | null>(null)
   const [activeOriginalId, setActiveOriginalId] = useState<string | null>(null)
   const [activeSynthesisId, setActiveSynthesisId] = useState<string | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const snippetEndRef = useRef<number | null>(null)
+  const resolvedSessionId = session?.sessionId || sessionId
+  const canRevise = Boolean(resolvedSessionId) && !isLoading && !isRevising && session?.status === 'completed'
 
   useEffect(() => {
     let cancelled = false
@@ -145,8 +112,9 @@ export function RevisePage() {
           return
         }
         setSession(detail)
-        setItems(MOCK_REVISION_ITEMS)
-        setDrafts(Object.fromEntries(MOCK_REVISION_ITEMS.map((item) => [item.id, buildEditableDraft(item.suggested, item.cue)])))
+        setItems([])
+        setDrafts({})
+        setUserPrompt('')
         setExpandedExplanation({})
         setErrorMessage(null)
       } catch (error) {
@@ -186,6 +154,34 @@ export function RevisePage() {
       ...value,
       [itemId]: nextValue,
     }))
+  }
+
+  async function handleRevise() {
+    if (!resolvedSessionId) {
+      setErrorMessage('Missing session id.')
+      return
+    }
+
+    try {
+      setIsRevising(true)
+      setErrorMessage(null)
+      setPlaybackMessage(null)
+
+      const revision = await createRevision({
+        sessionId: resolvedSessionId,
+        userPrompt: userPrompt.trim() || undefined,
+        force: true,
+      })
+
+      const nextItems = mapRevisionResponseToItems(revision)
+      setItems(nextItems)
+      setDrafts(Object.fromEntries(nextItems.map((item) => [item.id, buildEditableDraft(item.suggested, item.cue)])))
+      setExpandedExplanation({})
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to create revise content.')
+    } finally {
+      setIsRevising(false)
+    }
   }
 
   function playOriginal(item: RevisionItem) {
@@ -267,10 +263,10 @@ export function RevisePage() {
         actions={
           <>
             <Button asChild variant="outline" size="sm">
-              <Link to={sessionId ? getSessionPath(sessionId) : ROUTES.dashboard}>Session</Link>
+              <Link to={resolvedSessionId ? getSessionPath(resolvedSessionId) : ROUTES.dashboard}>Session</Link>
             </Button>
             <Button asChild variant="outline" size="sm">
-              <Link to={sessionId ? getListeningPath(sessionId) : ROUTES.dashboard}>Listening</Link>
+              <Link to={resolvedSessionId ? getListeningPath(resolvedSessionId) : ROUTES.dashboard}>Listening</Link>
             </Button>
           </>
         }
@@ -300,19 +296,40 @@ export function RevisePage() {
       ) : null}
 
       <Card className="border-slate-200/80 bg-white/95 shadow-sm">
-        <CardHeader className="gap-2">
-          <CardTitle>{items.length > 0 ? `${items.length} Revision Cards` : 'Revision Cards'}</CardTitle>
-          <CardDescription>
-            Suggested text is directly editable. Click the score to inspect the original sentence and problem details.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3 pt-0 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap gap-2 text-xs text-slate-500">
-            <span className="rounded-full bg-slate-100 px-2.5 py-1">{items.length} sentences</span>
-            <span className="rounded-full bg-slate-100 px-2.5 py-1">expression cue visible</span>
-            <span className="rounded-full bg-slate-100 px-2.5 py-1">large screens use multi-column cards</span>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-2">
+            <CardTitle>{items.length > 0 ? `${items.length} Revision Cards` : 'Revision Cards'}</CardTitle>
+            <CardDescription>
+              Add an optional prompt, then click `Revise by AI` to call `POST /revisions`.
+            </CardDescription>
           </div>
-          {playbackMessage ? <p className="text-xs text-slate-500 sm:text-right">{playbackMessage}</p> : null}
+          <Button type="button" size="sm" onClick={() => void handleRevise()} disabled={!canRevise}>
+            {isRevising ? 'Revising...' : 'Revise by AI'}
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-3 pt-0">
+          <div className="space-y-1.5">
+            <label htmlFor="revision-user-prompt" className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              User Prompt
+            </label>
+            <textarea
+              id="revision-user-prompt"
+              value={userPrompt}
+              onChange={(event) => setUserPrompt(event.target.value)}
+              rows={2}
+              placeholder="Optional. For example: make the rewrite more natural and conversational."
+              className="min-h-20 w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm leading-6 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+            />
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+              <span className="rounded-full bg-slate-100 px-2.5 py-1">{items.length} sentences</span>
+              <span className="rounded-full bg-slate-100 px-2.5 py-1">expression cue visible</span>
+              <span className="rounded-full bg-slate-100 px-2.5 py-1">large screens use multi-column cards</span>
+            </div>
+            {playbackMessage ? <p className="text-xs text-slate-500 sm:text-right">{playbackMessage}</p> : null}
+          </div>
         </CardContent>
       </Card>
 

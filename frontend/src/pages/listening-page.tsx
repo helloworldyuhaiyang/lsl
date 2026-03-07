@@ -41,6 +41,7 @@ export function ListeningPage() {
   const stopAtSecondRef = useRef<number | null>(null)
 
   const selectedUtterance = utterances[selectedIndex] ?? null
+  const resolvedSessionId = session?.sessionId || sessionId
 
   useEffect(() => {
     let cancelled = false
@@ -181,10 +182,10 @@ export function ListeningPage() {
         actions={
           <>
             <Button asChild variant="outline" size="sm">
-              <Link to={sessionId ? getSessionPath(sessionId) : ROUTES.dashboard}>Session</Link>
+              <Link to={resolvedSessionId ? getSessionPath(resolvedSessionId) : ROUTES.dashboard}>Session</Link>
             </Button>
             <Button asChild variant="outline" size="sm">
-              <Link to={sessionId ? getRevisePath(sessionId) : ROUTES.dashboard}>Revise</Link>
+              <Link to={resolvedSessionId ? getRevisePath(resolvedSessionId) : ROUTES.dashboard}>Revise</Link>
             </Button>
           </>
         }

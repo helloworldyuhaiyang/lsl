@@ -28,7 +28,23 @@ export async function requestJson<T>(path: string, options: RequestOptions = {})
 
   if (!response.ok) {
     const text = await response.text()
-    throw new Error(text || `Request failed with status ${response.status}`)
+    if (text) {
+      let message: string | null = null
+      try {
+        const parsed = JSON.parse(text) as { detail?: string; message?: string }
+        if (typeof parsed.detail === 'string' && parsed.detail.trim()) {
+          message = parsed.detail
+        } else if (typeof parsed.message === 'string' && parsed.message.trim()) {
+          message = parsed.message
+        }
+      } catch {
+        message = text
+      }
+
+      throw new Error(message || text)
+    }
+
+    throw new Error(`Request failed with status ${response.status}`)
   }
 
   return (await response.json()) as T

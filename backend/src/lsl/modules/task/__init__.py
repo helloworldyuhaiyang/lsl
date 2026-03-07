@@ -1,3 +1,4 @@
+from lsl.modules.task import model as _model
 from lsl.modules.task.api import router
 from lsl.modules.task.asr_provider import create_asr_provider
 from lsl.modules.task.repo import TaskRepository

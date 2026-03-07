@@ -101,6 +101,47 @@ export interface CreateSessionRequest {
   currentTaskId?: string
 }
 
+export interface CreateRevisionRequest {
+  sessionId: string
+  userPrompt?: string
+  force?: boolean
+}
+
+export interface RevisionItemResponse {
+  item_id: string
+  revision_id: string
+  task_id: string
+  utterance_seq: number
+  speaker?: string | null
+  start_time: number
+  end_time: number
+  original_text: string
+  suggested_text: string
+  suggested_cue?: string | null
+  draft_text?: string | null
+  draft_cue?: string | null
+  score: number
+  issue_tags: string[]
+  explanations: string[]
+  created_at: string
+  updated_at: string
+}
+
+export interface RevisionResponse {
+  revision_id: string
+  session_id: string
+  task_id: string
+  user_prompt?: string | null
+  status: number
+  status_name: string
+  error_code?: string | null
+  error_message?: string | null
+  item_count: number
+  created_at: string
+  updated_at: string
+  items: RevisionItemResponse[]
+}
+
 export interface TaskTranscriptUtterance {
   seq: number
   text: string

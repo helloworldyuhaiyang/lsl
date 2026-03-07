@@ -10,6 +10,11 @@ Task 模块负责 ASR 任务编排，不直接依赖具体厂商实现。
 - `GET /tasks/{task_id}/transcript` 获取转写结果
 - `GET /tasks` 查询任务列表
 
+## ID 规范
+
+- 对外 `task_id` 格式约定为 `t_{uuid}`，例如 `t_196f132e-85f3-4227-a6d7-274dfb310b39`。
+- 当前 README 下方建表 SQL 仍以裸 `UUID` 为例；如果要按此前缀落地，需要同步调整表结构与仓储层校验逻辑。
+
 ## 模块结构
 
 ```text

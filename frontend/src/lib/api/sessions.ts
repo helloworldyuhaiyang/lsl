@@ -33,6 +33,14 @@ export async function createSession(payload: CreateSessionRequest): Promise<Sess
   return response.data
 }
 
+export async function getSession(sessionId: string): Promise<SessionItem> {
+  const response = await requestJson<ApiResponse<SessionItem>>(`/sessions/${sessionId}`, {
+    method: 'GET',
+  })
+
+  return response.data
+}
+
 export async function listSessions({
   limit = 20,
   offset = 0,

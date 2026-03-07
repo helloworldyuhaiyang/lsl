@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, DateTime, Integer, SmallInteger, String, Text, UniqueConstraint, text
+from sqlalchemy import BigInteger, DateTime, Integer, SmallInteger, String, Text, UniqueConstraint, text as sa_text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -17,7 +17,7 @@ class TaskModel(Base):
     object_key: Mapped[str] = mapped_column(Text, nullable=False)
     audio_url: Mapped[str] = mapped_column(Text, nullable=False)
     duration_ms: Mapped[int | None] = mapped_column("x_duration_ms", Integer, nullable=True)
-    status: Mapped[int] = mapped_column("x_status", SmallInteger, nullable=False, server_default=text("0"))
+    status: Mapped[int] = mapped_column("x_status", SmallInteger, nullable=False, server_default=sa_text("0"))
     language: Mapped[str | None] = mapped_column("x_language", String(16), nullable=True)
     provider: Mapped[str | None] = mapped_column("x_provider", String(32), nullable=True)
     provider_request_id: Mapped[str | None] = mapped_column("x_provider_request_id", String(128), nullable=True)
@@ -27,20 +27,20 @@ class TaskModel(Base):
     provider_message: Mapped[str | None] = mapped_column("x_provider_message", Text, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    poll_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    poll_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa_text("0"))
     last_polled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     next_poll_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
-        server_default=text("NOW()"),
+        server_default=sa_text("NOW()"),
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
-        server_default=text("NOW()"),
+        server_default=sa_text("NOW()"),
     )
 
 
@@ -57,7 +57,7 @@ class AsrResultModel(Base):
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
-        server_default=text("NOW()"),
+        server_default=sa_text("NOW()"),
     )
 
 
@@ -80,5 +80,5 @@ class AsrUtteranceModel(Base):
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
-        server_default=text("NOW()"),
+        server_default=sa_text("NOW()"),
     )

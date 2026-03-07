@@ -152,7 +152,7 @@ export function DashboardPage() {
                           <td className="py-3 pr-3 text-slate-700">{formatMonthDay(item.session.created_at)}</td>
                           <td className="py-3 text-right">
                             <Button asChild size="sm" variant="outline">
-                              <Link to={getSessionPath(item.task?.task_id ?? item.session.session_id)}>Open</Link>
+                              <Link to={getSessionPath(item.session.session_id)}>Open</Link>
                             </Button>
                           </td>
                         </tr>
@@ -171,7 +171,7 @@ export function DashboardPage() {
                       <div className="mt-3 flex items-center justify-between">
                         <StatusBadge status={resolveStatus(item)} />
                         <Button asChild size="sm" variant="outline">
-                          <Link to={getSessionPath(item.task?.task_id ?? item.session.session_id)}>Open</Link>
+                          <Link to={getSessionPath(item.session.session_id)}>Open</Link>
                         </Button>
                       </div>
                     </li>

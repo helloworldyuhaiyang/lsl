@@ -153,7 +153,7 @@ export function UploadPage() {
         language: 'en-US',
       })
 
-      await createSession({
+      const createdSession = await createSession({
         title: sessionName.trim(),
         description: sessionDescription.trim() || undefined,
         language: 'en-US',
@@ -162,7 +162,7 @@ export function UploadPage() {
         currentTaskId: task.task_id,
       })
 
-      upsertSessionMetadata(task.task_id, {
+      upsertSessionMetadata(createdSession.session.session_id, {
         title: sessionName.trim(),
         description: sessionDescription.trim(),
         fileName: selectedFile.name,
@@ -170,7 +170,7 @@ export function UploadPage() {
         durationSec,
       })
 
-      setUploadedSessionId(task.task_id)
+      setUploadedSessionId(createdSession.session.session_id)
       setUploadProgress(100)
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Upload failed. Please retry.')

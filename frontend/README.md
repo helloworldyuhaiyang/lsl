@@ -71,6 +71,7 @@ npm run dev
 ### Revise
 
 - 多句卡片布局（大屏多列展示）
+- `Revise` 按钮触发 `POST /revisions`
 - Suggested 文本可直接编辑
 - 分数标签（绿 / 黄 / 红）直接显示句子质量，点击可展开问题详情
 - `Original`（源音频切片）+ `Synthesize`（浏览器 TTS 预听）

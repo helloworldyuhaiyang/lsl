@@ -38,6 +38,7 @@ export function SessionPage() {
   const audioRef = useRef<HTMLAudioElement | null>(null)
 
   const isCompleted = session?.status === 'completed'
+  const resolvedSessionId = session?.sessionId || sessionId
 
   const loadSession = useCallback(async (options: { showLoading?: boolean } = {}) => {
     if (!sessionId) {
@@ -174,17 +175,17 @@ export function SessionPage() {
       <PageTitle
         eyebrow="Session"
         title={session?.title ?? 'Session'}
-        description={session?.description || `Session ID: ${sessionId || '--'}`}
+        description={session?.description || `Session ID: ${resolvedSessionId || '--'}`}
         actions={
           <>
             <Button asChild variant="outline" size="sm">
               <Link to={ROUTES.dashboard}>Dashboard</Link>
             </Button>
             <Button asChild size="sm" variant="outline">
-              <Link to={sessionId ? getRevisePath(sessionId) : ROUTES.dashboard}>Revise</Link>
+              <Link to={resolvedSessionId ? getRevisePath(resolvedSessionId) : ROUTES.dashboard}>Revise</Link>
             </Button>
             <Button asChild size="sm" variant="outline">
-              <Link to={sessionId ? getListeningPath(sessionId) : ROUTES.dashboard}>Listening</Link>
+              <Link to={resolvedSessionId ? getListeningPath(resolvedSessionId) : ROUTES.dashboard}>Listening</Link>
             </Button>
           </>
         }

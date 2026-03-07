@@ -51,6 +51,7 @@ LSL 「口语录音的智能复盘工具」。
 - 已完成：对象存储上传模块（Asset Module）
 - 已完成：ASR 任务模块（Task Module）
 - 已完成：会话管理模块（Session Module）
+- 已完成：Revision 模块（utterance 级 revise + 打分 + 草稿保存）
 - 已完成：模块化后端结构（`core` + `modules`）
 - 未完成：LLM/TTS 调度、鉴权、前端页面
 
@@ -58,6 +59,7 @@ LSL 「口语录音的智能复盘工具」。
 - `backend/src/lsl/modules/asset/README.md`
 - `backend/src/lsl/modules/task/README.md`
 - `backend/src/lsl/modules/session/README.md`
+- `backend/src/lsl/modules/revision/README.md`
 
 ## 本地启动（当前后端原型）
 
@@ -169,6 +171,12 @@ backend/
 - Repository 类统一命名为 `XxxRepository`。
 - ORM 类统一命名为 `XxxModel`。
 - Schema 命名按语义区分：`CreateXxxRequest`、`UpdateXxxRequest`、`XxxData`、`XxxResponseData`。
+- 资源 ID 前缀统一如下：
+  - Task 模块：`t_{uuid}`
+  - Session 模块：`s_{uuid}`
+  - Revision 模块：`r_{uuid}`
+
+说明：以上是对外 ID 规范。当前仓库实现与建表 SQL 仍主要使用裸 `UUID` 字段；如果要把此前缀真正落到运行时代码，需要连同表结构、repo 校验和跨模块关联一并调整。
 
 ### 3.5 接口与错误处理规范
 
