@@ -2,6 +2,16 @@ const DEFAULT_API_BASE_URL = '/api'
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL).replace(/\/$/, '')
 
+export class ApiRequestError extends Error {
+  status: number
+
+  constructor(status: number, message: string) {
+    super(message)
+    this.name = 'ApiRequestError'
+    this.status = status
+  }
+}
+
 function buildUrl(path: string, query?: Record<string, string>): string {
   const url = new URL(`${API_BASE_URL}${path}`, window.location.origin)
   if (query) {
@@ -28,6 +38,7 @@ export async function requestJson<T>(path: string, options: RequestOptions = {})
 
   if (!response.ok) {
     const text = await response.text()
+    const fallbackMessage = `Request failed with status ${response.status}`
     if (text) {
       let message: string | null = null
       try {
@@ -41,10 +52,10 @@ export async function requestJson<T>(path: string, options: RequestOptions = {})
         message = text
       }
 
-      throw new Error(message || text)
+      throw new ApiRequestError(response.status, message || text || fallbackMessage)
     }
 
-    throw new Error(`Request failed with status ${response.status}`)
+    throw new ApiRequestError(response.status, fallbackMessage)
   }
 
   return (await response.json()) as T

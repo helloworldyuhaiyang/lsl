@@ -1,6 +1,8 @@
 import os
 from dataclasses import dataclass
 
+from dotenv import load_dotenv
+
 
 def _get_env_int(name: str, default: int) -> int:
     raw = os.getenv(name)
@@ -65,9 +67,12 @@ class Settings:
     REVISION_LLM_BASE_URL: str = "https://ark.cn-beijing.volces.com/api/v3"
     REVISION_LLM_MODEL: str = "doubao-1-5-pro-32k-250115"
     REVISION_LLM_HTTP_TIMEOUT: float = 60.0
+    REVISION_LLM_DEBUG_FILE: str = ""
 
     @classmethod
     def from_env(cls) -> "Settings":
+        load_dotenv(override=False)
+
         provider = os.getenv("STORAGE_PROVIDER", cls.STORAGE_PROVIDER).strip().lower()
         region = os.getenv("OSS_REGION", cls.OSS_REGION).strip()
         bucket = os.getenv("OSS_BUCKET", cls.OSS_BUCKET).strip()
@@ -93,7 +98,7 @@ class Settings:
             raise ValueError("VOLC_HTTP_TIMEOUT must be greater than 0")
         if revision_llm_http_timeout <= 0:
             raise ValueError("REVISION_LLM_HTTP_TIMEOUT must be greater than 0")
-    
+        
         return cls(
             STORAGE_PROVIDER=provider,
             ASSET_BASE_URL=asset_base_url,
@@ -119,4 +124,5 @@ class Settings:
             REVISION_LLM_BASE_URL=_get_env_str("REVISION_LLM_BASE_URL", cls.REVISION_LLM_BASE_URL),
             REVISION_LLM_MODEL=_get_env_str("REVISION_LLM_MODEL", cls.REVISION_LLM_MODEL),
             REVISION_LLM_HTTP_TIMEOUT=revision_llm_http_timeout,
+            REVISION_LLM_DEBUG_FILE=_get_env_str("REVISION_LLM_DEBUG_FILE", cls.REVISION_LLM_DEBUG_FILE),
         )

@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 
 import { PageTitle } from '@/components/common/page-title'
+import { HighlightedTextarea } from '@/components/ui/highlighted-textarea'
+import { ApiRequestError } from '@/lib/api/client'
+import { createRevision, getRevision } from '@/lib/api/revisions'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { createRevision } from '@/lib/api/revisions'
 import { getListeningPath, getSessionPath, ROUTES } from '@/lib/constants/routes'
-import { formatExpressionCue, inferExpressionCue, scoreRevisionIssues, type RevisionItem } from '@/lib/session/revision'
+import { formatCueText, formatExpressionCue, inferExpressionCue, scoreRevisionIssues, type RevisionItem } from '@/lib/session/revision'
 import { getSessionSummary, type SessionSummary } from '@/lib/session/sessions'
 import { formatDuration } from '@/lib/utils/format'
 import type { RevisionResponse } from '@/types/api'
@@ -18,31 +20,34 @@ function toggleById(value: Record<string, boolean>, id: string): Record<string, 
   }
 }
 
-function splitDraftContent(value: string): { sentence: string; cue: string } {
-  const trimmed = value.trim()
-  if (!trimmed) {
-    return { sentence: '', cue: '' }
-  }
+function splitCommaSeparated(value: string | null | undefined): string[] {
+  return (value || '')
+    .split(/[,，、]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
 
-  const lines = trimmed.split('\n').map((line) => line.trim()).filter(Boolean)
-  const lastLine = lines.at(-1) ?? ''
+function splitExplanationText(value: string | null | undefined): string[] {
+  return (value || '')
+    .split(/[。.!?]\s*|\n+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
 
-  if (lastLine.startsWith('[') && lastLine.endsWith(']')) {
-    return {
-      sentence: lines.slice(0, -1).join(' ').trim(),
-      cue: lastLine,
-    }
-  }
-
-  return {
-    sentence: trimmed,
-    cue: '',
-  }
+function extractSpeechText(value: string): string {
+  return value
+    .replace(/\[[^[\]]*]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 function buildEditableDraft(sentence: string, cue?: string): string {
   const resolvedCue = cue?.trim() || formatExpressionCue(inferExpressionCue(sentence))
-  return `${sentence.trim()}\n${resolvedCue}`.trim()
+  return `${resolvedCue} ${sentence.trim()}`.trim()
+}
+
+function buildDraftsByItem(items: RevisionItem[]): Record<string, string> {
+  return Object.fromEntries(items.map((item) => [item.id, buildEditableDraft(item.suggested, item.cue)]))
 }
 
 function mapRevisionResponseToItems(revision: RevisionResponse): RevisionItem[] {
@@ -54,10 +59,10 @@ function mapRevisionResponseToItems(revision: RevisionResponse): RevisionItem[] 
     endTimeMs: item.end_time,
     original: item.original_text,
     suggested: item.draft_text?.trim() || item.suggested_text,
-    cue: item.draft_cue?.trim() || item.suggested_cue?.trim() || formatExpressionCue(inferExpressionCue(item.suggested_text)),
+    cue: formatCueText(item.draft_cue?.trim() || item.suggested_cue?.trim() || formatExpressionCue(inferExpressionCue(item.suggested_text))),
     score: item.score,
-    issues: item.issue_tags,
-    explanations: item.explanations,
+    issues: splitCommaSeparated(item.issue_tags),
+    explanations: splitExplanationText(item.explanations),
   }))
 }
 
@@ -112,9 +117,31 @@ export function RevisePage() {
           return
         }
         setSession(detail)
-        setItems([])
-        setDrafts({})
-        setUserPrompt('')
+
+        try {
+          const revision = await getRevision(sessionId)
+          if (cancelled) {
+            return
+          }
+
+          const nextItems = mapRevisionResponseToItems(revision)
+          setItems(nextItems)
+          setDrafts(buildDraftsByItem(nextItems))
+          setUserPrompt(revision.user_prompt?.trim() || '')
+        } catch (error) {
+          if (cancelled) {
+            return
+          }
+
+          if (error instanceof ApiRequestError && error.status === 404) {
+            setItems([])
+            setDrafts({})
+            setUserPrompt('')
+          } else {
+            throw error
+          }
+        }
+
         setExpandedExplanation({})
         setErrorMessage(null)
       } catch (error) {
@@ -175,7 +202,7 @@ export function RevisePage() {
 
       const nextItems = mapRevisionResponseToItems(revision)
       setItems(nextItems)
-      setDrafts(Object.fromEntries(nextItems.map((item) => [item.id, buildEditableDraft(item.suggested, item.cue)])))
+      setDrafts(buildDraftsByItem(nextItems))
       setExpandedExplanation({})
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to create revise content.')
@@ -214,8 +241,8 @@ export function RevisePage() {
   }
 
   function synthesizeItem(item: RevisionItem) {
-    const draft = splitDraftContent(drafts[item.id] ?? buildEditableDraft(item.suggested, item.cue))
-    if (!draft.sentence) {
+    const sentence = extractSpeechText(drafts[item.id] ?? buildEditableDraft(item.suggested, item.cue))
+    if (!sentence) {
       return
     }
 
@@ -236,7 +263,7 @@ export function RevisePage() {
     setActiveOriginalId(null)
     window.speechSynthesis.cancel()
 
-    const utterance = new SpeechSynthesisUtterance(draft.sentence)
+    const utterance = new SpeechSynthesisUtterance(sentence)
     utterance.lang = 'en-US'
     utterance.rate = 1
     utterance.onstart = () => {
@@ -326,7 +353,7 @@ export function RevisePage() {
             <div className="flex flex-wrap gap-2 text-xs text-slate-500">
               <span className="rounded-full bg-slate-100 px-2.5 py-1">{items.length} sentences</span>
               <span className="rounded-full bg-slate-100 px-2.5 py-1">expression cue visible</span>
-              <span className="rounded-full bg-slate-100 px-2.5 py-1">large screens use multi-column cards</span>
+              <span className="rounded-full bg-slate-100 px-2.5 py-1">input height adapts to content</span>
             </div>
             {playbackMessage ? <p className="text-xs text-slate-500 sm:text-right">{playbackMessage}</p> : null}
           </div>
@@ -356,16 +383,15 @@ export function RevisePage() {
       ) : null}
 
       {!isLoading && !errorMessage && items.length > 0 ? (
-        <div className="grid gap-4 xl:grid-cols-2 2xl:grid-cols-3">
+        <div className="space-y-4">
           {items.map((item) => {
             const draftText = drafts[item.id] ?? buildEditableDraft(item.suggested, item.cue)
-            const draft = splitDraftContent(draftText)
             const isExplanationOpen = expandedExplanation[item.id] ?? false
-            const hasDraft = draft.sentence.length > 0
+            const hasDraft = extractSpeechText(draftText).length > 0
             const score = Number.isFinite(item.score) ? item.score : scoreRevisionIssues(item.issues)
 
             return (
-              <Card key={item.id} className="border-slate-200/80 bg-white/95 shadow-sm">
+              <Card key={item.id} className="w-full border-slate-200/80 bg-white/95 shadow-sm">
                 <CardContent className="space-y-4 p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -379,14 +405,10 @@ export function RevisePage() {
                     </span>
                   </div>
 
-                  <div className="rounded-xl border border-slate-200 bg-white transition focus-within:border-slate-400 focus-within:ring-2 focus-within:ring-slate-200">
-                    <textarea
-                      value={draftText}
-                      onChange={(event) => updateDraft(item.id, event.target.value)}
-                      rows={4}
-                      className="min-h-20 w-full resize-y border-0 bg-transparent px-3 py-3 text-sm leading-6 text-slate-900 outline-none"
-                    />
-                  </div>
+                  <HighlightedTextarea
+                    value={draftText}
+                    onChange={(nextValue) => updateDraft(item.id, nextValue)}
+                  />
 
                   <div className="flex flex-wrap gap-2">
                     <Button

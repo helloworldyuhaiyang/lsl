@@ -21,6 +21,10 @@ export interface ExpressionCue {
   scene: string
 }
 
+function normalizeCueText(value: string): string {
+  return value.trim().replace(/^\[/, '').replace(/\]$/, '').replace(/\s+/g, ' ')
+}
+
 function ensureSentencePunctuation(text: string): string {
   if (!text.trim()) {
     return text
@@ -232,7 +236,15 @@ export function inferExpressionCue(text: string): ExpressionCue {
 }
 
 export function formatExpressionCue(cue: ExpressionCue): string {
-  return `[${cue.emoji} ${cue.emotion} / ${cue.tone} / ${cue.scene}]`
+  return `[用${cue.emotion}、${cue.tone}的语气读这句，带出${cue.scene}的感觉。]`
+}
+
+export function formatCueText(cue: string): string {
+  const normalized = normalizeCueText(cue)
+  if (!normalized) {
+    return ''
+  }
+  return `[${normalized}]`
 }
 
 export function buildRevisionItems(utterances: TaskTranscriptUtterance[]): RevisionItem[] {

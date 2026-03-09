@@ -74,8 +74,8 @@ class RevisionItemData(BaseModel):
     draft_text: str | None = None
     draft_cue: str | None = None
     score: int
-    issue_tags: list[str]
-    explanations: list[str]
+    issue_tags: str
+    explanations: str
     created_at: datetime
     updated_at: datetime
 

@@ -2,27 +2,27 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, SmallInteger, String, Text, text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import DateTime, Index, Integer, SmallInteger, String, Text, text
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, foreign, mapped_column, relationship
 
 from lsl.core.db import Base
 
 
 class UtterancesRevisionModel(Base):
     __tablename__ = "utterances_revisions"
-    __table_args__ = {"schema": "public"}
+    __table_args__ = (
+        Index("idx_utterances_revisions_session_id", "session_id"),
+        {"schema": "public"},
+    )
 
     revision_id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
     session_id: Mapped[str] = mapped_column(
         UUID(as_uuid=False),
-        ForeignKey("public.sessions.session_id", ondelete="CASCADE"),
         nullable=False,
-        unique=True,
     )
     task_id: Mapped[str] = mapped_column(
         UUID(as_uuid=False),
-        ForeignKey("public.tasks.task_id", ondelete="RESTRICT"),
         nullable=False,
     )
     user_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -46,23 +46,28 @@ class UtterancesRevisionModel(Base):
     items: Mapped[list["UtterancesRevisionItemModel"]] = relationship(
         back_populates="revision",
         cascade="all, delete-orphan",
-        order_by="UtterancesRevisionItemModel.utterance_seq",
+        order_by=lambda: UtterancesRevisionItemModel.utterance_seq,
+        primaryjoin=lambda: UtterancesRevisionModel.revision_id
+        == foreign(UtterancesRevisionItemModel.revision_id),
+        foreign_keys=lambda: [UtterancesRevisionItemModel.revision_id],
     )
 
 
 class UtterancesRevisionItemModel(Base):
     __tablename__ = "utterances_revision_items"
-    __table_args__ = {"schema": "public"}
+    __table_args__ = (
+        Index("idx_utterances_revision_items_revision_seq", "revision_id", "utterance_seq"),
+        Index("idx_utterances_revision_items_task_seq", "task_id", "utterance_seq"),
+        {"schema": "public"},
+    )
 
     item_id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
     revision_id: Mapped[str] = mapped_column(
         UUID(as_uuid=False),
-        ForeignKey("public.utterances_revisions.revision_id", ondelete="CASCADE"),
         nullable=False,
     )
     task_id: Mapped[str] = mapped_column(
         UUID(as_uuid=False),
-        ForeignKey("public.tasks.task_id", ondelete="RESTRICT"),
         nullable=False,
     )
     utterance_seq: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -75,8 +80,8 @@ class UtterancesRevisionItemModel(Base):
     draft_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     draft_cue: Mapped[str | None] = mapped_column(Text, nullable=True)
     score: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    issue_tags_json: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
-    explanations_json: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    issue_tags: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default=text("''"))
+    explanations: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default=text("''"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -90,4 +95,9 @@ class UtterancesRevisionItemModel(Base):
         server_default=text("NOW()"),
     )
 
-    revision: Mapped[UtterancesRevisionModel] = relationship(back_populates="items")
+    revision: Mapped[UtterancesRevisionModel] = relationship(
+        back_populates="items",
+        primaryjoin=lambda: foreign(UtterancesRevisionItemModel.revision_id)
+        == UtterancesRevisionModel.revision_id,
+        foreign_keys=lambda: [UtterancesRevisionItemModel.revision_id],
+    )

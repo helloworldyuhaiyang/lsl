@@ -27,7 +27,7 @@ REVISION_PROVIDER=fake
 REVISION_LLM_API_KEY=your-real-ark-api-key
 REVISION_LLM_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
 REVISION_LLM_MODEL=doubao-1-5-pro-32k-250115
-REVISION_LLM_HTTP_TIMEOUT=60
+REVISION_LLM_HTTP_TIMEOUT=120
 ```
 
 说明：
@@ -91,7 +91,7 @@ revision/
 -- revise 主表：每个 session 当前仅保留一份 revise 结果，不保存历史版本
 CREATE TABLE IF NOT EXISTS public.utterances_revisions (
     revision_id       UUID PRIMARY KEY,                           -- revise 主键
-    session_id        UUID NOT NULL UNIQUE,                       -- 对应 session，当前阶段每个 session 仅一条
+    session_id        UUID NOT NULL,                              -- 对应 session
     task_id           UUID NOT NULL,                              -- 当前 revise 基于哪个 transcript/task 生成
     user_prompt       TEXT,                                       -- 用户本次点击 Revise 时输入的提示词
     x_status          SMALLINT NOT NULL DEFAULT 0,                -- revise 状态码：0 pending / 1 generating / 2 completed / 3 failed
@@ -99,24 +99,11 @@ CREATE TABLE IF NOT EXISTS public.utterances_revisions (
     error_message     TEXT,                                       -- 生成失败时的错误消息
     item_count        INTEGER NOT NULL DEFAULT 0,                 -- 当前生成出的 revise item 数量
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),         -- 创建时间
-    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),         -- 更新时间
-
-    CONSTRAINT fk_utterances_revisions_session_id
-        FOREIGN KEY (session_id)
-        REFERENCES public.sessions(session_id)
-        ON DELETE CASCADE,
-
-    CONSTRAINT fk_utterances_revisions_task_id
-        FOREIGN KEY (task_id)
-        REFERENCES public.tasks(task_id)
-        ON DELETE RESTRICT,
-
-    CONSTRAINT ck_utterances_revisions_status
-        CHECK (x_status IN (0,1,2,3))
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()          -- 更新时间
 );
 
--- 读取某个 session 当前 revise 的唯一入口
-CREATE UNIQUE INDEX IF NOT EXISTS idx_utterances_revisions_session_id
+-- 读取某个 session 当前 revise
+CREATE INDEX IF NOT EXISTS idx_utterances_revisions_session_id
     ON public.utterances_revisions (session_id);
 
 -- revise item 表：一条 transcript utterance 对应一条 revise 卡片
@@ -134,26 +121,10 @@ CREATE TABLE IF NOT EXISTS public.utterances_revision_items (
     draft_text          TEXT,                                     -- 用户当前编辑后的文本；为空时前端回退 suggested_text
     draft_cue           TEXT,                                     -- 用户当前编辑后的 cue；为空时前端回退 suggested_cue
     score               SMALLINT NOT NULL,                        -- 当前句子的 revise 分数（0-100）
-    issue_tags_json     JSONB NOT NULL DEFAULT '[]'::jsonb,       -- 问题标签列表，如语法错误/不够自然
-    explanations_json   JSONB NOT NULL DEFAULT '[]'::jsonb,       -- 分数说明与修改解释列表
+    issue_tags          TEXT NOT NULL DEFAULT '',                 -- 逗号分隔的问题标签，如 "语法错误, 不够自然"
+    explanations        TEXT NOT NULL DEFAULT '',                 -- 当前句子的说明与修改建议
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),       -- 创建时间
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),       -- 更新时间
-
-    CONSTRAINT fk_utterances_revision_items_revision_id
-        FOREIGN KEY (revision_id)
-        REFERENCES public.utterances_revisions(revision_id)
-        ON DELETE CASCADE,
-
-    CONSTRAINT fk_utterances_revision_items_task_id
-        FOREIGN KEY (task_id)
-        REFERENCES public.tasks(task_id)
-        ON DELETE RESTRICT,
-
-    CONSTRAINT uq_utterances_revision_items_revision_seq
-        UNIQUE (revision_id, utterance_seq),
-
-    CONSTRAINT ck_utterances_revision_items_score
-        CHECK (score >= 0 AND score <= 100)
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()        -- 更新时间
 );
 
 -- 某次 revise 内按 utterance 顺序读取卡片
@@ -203,6 +174,15 @@ display_text = draft_text ?? suggested_text
 display_cue  = draft_cue ?? suggested_cue
 ```
 
+## 前端 Cue 高亮输入技巧
+
+- Revise 编辑框里，cue 仍然作为可编辑纯文本的一部分保存，约定格式为任意数量的 `[cue]` 片段夹在正文中，例如：`[语气先压低一点] Suddenly, the curtain moved. [这里再紧一下] Who is there?`
+- 原生 `textarea` 不能对局部文本单独着色，所以前端采用“双层输入框”：
+  - 底层是一个 mirror `div`，按正则匹配所有 `[ ... ]` 片段，并把这些 cue 渲染成橙色；
+  - 顶层仍然是原生 `textarea`，负责输入、光标、选区、输入法和复制粘贴，但文字本身设为透明，只显示底层 mirror 的内容。
+- mirror 层与 `textarea` 必须保持相同的字体、行高、padding、换行规则，并同步 `scrollTop/scrollLeft`，否则高亮位置会错位。
+- 语音合成或导出纯句子时，需要先把所有 `[ ... ]` cue 片段剥掉，再把多余空白压成单空格，避免 TTS 把 cue 文案读出来。
+
 ## 主流程
 
 1. 用户在 Revise 页面输入 `user_prompt`，点击 `Revise` 按钮。
@@ -213,8 +193,8 @@ display_cue  = draft_cue ?? suggested_cue
    - `suggested_text`
    - `suggested_cue`
    - `score`
-   - `issue_tags_json`
-   - `explanations_json`
+   - `issue_tags`
+   - `explanations`
 6. 服务覆盖 `utterances_revisions` 主记录。
 7. 服务删除该 `revision_id` 对应的旧 `utterances_revision_items`，插入新结果。
 8. 前端重新读取 `GET /revisions?session_id={session_id}` 并渲染 revise cards。

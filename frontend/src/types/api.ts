@@ -121,8 +121,8 @@ export interface RevisionItemResponse {
   draft_text?: string | null
   draft_cue?: string | null
   score: number
-  issue_tags: string[]
-  explanations: string[]
+  issue_tags: string
+  explanations: string
   created_at: string
   updated_at: string
 }

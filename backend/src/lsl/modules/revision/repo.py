@@ -55,6 +55,10 @@ class RevisionRepository:
     ) -> UtterancesRevisionModel:
         normalized_session_id = self._require_uuid(session_id, field_name="session_id")
         normalized_task_id = self._require_uuid(task_id, field_name="task_id")
+        duplicate_seqs = self._find_duplicate_utterance_seqs(items)
+        if duplicate_seqs:
+            joined = ", ".join(str(seq) for seq in duplicate_seqs)
+            raise RuntimeError(f"Duplicate utterance_seq in revision items: {joined}")
 
         try:
             with self._session_scope() as db:
@@ -73,6 +77,10 @@ class RevisionRepository:
                         task_id=normalized_task_id,
                     )
                     db.add(model)
+                else:
+                    # Replace the whole item list for this revision in one pass.
+                    model.items.clear()
+                    db.flush()
 
                 model.task_id = normalized_task_id
                 model.user_prompt = user_prompt
@@ -80,7 +88,6 @@ class RevisionRepository:
                 model.error_code = error_code
                 model.error_message = error_message
                 model.item_count = len(items)
-                model.items.clear()
 
                 for item in items:
                     model.items.append(
@@ -97,8 +104,8 @@ class RevisionRepository:
                             draft_text=item.draft_text,
                             draft_cue=item.draft_cue,
                             score=int(item.score),
-                            issue_tags_json=list(item.issue_tags),
-                            explanations_json=list(item.explanations),
+                            issue_tags=item.issue_tags,
+                            explanations=item.explanations,
                         )
                     )
 
@@ -146,3 +153,15 @@ class RevisionRepository:
         if parsed is None:
             raise RuntimeError(f"Invalid {field_name}")
         return parsed
+
+    @staticmethod
+    def _find_duplicate_utterance_seqs(items: list[GeneratedRevisionItem]) -> list[int]:
+        seen: set[int] = set()
+        duplicates: set[int] = set()
+        for item in items:
+            seq = int(item.utterance_seq)
+            if seq in seen:
+                duplicates.add(seq)
+                continue
+            seen.add(seq)
+        return sorted(duplicates)

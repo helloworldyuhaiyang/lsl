@@ -131,7 +131,7 @@ class RevisionService:
                 GeneratedRevisionItem(
                     task_id=task_id,
                     utterance_seq=int(utterance.seq),
-                    speaker=self._normalize_speaker(utterance.speaker),
+                    speaker=utterance.speaker,
                     start_time=int(utterance.start_time),
                     end_time=int(utterance.end_time),
                     original_text=utterance.text,
@@ -157,10 +157,11 @@ class RevisionService:
             utterances=[
                 RevisionPromptUtterance(
                     utterance_seq=int(item.seq),
-                    speaker=self._normalize_speaker(item.speaker),
+                    speaker=item.speaker,
                     text=item.text,
                     start_time=int(item.start_time),
                     end_time=int(item.end_time),
+                    addions=item.additions,
                 )
                 for item in utterances
             ],
@@ -184,13 +185,15 @@ class RevisionService:
     ) -> RevisionSuggestion:
         suggestion = self._suggest_sentence(utterance.text, profile=profile, user_prompt=user_prompt)
         suggested_cue = self._infer_expression_cue(suggestion.suggested_text, profile=profile)
+        issue_tags = self._join_issue_tags(suggestion.issue_tags)
+        explanations = self._join_explanations(suggestion.explanations)
         return RevisionSuggestion(
             utterance_seq=int(utterance.seq),
             suggested_text=suggestion.suggested_text,
             suggested_cue=suggested_cue,
             score=self._score_revision_issues(suggestion.issue_tags),
-            issue_tags=suggestion.issue_tags,
-            explanations=suggestion.explanations,
+            issue_tags=issue_tags,
+            explanations=explanations,
         )
 
     def _to_revision_data(self, model: UtterancesRevisionModel) -> RevisionData:
@@ -225,18 +228,11 @@ class RevisionService:
             draft_text=model.draft_text,
             draft_cue=model.draft_cue,
             score=int(model.score),
-            issue_tags=list(model.issue_tags_json or []),
-            explanations=list(model.explanations_json or []),
+            issue_tags=model.issue_tags,
+            explanations=model.explanations,
             created_at=model.created_at,
             updated_at=model.updated_at,
         )
-
-    @staticmethod
-    def _normalize_speaker(speaker: str | None) -> str | None:
-        if speaker is None:
-            return None
-        normalized = speaker.replace("_", " ").strip()
-        return normalized or None
 
     @staticmethod
     def _ensure_sentence_punctuation(text: str) -> str:
@@ -372,6 +368,14 @@ class RevisionService:
         return issues
 
     @staticmethod
+    def _join_issue_tags(issue_tags: list[str]) -> str:
+        return ", ".join(tag.strip() for tag in issue_tags if tag.strip())
+
+    @staticmethod
+    def _join_explanations(explanations: list[str]) -> str:
+        return " ".join(line.strip() for line in explanations if line.strip())
+
+    @staticmethod
     def _score_revision_issues(issue_tags: list[str]) -> int:
         score = 96
         for issue in issue_tags:
@@ -393,11 +397,11 @@ class RevisionService:
         scene = profile.scene or "日常对话"
 
         if any(token in normalized for token in ("thank", "thanks", "appreciate")):
-            return f"[真诚的 / 礼貌的 / {scene}]"
+            return f"用真诚又礼貌的语气读这句，像是在认真表达感谢，保持{scene}的交流感。"
         if any(token in normalized for token in ("sorry", "apologize", "excuse me")):
-            return f"[抱歉的 / 柔和的 / {scene}]"
+            return f"用带点歉意但很柔和的语气读这句，让{scene}里的安抚感更明显。"
         if "?" in text:
-            return f"[关心的 / 好奇的 / {scene}]"
+            return f"用关心又带点好奇的语气提出这句，像在{scene}里轻轻追问对方。"
         if any(token in normalized for token in ("weekend", "friends", "trip", "travel")):
-            return f"[积极的 / 分享经历的 / {scene}]"
-        return f"[自然的 / 平稳的 / {scene}]"
+            return f"用轻松积极的语气读这句，像在{scene}里分享一段刚发生的经历。"
+        return f"用自然平稳的语气读这句，保持{scene}里舒服、不刻意的交流感。"

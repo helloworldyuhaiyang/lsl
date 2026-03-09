@@ -7,6 +7,16 @@ interface ApiResponse<T> {
   data: T
 }
 
+export async function getRevision(sessionId: string): Promise<RevisionResponse> {
+  const response = await requestJson<ApiResponse<RevisionResponse>>('/revisions', {
+    query: {
+      session_id: sessionId,
+    },
+  })
+
+  return response.data
+}
+
 export async function createRevision(payload: CreateRevisionRequest): Promise<RevisionResponse> {
   const response = await requestJson<ApiResponse<RevisionResponse>>('/revisions', {
     method: 'POST',
