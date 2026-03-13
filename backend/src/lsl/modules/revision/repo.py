@@ -50,6 +50,7 @@ class RevisionRepository:
         user_prompt: str | None,
         status: int,
         items: list[GeneratedRevisionItem],
+        preserve_existing_drafts: bool = True,
         error_code: str | None = None,
         error_message: str | None = None,
     ) -> UtterancesRevisionModel:
@@ -144,9 +145,13 @@ class RevisionRepository:
                     model_item.original_text = item.original_text
                     model_item.suggested_text = item.suggested_text
                     model_item.suggested_cue = item.suggested_cue
-                    if item.draft_text is not None:
+                    if preserve_existing_drafts:
+                        if item.draft_text is not None:
+                            model_item.draft_text = item.draft_text
+                        if item.draft_cue is not None:
+                            model_item.draft_cue = item.draft_cue
+                    else:
                         model_item.draft_text = item.draft_text
-                    if item.draft_cue is not None:
                         model_item.draft_cue = item.draft_cue
                     model_item.score = int(item.score)
                     model_item.issue_tags = item.issue_tags

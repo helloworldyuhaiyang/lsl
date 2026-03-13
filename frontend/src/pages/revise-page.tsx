@@ -456,7 +456,7 @@ export function RevisePage() {
           <div className="space-y-2">
             <CardTitle>{items.length > 0 ? `${items.length} Revision Cards` : 'Revision Cards'}</CardTitle>
             <CardDescription>
-              Add an optional prompt, then click `Revise by AI` to call `POST /revisions`.
+              Add an optional prompt, then click `Revise by AI` to generate a perfect rewrite.
             </CardDescription>
           </div>
           <div className="flex items-center gap-2 self-start">

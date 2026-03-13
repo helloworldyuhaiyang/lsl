@@ -51,6 +51,7 @@ REVISION_LLM_DEBUG_FILE=./revision_debug.log
 - `user_prompt` 可选，用于本次生成时给大模型的额外提示词。
 - `force=true` 时，即使当前已有 revise 结果，也重新生成并覆盖。
 - 接口会先落一份 `status=generating` 的 revision，并用原句创建初始 span items。
+- 重新生成时会清空当前 revision items 上已有的 `draft_text / draft_cue`。
 - 后台线程继续执行 LLM 任务；前端应轮询 `GET /revisions`。
 
 ### 2) `GET /revisions?session_id={session_id}`

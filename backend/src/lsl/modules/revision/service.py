@@ -86,6 +86,7 @@ class RevisionService:
             user_prompt=user_prompt,
             status=int(RevisionStatus.GENERATING),
             items=initial_items,
+            preserve_existing_drafts=False,
             error_code=None,
             error_message=None,
         )
@@ -108,6 +109,7 @@ class RevisionService:
                 user_prompt=user_prompt,
                 status=int(RevisionStatus.FAILED),
                 items=initial_items,
+                preserve_existing_drafts=False,
                 error_code="revision_job_schedule_failed",
                 error_message=str(exc),
             )
