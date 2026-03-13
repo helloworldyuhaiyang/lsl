@@ -3,12 +3,15 @@ from __future__ import annotations
 import json
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+from math import ceil
 from pathlib import Path
 from time import perf_counter
 from typing import Any
 
 import httpx
+from json_repair import repair_json
 from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from openai.types.chat.chat_completion_system_message_param import ChatCompletionSystemMessageParam
@@ -19,6 +22,7 @@ from lsl.modules.revision.types import (
     RevisionGenerateRequest,
     RevisionGenerator,
     RevisionPromptUtterance,
+    RevisionSegment,
     RevisionSuggestion,
 )
 
@@ -26,15 +30,45 @@ logger = logging.getLogger(__name__)
 
 _CODE_FENCE_JSON_RE = re.compile(r"```(?:json)?\s*(.+?)\s*```", re.DOTALL | re.IGNORECASE)
 _SPLIT_TEXT_RE = re.compile(r"[,/，、\n]+")
-_TERMINAL_PUNCTUATION_RE = re.compile(r"[.!?]$")
 _MAX_ISSUE_TAGS = 4
-_MAX_EXPLANATIONS = 3
+_SEGMENT_TARGET_UTTERANCE_COUNT = 24
+_SEGMENT_HARD_MAX_UTTERANCE_COUNT = 32
+_SEGMENT_CONTEXT_UTTERANCE_COUNT = 2
+_SEGMENT_MAX_WORKERS = 4
 
-_SYSTEM_PROMPT = """You are an expert English speaking coach for oral English classes.
+_SEGMENT_PLAN_SYSTEM_PROMPT = """You are planning revision batches for a spoken-English transcript.
 
-Your task is to review transcript utterances one by one and return a JSON object only.
+Your task is to divide the transcript into contiguous topic-based sections before sentence-level revision.
 
-Goals for each utterance:
+Important rules:
+- Return a JSON object only.
+- Cover every utterance exactly once.
+- Segments must be contiguous by utterance_seq, with no gaps and no overlaps.
+- Prefer split points where the topic, activity, or discussion phase changes.
+- Keep each segment reasonably small for downstream revision.
+- Most segments should contain about 16 to 28 target utterances.
+- Never merge unrelated topics just to reduce the number of segments.
+- Give each segment a short Chinese title and a short Chinese summary.
+
+Output schema:
+{
+  "segments": [
+    {
+      "segment_index": 1,
+      "start_seq": 0,
+      "end_seq": 23,
+      "title": "寒暄与近况",
+      "summary": "内容: 双方通过语音软件，先打招呼，随后聊到今天是否忙、工作安排等。结果: speaker2 今天的工作内容1)完成软件的bug 修复.2)和客户开会讨论需求.3)整理会议纪要. speaker1 今天的工作内容1)完成了一个项目的测试.2)和同事讨论了项目进度.3)准备了明天的会议材料."
+    }
+  ]
+}
+"""
+
+_SEGMENT_REVISION_SYSTEM_PROMPT = """You are an expert English speaking coach for oral English classes.
+
+Your task is to revise only the target utterances and return a JSON object only.
+
+Goals for each target utterance:
 1. Rewrite the original text into fluent, natural spoken English.
 2. Preserve the original meaning, intent, and speaker perspective.
 3. Score the ORIGINAL sentence from 0 to 100 based on grammar, clarity, and naturalness.
@@ -42,13 +76,17 @@ Goals for each utterance:
 5. Provide one short Chinese delivery cue sentence that can be shown before the rewritten sentence.
 
 Important rules:
+- Use the segment title, segment summary, and nearby context only for understanding.
+- Return items only for target_utterances. Do not return context utterances.
+- Return every target utterance with the same utterance_seq as the input.
 - Keep edits minimal if the sentence is already natural.
 - Do not invent facts, change tense without reason, or change the speaker's intent.
 - Prefer one natural spoken sentence. Two short sentences are acceptable when needed.
 - issue_tags should be one comma-separated Chinese string such as "不够自然, 语法错误".
 - explanations should be one concise Chinese string.
 - suggested_cue should be a short Chinese direction such as "用轻松自然的语气开口，像在跟朋友随口聊天。"
-- Return every utterance with the same utterance_seq as the input.
+- Use strict JSON that can be parsed by Python json.loads.
+- Do not include trailing commas before } or ].
 - Return JSON only. No markdown. No extra text.
 
 Output schema:
@@ -110,40 +148,129 @@ class LLMRevisionGenerator:
         if not req.utterances:
             return []
 
-        content = self._request_revision(
+        segments = self._plan_segments(
             task_id=req.task_id,
             utterances=req.utterances,
             user_prompt=req.user_prompt,
         )
-        suggestions = self._parse_revision_response(content=content, utterances=req.utterances)
-        # 去重是为了防止模型偶尔返回重复的utterance_seq，导致后续持久化时违反唯一约束
+        suggestions = self._generate_segmented_revisions(
+            task_id=req.task_id,
+            utterances=req.utterances,
+            user_prompt=req.user_prompt,
+            segments=segments,
+        )
         return self._deduplicate_suggestions(suggestions)
 
-    def _request_revision(
+    def _plan_segments(
         self,
         *,
         task_id: str,
         utterances: list[RevisionPromptUtterance],
         user_prompt: str | None,
+    ) -> list[RevisionSegment]:
+        content = self._request_chat_completion(
+            task_id=task_id,
+            request_name="segment_plan",
+            messages=self._build_segment_plan_messages(
+                task_id=task_id,
+                utterances=utterances,
+                user_prompt=user_prompt,
+            ),
+        )
+        segments = self._parse_segment_plan_response(content=content, utterances=utterances)
+        return self._split_oversized_segments(segments)
+
+    def _generate_segmented_revisions(
+        self,
+        *,
+        task_id: str,
+        utterances: list[RevisionPromptUtterance],
+        user_prompt: str | None,
+        segments: list[RevisionSegment],
+    ) -> list[RevisionSuggestion]:
+        if not segments:
+            return []
+
+        utterance_index_by_seq = {int(item.utterance_seq): index for index, item in enumerate(utterances)}
+        max_workers = max(1, min(_SEGMENT_MAX_WORKERS, len(segments)))
+        suggestions: list[RevisionSuggestion] = []
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(
+                    self._generate_single_segment_revision,
+                    task_id=task_id,
+                    utterances=utterances,
+                    user_prompt=user_prompt,
+                    segment=segment,
+                    utterance_index_by_seq=utterance_index_by_seq,
+                ): segment
+                for segment in segments
+            }
+            for future in as_completed(futures):
+                segment = futures[future]
+                try:
+                    suggestions.extend(future.result())
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Segment revision failed for seq range {segment.start_seq}-{segment.end_seq}: {exc}"
+                    ) from exc
+        return suggestions
+
+    def _generate_single_segment_revision(
+        self,
+        *,
+        task_id: str,
+        utterances: list[RevisionPromptUtterance],
+        user_prompt: str | None,
+        segment: RevisionSegment,
+        utterance_index_by_seq: dict[int, int],
+    ) -> list[RevisionSuggestion]:
+        start_index = utterance_index_by_seq.get(int(segment.start_seq))
+        end_index = utterance_index_by_seq.get(int(segment.end_seq))
+        if start_index is None or end_index is None or start_index > end_index:
+            raise RuntimeError(f"Invalid segment bounds: {segment.start_seq}-{segment.end_seq}")
+
+        target_utterances = utterances[start_index : end_index + 1]
+        context_before = utterances[max(0, start_index - _SEGMENT_CONTEXT_UTTERANCE_COUNT) : start_index]
+        context_after = utterances[end_index + 1 : end_index + 1 + _SEGMENT_CONTEXT_UTTERANCE_COUNT]
+
+        request_name = f"segment_revision[{segment.segment_index}][{segment.start_seq}-{segment.end_seq}]"
+        content = self._request_chat_completion(
+            task_id=task_id,
+            request_name=request_name,
+            messages=self._build_segment_revision_messages(
+                task_id=task_id,
+                segment=segment,
+                user_prompt=user_prompt,
+                context_before=context_before,
+                target_utterances=target_utterances,
+                context_after=context_after,
+            ),
+        )
+        return self._parse_revision_response(content=content, utterances=target_utterances)
+
+    def _request_chat_completion(
+        self,
+        *,
+        task_id: str,
+        request_name: str,
+        messages: list[ChatCompletionMessageParam],
     ) -> str:
         client = self._get_client()
-        messages = self._build_messages(
-            task_id=task_id,
-            utterances=utterances,
-            user_prompt=user_prompt,
-        )
         started_at = datetime.now(timezone.utc)
         started_perf = perf_counter()
         logger.info(
-            "LLM revision request started task_id=%s model=%s utterance_count=%s started_at=%s",
+            "LLM request started task_id=%s request_name=%s model=%s started_at=%s",
             task_id,
+            request_name,
             self._model,
-            len(utterances),
             started_at.isoformat(),
         )
 
         content: str | None = None
         error_message: str | None = None
+        finish_reason: str | None = None
         try:
             response = client.chat.completions.create(
                 model=self._model,
@@ -155,9 +282,13 @@ class LLMRevisionGenerator:
             if not response.choices:
                 raise RuntimeError("LLM returned no choices")
 
-            content = response.choices[0].message.content
+            choice = response.choices[0]
+            finish_reason = getattr(choice, "finish_reason", None)
+            content = choice.message.content
             if content is None or not content.strip():
                 raise RuntimeError("LLM returned empty content")
+            if finish_reason not in (None, "stop"):
+                raise RuntimeError(f"LLM stopped with finish_reason={finish_reason}")
             return content
         except Exception as exc:
             error_message = str(exc)
@@ -167,32 +298,36 @@ class LLMRevisionGenerator:
             duration_ms = int((perf_counter() - started_perf) * 1000)
             self._append_debug_dump(
                 task_id=task_id,
+                request_name=request_name,
                 messages=messages,
                 started_at=started_at,
                 finished_at=finished_at,
                 duration_ms=duration_ms,
                 response_content=content,
                 error_message=error_message,
+                finish_reason=finish_reason,
             )
             if error_message is None:
                 logger.info(
-                    "LLM revision request finished task_id=%s model=%s finished_at=%s duration_ms=%s",
+                    "LLM request finished task_id=%s request_name=%s model=%s finished_at=%s duration_ms=%s",
                     task_id,
+                    request_name,
                     self._model,
                     finished_at.isoformat(),
                     duration_ms,
                 )
             else:
                 logger.error(
-                    "LLM revision request failed task_id=%s model=%s finished_at=%s duration_ms=%s error=%s",
+                    "LLM request failed task_id=%s request_name=%s model=%s finished_at=%s duration_ms=%s error=%s",
                     task_id,
+                    request_name,
                     self._model,
                     finished_at.isoformat(),
                     duration_ms,
                     error_message,
                 )
 
-    def _build_messages(
+    def _build_segment_plan_messages(
         self,
         *,
         task_id: str,
@@ -207,27 +342,189 @@ class LLMRevisionGenerator:
                     "utterance_seq": int(item.utterance_seq),
                     "speaker": item.speaker,
                     "text": item.text,
-                    "start_time": int(item.start_time),
-                    "end_time": int(item.end_time),
-                    "addions": item.addions,
                 }
                 for item in utterances
             ],
         }
         user_content = (
-            "Revise the following spoken-English transcript.\n"
+            "Plan coherent revision segments for the following transcript.\n"
             "Input JSON:\n"
             f"{json.dumps(payload, ensure_ascii=False, indent=2)}"
         )
         system_message: ChatCompletionSystemMessageParam = {
             "role": "system",
-            "content": _SYSTEM_PROMPT,
+            "content": _SEGMENT_PLAN_SYSTEM_PROMPT,
         }
         user_message: ChatCompletionUserMessageParam = {
             "role": "user",
             "content": user_content,
         }
         return [system_message, user_message]
+
+    def _build_segment_revision_messages(
+        self,
+        *,
+        task_id: str,
+        segment: RevisionSegment,
+        user_prompt: str | None,
+        context_before: list[RevisionPromptUtterance],
+        target_utterances: list[RevisionPromptUtterance],
+        context_after: list[RevisionPromptUtterance],
+    ) -> list[ChatCompletionMessageParam]:
+        payload = {
+            "task_id": task_id,
+            "user_prompt": (user_prompt or "").strip(),
+            "segment": {
+                "segment_index": int(segment.segment_index),
+                "start_seq": int(segment.start_seq),
+                "end_seq": int(segment.end_seq),
+                "title": segment.title,
+                "summary": segment.summary,
+            },
+            "context_before": [self._serialize_prompt_utterance(item) for item in context_before],
+            "target_utterances": [self._serialize_prompt_utterance(item) for item in target_utterances],
+            "context_after": [self._serialize_prompt_utterance(item) for item in context_after],
+        }
+        user_content = (
+            "Revise the target utterances from the following spoken-English transcript segment.\n"
+            "Use the segment summary and nearby context only for understanding.\n"
+            "Input JSON:\n"
+            f"{json.dumps(payload, ensure_ascii=False, indent=2)}"
+        )
+        system_message: ChatCompletionSystemMessageParam = {
+            "role": "system",
+            "content": _SEGMENT_REVISION_SYSTEM_PROMPT,
+        }
+        user_message: ChatCompletionUserMessageParam = {
+            "role": "user",
+            "content": user_content,
+        }
+        return [system_message, user_message]
+
+    @staticmethod
+    def _serialize_prompt_utterance(item: RevisionPromptUtterance) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "utterance_seq": int(item.utterance_seq),
+            "speaker": item.speaker,
+            "text": item.text,
+        }
+        if item.addions:
+            payload["addions"] = item.addions
+        return payload
+
+    def _parse_segment_plan_response(
+        self,
+        *,
+        content: str,
+        utterances: list[RevisionPromptUtterance],
+    ) -> list[RevisionSegment]:
+        parsed = self._loads_json(content)
+        raw_segments = self._extract_segments(parsed)
+        if not raw_segments:
+            raise RuntimeError("LLM returned no revision segments")
+
+        segments: list[RevisionSegment] = []
+        for index, raw_segment in enumerate(raw_segments, start=1):
+            if not isinstance(raw_segment, dict):
+                continue
+            segment = self._normalize_segment(raw_segment=raw_segment, default_index=index)
+            if segment is not None:
+                segments.append(segment)
+
+        if not segments:
+            raise RuntimeError("LLM returned no valid revision segments")
+
+        return self._validate_segment_plan(segments=segments, utterances=utterances)
+
+    def _normalize_segment(
+        self,
+        *,
+        raw_segment: dict[str, Any],
+        default_index: int,
+    ) -> RevisionSegment | None:
+        start_seq = self._coerce_int(raw_segment.get("start_seq"))
+        end_seq = self._coerce_int(raw_segment.get("end_seq"))
+        if start_seq is None or end_seq is None or start_seq > end_seq:
+            return None
+
+        segment_index = self._coerce_int(raw_segment.get("segment_index")) or default_index
+        title = self._normalize_brief_text(raw_segment.get("title"))
+        summary = self._normalize_brief_text(raw_segment.get("summary"))
+        return RevisionSegment(
+            segment_index=int(segment_index),
+            start_seq=int(start_seq),
+            end_seq=int(end_seq),
+            title=title,
+            summary=summary,
+        )
+
+    def _validate_segment_plan(
+        self,
+        *,
+        segments: list[RevisionSegment],
+        utterances: list[RevisionPromptUtterance],
+    ) -> list[RevisionSegment]:
+        expected_seqs = [int(item.utterance_seq) for item in utterances]
+        if not expected_seqs:
+            return []
+
+        normalized_segments = sorted(segments, key=lambda item: (int(item.start_seq), int(item.end_seq)))
+        covered_seqs: list[int] = []
+        final_segments: list[RevisionSegment] = []
+        for index, segment in enumerate(normalized_segments, start=1):
+            final_segments.append(
+                RevisionSegment(
+                    segment_index=index,
+                    start_seq=int(segment.start_seq),
+                    end_seq=int(segment.end_seq),
+                    title=segment.title,
+                    summary=segment.summary,
+                )
+            )
+            covered_seqs.extend(range(int(segment.start_seq), int(segment.end_seq) + 1))
+
+        if covered_seqs != expected_seqs:
+            raise RuntimeError("LLM segment plan does not fully cover utterance_seq without gaps or overlaps")
+        return final_segments
+
+    def _split_oversized_segments(self, segments: list[RevisionSegment]) -> list[RevisionSegment]:
+        normalized_segments: list[RevisionSegment] = []
+        next_index = 1
+        for segment in segments:
+            segment_size = int(segment.end_seq) - int(segment.start_seq) + 1
+            if segment_size <= _SEGMENT_HARD_MAX_UTTERANCE_COUNT:
+                normalized_segments.append(
+                    RevisionSegment(
+                        segment_index=next_index,
+                        start_seq=int(segment.start_seq),
+                        end_seq=int(segment.end_seq),
+                        title=segment.title,
+                        summary=segment.summary,
+                    )
+                )
+                next_index += 1
+                continue
+
+            part_count = ceil(segment_size / _SEGMENT_TARGET_UTTERANCE_COUNT)
+            current_start = int(segment.start_seq)
+            for part_index in range(1, part_count + 1):
+                current_end = min(
+                    int(segment.end_seq),
+                    current_start + _SEGMENT_TARGET_UTTERANCE_COUNT - 1,
+                )
+                suffix = f" (part {part_index}/{part_count})"
+                normalized_segments.append(
+                    RevisionSegment(
+                        segment_index=next_index,
+                        start_seq=current_start,
+                        end_seq=current_end,
+                        title=f"{segment.title}{suffix}" if segment.title else f"Segment {next_index}",
+                        summary=segment.summary,
+                    )
+                )
+                next_index += 1
+                current_start = current_end + 1
+        return normalized_segments
 
     def _parse_revision_response(
         self,
@@ -260,17 +557,20 @@ class LLMRevisionGenerator:
         if utterance_seq is None:
             return None
 
-        utterance = utterance_by_seq.get(utterance_seq)
-        if utterance is None:
+        if utterance_seq not in utterance_by_seq:
             return None
 
         issue_tags_list = self._normalize_string_list(raw_item.get("issue_tags"), max_items=_MAX_ISSUE_TAGS)
         explanations_text = self._normalize_explanations_text(raw_item.get("explanations"))
-        score = self._normalize_score(raw_item.get("score"), issue_tags=issue_tags_list)
+        score = self._require_score(raw_item.get("score"), utterance_seq=utterance_seq)
 
         return RevisionSuggestion(
             utterance_seq=utterance_seq,
-            suggested_text=self._normalize_sentence(raw_item.get("suggested_text"), fallback=utterance.text),
+            suggested_text=self._require_text(
+                raw_item.get("suggested_text"),
+                field_name="suggested_text",
+                utterance_seq=utterance_seq,
+            ),
             suggested_cue=self._normalize_cue_text(raw_item.get("suggested_cue")),
             score=score,
             issue_tags=", ".join(issue_tags_list),
@@ -299,12 +599,14 @@ class LLMRevisionGenerator:
         self,
         *,
         task_id: str,
+        request_name: str,
         messages: list[ChatCompletionMessageParam],
         started_at: datetime,
         finished_at: datetime,
         duration_ms: int,
         response_content: str | None,
         error_message: str | None,
+        finish_reason: str | None,
     ) -> None:
         if not self._debug_file:
             return
@@ -313,11 +615,13 @@ class LLMRevisionGenerator:
         debug_path.parent.mkdir(parents=True, exist_ok=True)
         dump_lines = [
             "===== LLM Revision Request =====",
+            f"request_name: {request_name}",
             f"task_id: {task_id}",
             f"model: {self._model}",
             f"started_at: {started_at.isoformat()}",
             f"finished_at: {finished_at.isoformat()}",
             f"duration_ms: {duration_ms}",
+            f"finish_reason: {finish_reason or ''}",
             "",
             "[messages]",
             json.dumps(messages, ensure_ascii=False, indent=2),
@@ -359,10 +663,13 @@ class LLMRevisionGenerator:
         return re.sub(r"\s+", " ", str(value)).strip()
 
     @staticmethod
+    def _normalize_brief_text(value: Any) -> str:
+        if value is None:
+            return ""
+        return re.sub(r"\s+", " ", str(value)).strip()
+
+    @staticmethod
     def _deduplicate_suggestions(suggestions: list[RevisionSuggestion]) -> list[RevisionSuggestion]:
-        # The model may occasionally return the same utterance_seq more than once.
-        # We sort by seq for stable output order and keep only the first item for
-        # each seq, so downstream persistence does not hit unique constraints.
         deduplicated: list[RevisionSuggestion] = []
         seen_seqs: set[int] = set()
         for suggestion in sorted(suggestions, key=lambda item: int(item.utterance_seq)):
@@ -375,34 +682,49 @@ class LLMRevisionGenerator:
 
     @staticmethod
     def _loads_json(content: str) -> Any:
-        candidate = content.strip()
-        try:
-            return json.loads(candidate)
-        except json.JSONDecodeError:
-            pass
+        candidates: list[str] = []
+        initial_candidate = content.strip()
+        if initial_candidate:
+            candidates.append(initial_candidate)
 
         fenced_match = _CODE_FENCE_JSON_RE.search(content)
         if fenced_match is not None:
-            candidate = fenced_match.group(1).strip()
-            try:
-                return json.loads(candidate)
-            except json.JSONDecodeError:
-                pass
+            fenced_candidate = fenced_match.group(1).strip()
+            if fenced_candidate:
+                candidates.append(fenced_candidate)
 
         start = min((index for index in (content.find("{"), content.find("[")) if index >= 0), default=-1)
-        if start < 0:
+        if start >= 0:
+            for open_char, close_char in (("{", "}"), ("[", "]")):
+                open_index = content.find(open_char, start)
+                close_index = content.rfind(close_char)
+                if open_index >= 0 and close_index > open_index:
+                    extracted_candidate = content[open_index : close_index + 1].strip()
+                    if extracted_candidate:
+                        candidates.append(extracted_candidate)
+
+        if not candidates:
             raise RuntimeError("Unable to locate JSON in LLM response")
 
-        for open_char, close_char in (("{", "}"), ("[", "]")):
-            open_index = content.find(open_char, start)
-            close_index = content.rfind(close_char)
-            if open_index >= 0 and close_index > open_index:
-                candidate = content[open_index : close_index + 1].strip()
-                try:
-                    return json.loads(candidate)
-                except json.JSONDecodeError:
-                    continue
+        last_error: Exception | None = None
+        seen_candidates: set[str] = set()
+        for candidate in candidates:
+            if candidate in seen_candidates:
+                continue
+            seen_candidates.add(candidate)
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError as exc:
+                last_error = exc
 
+            try:
+                return repair_json(candidate, return_objects=True, skip_json_loads=True)
+            except Exception as exc:  # pragma: no cover
+                last_error = exc
+
+        if last_error is not None:
+            message = getattr(last_error, "msg", str(last_error)) or "unknown parse error"
+            raise RuntimeError(f"Unable to parse JSON from LLM response: {message}")
         raise RuntimeError("Unable to parse JSON from LLM response")
 
     @staticmethod
@@ -413,6 +735,14 @@ class LLMRevisionGenerator:
             items = payload.get("items")
             if isinstance(items, list):
                 return items
+        return []
+
+    @staticmethod
+    def _extract_segments(payload: Any) -> list[Any]:
+        if isinstance(payload, dict):
+            segments = payload.get("segments")
+            if isinstance(segments, list):
+                return segments
         return []
 
     @staticmethod
@@ -434,18 +764,11 @@ class LLMRevisionGenerator:
         return None
 
     @staticmethod
-    def _normalize_sentence(value: Any, *, fallback: str) -> str:
-        text = str(value).strip() if value is not None else ""
-        if not text:
-            text = fallback.strip()
-        text = re.sub(r"\s+", " ", text).strip()
-        if not text:
-            return fallback.strip()
-        if text[0].isalpha() and text[0].islower():
-            text = f"{text[0].upper()}{text[1:]}"
-        if not _TERMINAL_PUNCTUATION_RE.search(text):
-            text = f"{text}."
-        return text
+    def _require_text(value: Any, *, field_name: str, utterance_seq: int) -> str:
+        text = re.sub(r"\s+", " ", str(value).strip()) if value is not None else ""
+        if text:
+            return text
+        raise RuntimeError(f"LLM response missing {field_name} for utterance_seq={utterance_seq}")
 
     @staticmethod
     def _normalize_string_list(value: Any, *, max_items: int) -> list[str]:
@@ -470,17 +793,10 @@ class LLMRevisionGenerator:
         return normalized
 
     @staticmethod
-    def _normalize_score(value: Any, *, issue_tags: list[str]) -> int:
+    def _require_score(value: Any, *, utterance_seq: int) -> int:
         score = LLMRevisionGenerator._coerce_int(value)
         if score is None:
-            lowered = " ".join(issue_tags).lower()
-            score = 88
-            if any(token in lowered for token in ("语法", "时态", "主谓")):
-                score -= 22
-            if any(token in lowered for token in ("不够自然", "搭配", "表达不清", "用词")):
-                score -= 12
-            if any(token in lowered for token in ("标点", "大小写")):
-                score -= 6
-            if "表达基本自然" in issue_tags:
-                score = max(score, 92)
-        return max(0, min(int(score), 100))
+            raise RuntimeError(f"LLM response missing score for utterance_seq={utterance_seq}")
+        if score < 0 or score > 100:
+            raise RuntimeError(f"LLM response score out of range for utterance_seq={utterance_seq}: {score}")
+        return int(score)

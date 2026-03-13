@@ -44,8 +44,6 @@ class RevisionPromptUtterance:
     utterance_seq: int
     speaker: str | None
     text: str
-    start_time: int
-    end_time: int
     addions: dict[str, str | int | float] = field(default_factory=dict)
 
 
@@ -54,6 +52,15 @@ class RevisionGenerateRequest:
     task_id: str
     user_prompt: str | None
     utterances: list[RevisionPromptUtterance]
+
+
+@dataclass(frozen=True, slots=True)
+class RevisionSegment:
+    segment_index: int
+    start_seq: int
+    end_seq: int
+    title: str = ""
+    summary: str = ""
 
 
 class RevisionGenerator(Protocol):

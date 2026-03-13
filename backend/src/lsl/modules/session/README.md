@@ -12,7 +12,7 @@ Session 模块负责会话级数据管理（标题、描述）以及与 `assets/
 
 - `POST /sessions` 创建会话
 - `GET /sessions` 查询会话列表
-- `GET /sessions/{session_id}` 查询会话详情
+- `GET /sessions/{session_id}` 查询会话详情（默认会自动尝试 refresh 关联 task）
 - `PATCH /sessions/{session_id}` 更新会话与关联关系
 
 ## ID 规范

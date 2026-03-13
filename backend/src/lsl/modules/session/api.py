@@ -62,10 +62,11 @@ def list_sessions(
 @router.get("/{session_id}", response_model=ApiResponse[SessionData])
 def get_session(
     session_id: str,
+    refresh: bool = True,
     session_service: SessionService = Depends(get_session_service),
 ):
     try:
-        session = session_service.get_session(session_id)
+        session = session_service.get_session(session_id, auto_refresh=refresh)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RuntimeError as exc:

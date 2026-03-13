@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-import logging
-import re
-
 from lsl.modules.revision.model import UtterancesRevisionItemModel, UtterancesRevisionModel
 from lsl.modules.revision.repo import RevisionRepository
 from lsl.modules.revision.schema import RevisionData, RevisionItemData, UpdateRevisionItemRequest
@@ -18,21 +14,6 @@ from lsl.modules.revision.types import (
 from lsl.modules.session.service import SessionService
 from lsl.modules.task.schema import TaskTranscriptUtterance
 from lsl.modules.task.service import TaskService
-
-logger = logging.getLogger(__name__)
-
-
-@dataclass(slots=True)
-class PromptProfile:
-    mode: str = "default"
-    scene: str | None = None
-
-
-@dataclass(slots=True)
-class SentenceSuggestion:
-    suggested_text: str
-    issue_tags: list[str]
-    explanations: list[str]
 
 
 class RevisionService:
@@ -110,23 +91,19 @@ class RevisionService:
         utterances: list[TaskTranscriptUtterance],
         user_prompt: str | None,
     ) -> list[GeneratedRevisionItem]:
-        profile = self._build_prompt_profile(user_prompt)
         generated_by_seq = self._generate_with_llm(
             task_id=task_id,
             utterances=utterances,
             user_prompt=user_prompt,
         )
+        missing_seqs = [int(utterance.seq) for utterance in utterances if int(utterance.seq) not in generated_by_seq]
+        if missing_seqs:
+            joined = ", ".join(str(seq) for seq in missing_seqs)
+            raise RuntimeError(f"LLM revision missing utterance_seq: {joined}")
+
         items: list[GeneratedRevisionItem] = []
         for utterance in utterances:
-            local_suggestion = self._build_local_suggestion(
-                utterance=utterance,
-                profile=profile,
-                user_prompt=user_prompt,
-            )
-            suggestion = generated_by_seq.get(
-                int(utterance.seq),
-                local_suggestion,
-            )
+            suggestion = generated_by_seq[int(utterance.seq)]
             items.append(
                 GeneratedRevisionItem(
                     task_id=task_id,
@@ -136,10 +113,10 @@ class RevisionService:
                     end_time=int(utterance.end_time),
                     original_text=utterance.text,
                     suggested_text=suggestion.suggested_text,
-                    suggested_cue=suggestion.suggested_cue or local_suggestion.suggested_cue,
+                    suggested_cue=suggestion.suggested_cue,
                     score=int(suggestion.score),
-                    issue_tags=suggestion.issue_tags or local_suggestion.issue_tags,
-                    explanations=suggestion.explanations or local_suggestion.explanations,
+                    issue_tags=suggestion.issue_tags,
+                    explanations=suggestion.explanations,
                 )
             )
         return items
@@ -159,42 +136,27 @@ class RevisionService:
                     utterance_seq=int(item.seq),
                     speaker=item.speaker,
                     text=item.text,
-                    start_time=int(item.start_time),
-                    end_time=int(item.end_time),
-                    addions=item.additions,
+                    addions=self._filter_revision_addions(item.additions),
                 )
                 for item in utterances
             ],
         )
-        try:
-            suggestions = self._generator.generate(req)
-        except NotImplementedError:
-            return {}
-        except Exception as exc:
-            logger.warning("Revision generator failed for task %s: %s", task_id, exc)
-            return {}
-
+        suggestions = self._generator.generate(req)
         return {int(item.utterance_seq): item for item in suggestions}
 
-    def _build_local_suggestion(
-        self,
-        *,
-        utterance: TaskTranscriptUtterance,
-        profile: PromptProfile,
-        user_prompt: str | None,
-    ) -> RevisionSuggestion:
-        suggestion = self._suggest_sentence(utterance.text, profile=profile, user_prompt=user_prompt)
-        suggested_cue = self._infer_expression_cue(suggestion.suggested_text, profile=profile)
-        issue_tags = self._join_issue_tags(suggestion.issue_tags)
-        explanations = self._join_explanations(suggestion.explanations)
-        return RevisionSuggestion(
-            utterance_seq=int(utterance.seq),
-            suggested_text=suggestion.suggested_text,
-            suggested_cue=suggested_cue,
-            score=self._score_revision_issues(suggestion.issue_tags),
-            issue_tags=issue_tags,
-            explanations=explanations,
-        )
+    @staticmethod
+    def _filter_revision_addions(addions: dict[str, object] | None) -> dict[str, str | int | float]:
+        if not addions:
+            return {}
+
+        filtered: dict[str, str | int | float] = {}
+        for key in ("emotion", "emotion_degree"):
+            value = addions.get(key)
+            if value is None:
+                continue
+            if isinstance(value, (str, int, float)):
+                filtered[key] = value
+        return filtered
 
     def _to_revision_data(self, model: UtterancesRevisionModel) -> RevisionData:
         items = [self._to_revision_item_data(item) for item in sorted(model.items, key=lambda value: value.utterance_seq)]
@@ -233,175 +195,3 @@ class RevisionService:
             created_at=model.created_at,
             updated_at=model.updated_at,
         )
-
-    @staticmethod
-    def _ensure_sentence_punctuation(text: str) -> str:
-        trimmed = text.strip()
-        if not trimmed:
-            return trimmed
-        if re.search(r"[.!?]$", trimmed):
-            return trimmed
-        return f"{trimmed}."
-
-    @staticmethod
-    def _capitalize_first(text: str) -> str:
-        trimmed = text.strip()
-        if not trimmed:
-            return trimmed
-        return f"{trimmed[0].upper()}{trimmed[1:]}"
-
-    def _apply_prompt_style(self, text: str, *, profile: PromptProfile) -> tuple[str, list[str]]:
-        updated = text
-        notes: list[str] = []
-
-        if profile.mode == "casual":
-            replacements = (
-                ("I do not", "I don't"),
-                ("I cannot", "I can't"),
-                ("I will", "I'll"),
-            )
-            changed = False
-            for source, target in replacements:
-                if source in updated:
-                    updated = updated.replace(source, target)
-                    changed = True
-            if changed:
-                notes.append("Adjusted phrasing to sound more conversational.")
-
-        if profile.mode == "formal":
-            replacements = (
-                ("I don't", "I do not"),
-                ("I can't", "I cannot"),
-                ("I'm", "I am"),
-            )
-            changed = False
-            for source, target in replacements:
-                if source in updated:
-                    updated = updated.replace(source, target)
-                    changed = True
-            if changed:
-                notes.append("Adjusted phrasing to sound more formal.")
-
-        if profile.mode == "concise":
-            concise = re.sub(r"\b(Actually|Basically|Honestly),?\s+", "", updated, flags=re.IGNORECASE).strip()
-            if concise and concise != updated:
-                updated = concise
-                notes.append("Removed filler phrasing for a more concise answer.")
-
-        return updated, notes
-
-    def _build_prompt_profile(self, user_prompt: str | None) -> PromptProfile:
-        normalized = (user_prompt or "").strip().lower()
-        if not normalized:
-            return PromptProfile()
-        if any(token in normalized for token in ("casual", "daily", "口语", "日常", "自然")):
-            return PromptProfile(mode="casual", scene="日常对话")
-        if any(token in normalized for token in ("formal", "professional", "正式", "面试", "interview")):
-            return PromptProfile(mode="formal", scene="正式表达")
-        if any(token in normalized for token in ("concise", "short", "简洁", "简短")):
-            return PromptProfile(mode="concise", scene="简洁回答")
-        return PromptProfile()
-
-    def _suggest_sentence(
-        self,
-        original: str,
-        *,
-        profile: PromptProfile,
-        user_prompt: str | None,
-    ) -> SentenceSuggestion:
-        next_text = original.strip()
-        explanations: list[str] = []
-
-        replacements: list[tuple[str, str, str]] = [
-            (r"\bI go to\b", "I went to", "Adjusted present tense to past tense in context."),
-            (r"\bto to\b", "to", "Removed duplicated word."),
-            (r"\bI very like\b", "I really like", "Improved unnatural phrasing."),
-            (r"\bpeople is\b", "people are", "Corrected subject-verb agreement."),
-            (r"\bwant improve\b", "want to improve", "Inserted missing infinitive marker."),
-            (r"\bspoken english\b", "spoken English", "Corrected capitalization."),
-        ]
-
-        for pattern, replacement, note in replacements:
-            if re.search(pattern, next_text, flags=re.IGNORECASE):
-                next_text = re.sub(pattern, replacement, next_text, flags=re.IGNORECASE)
-                explanations.append(note)
-
-        capitalized = self._capitalize_first(next_text)
-        if capitalized != next_text:
-            next_text = capitalized
-            explanations.append("Corrected capitalization.")
-        punctuated = self._ensure_sentence_punctuation(next_text)
-        if punctuated != next_text:
-            next_text = punctuated
-            explanations.append("Added ending punctuation.")
-
-        styled_text, prompt_notes = self._apply_prompt_style(next_text, profile=profile)
-        if styled_text != next_text:
-            next_text = styled_text
-        explanations.extend(prompt_notes)
-
-        if user_prompt:
-            explanations.append(f'Applied user prompt: "{user_prompt}".')
-
-        issue_tags = self._infer_issue_tags(explanations)
-        if not explanations:
-            explanations.append("No strong rewrite needed; kept sentence natural and clear.")
-
-        return SentenceSuggestion(suggested_text=next_text, issue_tags=issue_tags, explanations=explanations)
-
-    @staticmethod
-    def _infer_issue_tags(explanations: list[str]) -> list[str]:
-        issues: list[str] = []
-        lowered = " ".join(explanations).lower()
-
-        if any(token in lowered for token in ("tense", "agreement", "infinitive", "grammar")):
-            issues.append("语法错误")
-        if "unnatural phrasing" in lowered:
-            issues.append("不够自然")
-        if "capitalization" in lowered:
-            issues.append("大小写问题")
-        if "punctuation" in lowered:
-            issues.append("标点问题")
-
-        if not issues:
-            issues.append("表达基本自然")
-        return issues
-
-    @staticmethod
-    def _join_issue_tags(issue_tags: list[str]) -> str:
-        return ", ".join(tag.strip() for tag in issue_tags if tag.strip())
-
-    @staticmethod
-    def _join_explanations(explanations: list[str]) -> str:
-        return " ".join(line.strip() for line in explanations if line.strip())
-
-    @staticmethod
-    def _score_revision_issues(issue_tags: list[str]) -> int:
-        score = 96
-        for issue in issue_tags:
-            if issue == "语法错误":
-                score -= 24
-            elif issue == "不够自然":
-                score -= 14
-            elif issue == "标点问题":
-                score -= 8
-            elif issue == "大小写问题":
-                score -= 6
-        if "表达基本自然" in issue_tags:
-            score = max(score, 92)
-        return max(35, min(score, 99))
-
-    @staticmethod
-    def _infer_expression_cue(text: str, *, profile: PromptProfile) -> str:
-        normalized = text.strip().lower()
-        scene = profile.scene or "日常对话"
-
-        if any(token in normalized for token in ("thank", "thanks", "appreciate")):
-            return f"用真诚又礼貌的语气读这句，像是在认真表达感谢，保持{scene}的交流感。"
-        if any(token in normalized for token in ("sorry", "apologize", "excuse me")):
-            return f"用带点歉意但很柔和的语气读这句，让{scene}里的安抚感更明显。"
-        if "?" in text:
-            return f"用关心又带点好奇的语气提出这句，像在{scene}里轻轻追问对方。"
-        if any(token in normalized for token in ("weekend", "friends", "trip", "travel")):
-            return f"用轻松积极的语气读这句，像在{scene}里分享一段刚发生的经历。"
-        return f"用自然平稳的语气读这句，保持{scene}里舒服、不刻意的交流感。"

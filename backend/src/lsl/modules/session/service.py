@@ -53,7 +53,7 @@ class SessionService:
 
         return self.get_session(session_id)
 
-    def get_session(self, session_id: str) -> SessionData:
+    def get_session(self, session_id: str, *, auto_refresh: bool = True) -> SessionData:
         session = self._repository.get_session_by_id(session_id)
         if session is None:
             raise ValueError("session not found")
@@ -69,7 +69,10 @@ class SessionService:
         task: TaskData | None = None
         if session.current_task_id is not None:
             try:
-                task = self._task_service.get_task(task_id=session.current_task_id, auto_refresh=False)
+                task = self._task_service.get_task(
+                    task_id=session.current_task_id,
+                    auto_refresh=auto_refresh,
+                )
             except ValueError:
                 task = None
 

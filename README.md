@@ -63,7 +63,19 @@ LSL 「口语录音的智能复盘工具」。
 
 ## 本地启动（当前后端原型）
 
-1. 配置 `.env`
+1. 安装依赖（一次）
+
+当前项目使用 `uv pip install` 安装 Python 依赖。后端当前运行链路至少需要以下依赖：
+
+```bash
+uv pip install fastapi uvicorn pydantic sqlalchemy python-dotenv requests httpx openai json-repair alibabacloud-oss-v2 'psycopg[binary]' psycopg-pool
+```
+
+说明：
+- `json-repair` 用于修复 revision 模块里大模型偶发返回的非严格 JSON。
+- 如果本地已经有 `uv` 管理的虚拟环境，直接在对应环境里执行上面的命令即可。
+
+2. 配置 `.env`
 
 
 ```env
@@ -84,13 +96,13 @@ VOLC_APP_KEY='1805848308'
 VOLC_ACCESS_KEY='Bxge8EJzR7jVBuqxG3G_bZGTVMlq40AQ'
 ```
 
-2. 启动服务
+3. 启动服务
 
 ```bash
 uv run uvicorn --app-dir backend/src lsl.main:app --reload --env-file .env
 ```
 
-3. 后端规范
+4. 后端规范
 ```
 backend/
 │
