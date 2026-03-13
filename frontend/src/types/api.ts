@@ -107,11 +107,19 @@ export interface CreateRevisionRequest {
   force?: boolean
 }
 
+export interface UpdateRevisionItemRequest {
+  draftText?: string | null
+  draftCue?: string | null
+}
+
 export interface RevisionItemResponse {
   item_id: string
   revision_id: string
   task_id: string
-  utterance_seq: number
+  source_seq_start: number
+  source_seq_end: number
+  source_seq_count: number
+  source_seqs: number[]
   speaker?: string | null
   start_time: number
   end_time: number

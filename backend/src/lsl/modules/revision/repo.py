@@ -55,10 +55,11 @@ class RevisionRepository:
     ) -> UtterancesRevisionModel:
         normalized_session_id = self._require_uuid(session_id, field_name="session_id")
         normalized_task_id = self._require_uuid(task_id, field_name="task_id")
-        duplicate_seqs = self._find_duplicate_utterance_seqs(items)
-        if duplicate_seqs:
-            joined = ", ".join(str(seq) for seq in duplicate_seqs)
-            raise RuntimeError(f"Duplicate utterance_seq in revision items: {joined}")
+        overlapping_source_seqs = self._find_overlapping_source_seqs(items)
+        if overlapping_source_seqs:
+            joined = ", ".join(str(seq) for seq in overlapping_source_seqs)
+            raise RuntimeError(f"Overlapping source_seqs in revision items: {joined}")
+        self._validate_generated_items(items)
 
         try:
             with self._session_scope() as db:
@@ -77,10 +78,6 @@ class RevisionRepository:
                         task_id=normalized_task_id,
                     )
                     db.add(model)
-                else:
-                    # Replace the whole item list for this revision in one pass.
-                    model.items.clear()
-                    db.flush()
 
                 model.task_id = normalized_task_id
                 model.user_prompt = user_prompt
@@ -89,12 +86,38 @@ class RevisionRepository:
                 model.error_message = error_message
                 model.item_count = len(items)
 
+                existing_items_by_span = {
+                    (
+                        int(existing_item.source_seq_start),
+                        int(existing_item.source_seq_end),
+                    ): existing_item
+                    for existing_item in model.items
+                }
+                incoming_spans = {
+                    (
+                        int(item.source_seq_start),
+                        int(item.source_seq_end),
+                    )
+                    for item in items
+                }
+                for existing_span, existing_item in list(existing_items_by_span.items()):
+                    if existing_span not in incoming_spans:
+                        model.items.remove(existing_item)
+
                 for item in items:
-                    model.items.append(
-                        UtterancesRevisionItemModel(
+                    span_key = (
+                        int(item.source_seq_start),
+                        int(item.source_seq_end),
+                    )
+                    model_item = existing_items_by_span.get(span_key)
+                    if model_item is None:
+                        model_item = UtterancesRevisionItemModel(
                             item_id=str(uuid.uuid4()),
                             task_id=self._require_uuid(item.task_id, field_name="task_id"),
-                            utterance_seq=int(item.utterance_seq),
+                            source_seq_start=int(item.source_seq_start),
+                            source_seq_end=int(item.source_seq_end),
+                            source_seq_count=int(item.source_seq_count),
+                            source_seqs=[int(seq) for seq in item.source_seqs],
                             speaker=item.speaker,
                             start_time=int(item.start_time),
                             end_time=int(item.end_time),
@@ -107,7 +130,27 @@ class RevisionRepository:
                             issue_tags=item.issue_tags,
                             explanations=item.explanations,
                         )
-                    )
+                        model.items.append(model_item)
+                        continue
+
+                    model_item.task_id = self._require_uuid(item.task_id, field_name="task_id")
+                    model_item.source_seq_start = int(item.source_seq_start)
+                    model_item.source_seq_end = int(item.source_seq_end)
+                    model_item.source_seq_count = int(item.source_seq_count)
+                    model_item.source_seqs = [int(seq) for seq in item.source_seqs]
+                    model_item.speaker = item.speaker
+                    model_item.start_time = int(item.start_time)
+                    model_item.end_time = int(item.end_time)
+                    model_item.original_text = item.original_text
+                    model_item.suggested_text = item.suggested_text
+                    model_item.suggested_cue = item.suggested_cue
+                    if item.draft_text is not None:
+                        model_item.draft_text = item.draft_text
+                    if item.draft_cue is not None:
+                        model_item.draft_cue = item.draft_cue
+                    model_item.score = int(item.score)
+                    model_item.issue_tags = item.issue_tags
+                    model_item.explanations = item.explanations
 
                 db.commit()
                 db.refresh(model)
@@ -155,13 +198,33 @@ class RevisionRepository:
         return parsed
 
     @staticmethod
-    def _find_duplicate_utterance_seqs(items: list[GeneratedRevisionItem]) -> list[int]:
+    def _find_overlapping_source_seqs(items: list[GeneratedRevisionItem]) -> list[int]:
         seen: set[int] = set()
         duplicates: set[int] = set()
         for item in items:
-            seq = int(item.utterance_seq)
-            if seq in seen:
-                duplicates.add(seq)
-                continue
-            seen.add(seq)
+            for seq in item.source_seqs:
+                normalized_seq = int(seq)
+                if normalized_seq in seen:
+                    duplicates.add(normalized_seq)
+                    continue
+                seen.add(normalized_seq)
         return sorted(duplicates)
+
+    @staticmethod
+    def _validate_generated_items(items: list[GeneratedRevisionItem]) -> None:
+        for item in items:
+            source_seqs = [int(seq) for seq in item.source_seqs]
+            if not source_seqs:
+                raise RuntimeError("Revision item source_seqs cannot be empty")
+
+            ordered_source_seqs = sorted(source_seqs)
+            expected_source_seqs = list(range(ordered_source_seqs[0], ordered_source_seqs[-1] + 1))
+            if ordered_source_seqs != expected_source_seqs:
+                raise RuntimeError(f"Revision item source_seqs must be contiguous: {ordered_source_seqs}")
+
+            if int(item.source_seq_start) != ordered_source_seqs[0]:
+                raise RuntimeError("Revision item source_seq_start does not match source_seqs")
+            if int(item.source_seq_end) != ordered_source_seqs[-1]:
+                raise RuntimeError("Revision item source_seq_end does not match source_seqs")
+            if int(item.source_seq_count) != len(ordered_source_seqs):
+                raise RuntimeError("Revision item source_seq_count does not match source_seqs")

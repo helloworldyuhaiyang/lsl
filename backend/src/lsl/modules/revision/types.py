@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import Protocol
+from typing import Iterator, Protocol
 
 
 class RevisionStatus(IntEnum):
@@ -25,7 +25,10 @@ def status_code_to_name(status: int) -> str:
 @dataclass(slots=True)
 class GeneratedRevisionItem:
     task_id: str
-    utterance_seq: int
+    source_seq_start: int
+    source_seq_end: int
+    source_seq_count: int
+    source_seqs: list[int]
     speaker: str | None
     start_time: int
     end_time: int
@@ -69,10 +72,13 @@ class RevisionGenerator(Protocol):
     def generate(self, req: RevisionGenerateRequest) -> list["RevisionSuggestion"]:
         ...
 
+    def generate_progressively(self, req: RevisionGenerateRequest) -> Iterator[list["RevisionSuggestion"]]:
+        ...
+
 
 @dataclass(slots=True)
 class RevisionSuggestion:
-    utterance_seq: int
+    source_seqs: list[int]
     suggested_text: str
     suggested_cue: str | None
     score: int

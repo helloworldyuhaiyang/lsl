@@ -4,7 +4,7 @@ import { Link, useParams } from 'react-router-dom'
 import { PageTitle } from '@/components/common/page-title'
 import { HighlightedTextarea } from '@/components/ui/highlighted-textarea'
 import { ApiRequestError } from '@/lib/api/client'
-import { createRevision, getRevision } from '@/lib/api/revisions'
+import { createRevision, getRevision, updateRevisionItem } from '@/lib/api/revisions'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { getListeningPath, getSessionPath, ROUTES } from '@/lib/constants/routes'
@@ -47,22 +47,46 @@ function buildEditableDraft(sentence: string, cue?: string): string {
 }
 
 function buildDraftsByItem(items: RevisionItem[]): Record<string, string> {
-  return Object.fromEntries(items.map((item) => [item.id, buildEditableDraft(item.suggested, item.cue)]))
+  return Object.fromEntries(items.map((item) => [item.id, item.persistedDraft ?? buildEditableDraft(item.suggested, item.cue)]))
+}
+
+function formatSeqLabel(item: RevisionItem): string {
+  return item.seqStart === item.seqEnd ? `#${item.seqStart}` : `#${item.seqStart}-${item.seqEnd}`
+}
+
+function normalizeDraftValue(value: string | null | undefined): string {
+  return value?.trim() || ''
+}
+
+function buildPersistedDraft(draftText: string | null | undefined, draftCue: string | null | undefined): string | null {
+  const normalizedDraftText = draftText?.trim() || ''
+  const normalizedDraftCue = draftCue?.trim() || ''
+  if (normalizedDraftText) {
+    return normalizedDraftText
+  }
+  if (normalizedDraftCue) {
+    return formatCueText(normalizedDraftCue)
+  }
+  return null
 }
 
 function mapRevisionResponseToItems(revision: RevisionResponse): RevisionItem[] {
   return revision.items.map((item) => ({
     id: item.item_id,
-    seq: item.utterance_seq,
+    seqStart: item.source_seq_start,
+    seqEnd: item.source_seq_end,
+    sourceSeqCount: item.source_seq_count,
+    sourceSeqs: item.source_seqs,
     speaker: item.speaker?.trim() || 'Speaker',
     startTimeMs: item.start_time,
     endTimeMs: item.end_time,
     original: item.original_text,
-    suggested: item.draft_text?.trim() || item.suggested_text,
+    suggested: extractSpeechText(item.draft_text?.trim() || item.suggested_text),
     cue: formatCueText(item.draft_cue?.trim() || item.suggested_cue?.trim() || formatExpressionCue(inferExpressionCue(item.suggested_text))),
     score: item.score,
     issues: splitCommaSeparated(item.issue_tags),
     explanations: splitExplanationText(item.explanations),
+    persistedDraft: buildPersistedDraft(item.draft_text, item.draft_cue),
   }))
 }
 
@@ -83,10 +107,14 @@ export function RevisePage() {
   const [session, setSession] = useState<SessionSummary | null>(null)
   const [items, setItems] = useState<RevisionItem[]>([])
   const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [persistedDrafts, setPersistedDrafts] = useState<Record<string, string>>({})
+  const [editingItemIds, setEditingItemIds] = useState<Record<string, boolean>>({})
+  const [savingItemIds, setSavingItemIds] = useState<Record<string, boolean>>({})
+  const [revisionStatusName, setRevisionStatusName] = useState<string | null>(null)
   const [userPrompt, setUserPrompt] = useState('')
   const [expandedExplanation, setExpandedExplanation] = useState<Record<string, boolean>>({})
   const [isLoading, setIsLoading] = useState(true)
-  const [isRevising, setIsRevising] = useState(false)
+  const [isSubmittingRevision, setIsSubmittingRevision] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [playbackMessage, setPlaybackMessage] = useState<string | null>(null)
   const [activeOriginalId, setActiveOriginalId] = useState<string | null>(null)
@@ -94,7 +122,20 @@ export function RevisePage() {
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const snippetEndRef = useRef<number | null>(null)
   const resolvedSessionId = session?.sessionId || sessionId
-  const canRevise = Boolean(resolvedSessionId) && !isLoading && !isRevising && session?.status === 'completed'
+  const isRevisionGenerating = revisionStatusName === 'generating'
+  const hasActiveDraftMutation =
+    Object.keys(editingItemIds).length > 0 || Object.keys(savingItemIds).length > 0
+  const canRevise = Boolean(resolvedSessionId) && !isLoading && !isSubmittingRevision && !isRevisionGenerating && session?.status === 'completed'
+
+  function applyRevision(revision: RevisionResponse) {
+    const nextItems = mapRevisionResponseToItems(revision)
+    const nextDrafts = buildDraftsByItem(nextItems)
+    setRevisionStatusName(revision.status_name)
+    setItems(nextItems)
+    setDrafts(nextDrafts)
+    setPersistedDrafts(nextDrafts)
+    setUserPrompt(revision.user_prompt?.trim() || '')
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -124,18 +165,19 @@ export function RevisePage() {
             return
           }
 
-          const nextItems = mapRevisionResponseToItems(revision)
-          setItems(nextItems)
-          setDrafts(buildDraftsByItem(nextItems))
-          setUserPrompt(revision.user_prompt?.trim() || '')
+          applyRevision(revision)
         } catch (error) {
           if (cancelled) {
             return
           }
 
           if (error instanceof ApiRequestError && error.status === 404) {
+            setRevisionStatusName(null)
             setItems([])
             setDrafts({})
+            setPersistedDrafts({})
+            setEditingItemIds({})
+            setSavingItemIds({})
             setUserPrompt('')
           } else {
             throw error
@@ -164,6 +206,35 @@ export function RevisePage() {
   }, [sessionId])
 
   useEffect(() => {
+    if (!resolvedSessionId || !isRevisionGenerating || hasActiveDraftMutation) {
+      return
+    }
+
+    let cancelled = false
+    const timerId = window.setInterval(() => {
+      void (async () => {
+        try {
+          const revision = await getRevision(resolvedSessionId)
+          if (cancelled) {
+            return
+          }
+          applyRevision(revision)
+        } catch (error) {
+          if (cancelled) {
+            return
+          }
+          setErrorMessage(error instanceof Error ? error.message : 'Failed to refresh revise status.')
+        }
+      })()
+    }, 2000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timerId)
+    }
+  }, [resolvedSessionId, isRevisionGenerating, hasActiveDraftMutation])
+
+  useEffect(() => {
     const audio = audioRef.current
 
     return () => {
@@ -183,6 +254,66 @@ export function RevisePage() {
     }))
   }
 
+  function markItemEditing(itemId: string, isEditing: boolean) {
+    setEditingItemIds((value) => {
+      if (isEditing) {
+        return {
+          ...value,
+          [itemId]: true,
+        }
+      }
+      if (!value[itemId]) {
+        return value
+      }
+      const nextValue = { ...value }
+      delete nextValue[itemId]
+      return nextValue
+    })
+  }
+
+  function markItemSaving(itemId: string, isSaving: boolean) {
+    setSavingItemIds((value) => {
+      if (isSaving) {
+        return {
+          ...value,
+          [itemId]: true,
+        }
+      }
+      if (!value[itemId]) {
+        return value
+      }
+      const nextValue = { ...value }
+      delete nextValue[itemId]
+      return nextValue
+    })
+  }
+
+  async function handleDraftBlur(item: RevisionItem) {
+    markItemEditing(item.id, false)
+    const nextDraftValue = normalizeDraftValue(drafts[item.id])
+    const persistedDraftValue = normalizeDraftValue(persistedDrafts[item.id])
+    if (nextDraftValue === persistedDraftValue) {
+      return
+    }
+
+    try {
+      markItemSaving(item.id, true)
+      setErrorMessage(null)
+      await updateRevisionItem(item.id, {
+        draftText: nextDraftValue || null,
+        draftCue: null,
+      })
+      setPersistedDrafts((value) => ({
+        ...value,
+        [item.id]: nextDraftValue,
+      }))
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to save revise draft.')
+    } finally {
+      markItemSaving(item.id, false)
+    }
+  }
+
   async function handleRevise() {
     if (!resolvedSessionId) {
       setErrorMessage('Missing session id.')
@@ -190,7 +321,7 @@ export function RevisePage() {
     }
 
     try {
-      setIsRevising(true)
+      setIsSubmittingRevision(true)
       setErrorMessage(null)
       setPlaybackMessage(null)
 
@@ -200,14 +331,12 @@ export function RevisePage() {
         force: true,
       })
 
-      const nextItems = mapRevisionResponseToItems(revision)
-      setItems(nextItems)
-      setDrafts(buildDraftsByItem(nextItems))
+      applyRevision(revision)
       setExpandedExplanation({})
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to create revise content.')
     } finally {
-      setIsRevising(false)
+      setIsSubmittingRevision(false)
     }
   }
 
@@ -330,9 +459,16 @@ export function RevisePage() {
               Add an optional prompt, then click `Revise by AI` to call `POST /revisions`.
             </CardDescription>
           </div>
-          <Button type="button" size="sm" onClick={() => void handleRevise()} disabled={!canRevise}>
-            {isRevising ? 'Revising...' : 'Revise by AI'}
-          </Button>
+          <div className="flex items-center gap-2 self-start">
+            {revisionStatusName ? (
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-slate-600">
+                {revisionStatusName}
+              </span>
+            ) : null}
+            <Button type="button" size="sm" onClick={() => void handleRevise()} disabled={!canRevise}>
+              {isSubmittingRevision ? 'Submitting...' : isRevisionGenerating ? 'Generating' : 'Revise by AI'}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-3 pt-0">
           <div className="space-y-1.5">
@@ -351,7 +487,7 @@ export function RevisePage() {
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-wrap gap-2 text-xs text-slate-500">
-              <span className="rounded-full bg-slate-100 px-2.5 py-1">{items.length} sentences</span>
+              <span className="rounded-full bg-slate-100 px-2.5 py-1">{items.length} span items</span>
               <span className="rounded-full bg-slate-100 px-2.5 py-1">expression cue visible</span>
               <span className="rounded-full bg-slate-100 px-2.5 py-1">input height adapts to content</span>
             </div>
@@ -401,13 +537,23 @@ export function RevisePage() {
                       </p>
                     </div>
                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-500">
-                      #{item.seq}
+                      {formatSeqLabel(item)}
                     </span>
                   </div>
+
+                  {item.sourceSeqCount > 1 ? (
+                    <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                      <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-800 ring-1 ring-amber-200/80">
+                        {`Merged ${item.sourceSeqCount} utterances`}
+                      </span>
+                    </div>
+                  ) : null}
 
                   <HighlightedTextarea
                     value={draftText}
                     onChange={(nextValue) => updateDraft(item.id, nextValue)}
+                    onFocus={() => markItemEditing(item.id, true)}
+                    onBlur={() => void handleDraftBlur(item)}
                   />
 
                   <div className="flex flex-wrap gap-2">

@@ -2,7 +2,10 @@ import type { TaskTranscriptUtterance } from '@/types/api'
 
 export interface RevisionItem {
   id: string
-  seq: number
+  seqStart: number
+  seqEnd: number
+  sourceSeqCount: number
+  sourceSeqs: number[]
   speaker: string
   startTimeMs: number
   endTimeMs: number
@@ -12,6 +15,7 @@ export interface RevisionItem {
   score: number
   issues: string[]
   explanations: string[]
+  persistedDraft?: string | null
 }
 
 export interface ExpressionCue {
@@ -254,7 +258,10 @@ export function buildRevisionItems(utterances: TaskTranscriptUtterance[]): Revis
 
     return {
       id: `${item.seq}-${item.start_time}`,
-      seq: item.seq,
+      seqStart: item.seq,
+      seqEnd: item.seq,
+      sourceSeqCount: 1,
+      sourceSeqs: [item.seq],
       speaker: normalizeSpeaker(item.speaker),
       startTimeMs: item.start_time,
       endTimeMs: item.end_time,

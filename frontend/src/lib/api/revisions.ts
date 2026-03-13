@@ -1,5 +1,5 @@
 import { requestJson } from '@/lib/api/client'
-import type { CreateRevisionRequest, RevisionResponse } from '@/types/api'
+import type { CreateRevisionRequest, RevisionItemResponse, RevisionResponse, UpdateRevisionItemRequest } from '@/types/api'
 
 interface ApiResponse<T> {
   code: number
@@ -27,6 +27,21 @@ export async function createRevision(payload: CreateRevisionRequest): Promise<Re
       session_id: payload.sessionId,
       user_prompt: payload.userPrompt,
       force: payload.force ?? true,
+    }),
+  })
+
+  return response.data
+}
+
+export async function updateRevisionItem(itemId: string, payload: UpdateRevisionItemRequest): Promise<RevisionItemResponse> {
+  const response = await requestJson<ApiResponse<RevisionItemResponse>>(`/revisions/items/${itemId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      draft_text: payload.draftText,
+      draft_cue: payload.draftCue,
     }),
   })
 

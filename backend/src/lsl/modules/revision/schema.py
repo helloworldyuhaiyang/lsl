@@ -64,7 +64,10 @@ class RevisionItemData(BaseModel):
     item_id: str
     revision_id: str
     task_id: str
-    utterance_seq: int
+    source_seq_start: int
+    source_seq_end: int
+    source_seq_count: int
+    source_seqs: list[int]
     speaker: str | None = None
     start_time: int
     end_time: int

@@ -3,6 +3,8 @@ import { Fragment, type ReactNode, useEffect, useRef, useState } from 'react'
 interface HighlightedTextareaProps {
   value: string
   onChange: (nextValue: string) => void
+  onFocus?: () => void
+  onBlur?: () => void
 }
 
 const BRACKET_SEGMENT_PATTERN = /\[[^[\]]*]/g
@@ -57,7 +59,7 @@ function renderHighlightedText(value: string) {
   return parts
 }
 
-export function HighlightedTextarea({ value, onChange }: HighlightedTextareaProps) {
+export function HighlightedTextarea({ value, onChange, onFocus, onBlur }: HighlightedTextareaProps) {
   const [scrollTop, setScrollTop] = useState(0)
   const [scrollLeft, setScrollLeft] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
@@ -109,6 +111,8 @@ export function HighlightedTextarea({ value, onChange }: HighlightedTextareaProp
           setScrollTop(event.currentTarget.scrollTop)
           setScrollLeft(event.currentTarget.scrollLeft)
         }}
+        onFocus={onFocus}
+        onBlur={onBlur}
         rows={1}
         className="relative z-10 w-full resize-none overflow-hidden border-0 bg-transparent px-3 py-3 text-sm leading-6 text-transparent caret-slate-900 outline-none selection:bg-slate-200/70"
       />

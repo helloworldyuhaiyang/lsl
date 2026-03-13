@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from sqlalchemy import DateTime, Index, Integer, SmallInteger, String, Text, text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, foreign, mapped_column, relationship
 
 from lsl.core.db import Base
@@ -46,7 +46,10 @@ class UtterancesRevisionModel(Base):
     items: Mapped[list["UtterancesRevisionItemModel"]] = relationship(
         back_populates="revision",
         cascade="all, delete-orphan",
-        order_by=lambda: UtterancesRevisionItemModel.utterance_seq,
+        order_by=lambda: (
+            UtterancesRevisionItemModel.source_seq_start,
+            UtterancesRevisionItemModel.source_seq_end,
+        ),
         primaryjoin=lambda: UtterancesRevisionModel.revision_id
         == foreign(UtterancesRevisionItemModel.revision_id),
         foreign_keys=lambda: [UtterancesRevisionItemModel.revision_id],
@@ -56,8 +59,18 @@ class UtterancesRevisionModel(Base):
 class UtterancesRevisionItemModel(Base):
     __tablename__ = "utterances_revision_items"
     __table_args__ = (
-        Index("idx_utterances_revision_items_revision_seq", "revision_id", "utterance_seq"),
-        Index("idx_utterances_revision_items_task_seq", "task_id", "utterance_seq"),
+        Index(
+            "idx_utterances_revision_items_revision_seq_span",
+            "revision_id",
+            "source_seq_start",
+            "source_seq_end",
+        ),
+        Index(
+            "idx_utterances_revision_items_task_seq_span",
+            "task_id",
+            "source_seq_start",
+            "source_seq_end",
+        ),
         {"schema": "public"},
     )
 
@@ -70,7 +83,15 @@ class UtterancesRevisionItemModel(Base):
         UUID(as_uuid=False),
         nullable=False,
     )
-    utterance_seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_seq_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_seq_end: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_seq_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_seqs: Mapped[list[int]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+        server_default=text("'[]'::jsonb"),
+    )
     speaker: Mapped[str | None] = mapped_column(String(64), nullable=True)
     start_time: Mapped[int] = mapped_column(Integer, nullable=False)
     end_time: Mapped[int] = mapped_column(Integer, nullable=False)

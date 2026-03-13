@@ -93,6 +93,8 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        if revision_service is not None:
+            revision_service.shutdown()
         close_database_resources(db_resources)
 
 

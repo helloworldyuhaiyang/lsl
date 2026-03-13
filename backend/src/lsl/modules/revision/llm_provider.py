@@ -68,17 +68,21 @@ _SEGMENT_REVISION_SYSTEM_PROMPT = """You are an expert English speaking coach fo
 
 Your task is to revise only the target utterances and return a JSON object only.
 
-Goals for each target utterance:
-1. Rewrite the original text into fluent, natural spoken English.
+Goals for each output item:
+1. Rewrite the original text or utterance span into fluent, natural spoken English.
 2. Preserve the original meaning, intent, and speaker perspective.
-3. Score the ORIGINAL sentence from 0 to 100 based on grammar, clarity, and naturalness.
+3. Score the ORIGINAL source utterance(s) from 0 to 100 based on grammar, clarity, and naturalness.
 4. Provide short Chinese issue tags and short Chinese explanations for improvement.
 5. Provide one short Chinese delivery cue sentence that can be shown before the rewritten sentence.
 
 Important rules:
 - Use the segment title, segment summary, and nearby context only for understanding.
 - Return items only for target_utterances. Do not return context utterances.
-- Return every target utterance with the same utterance_seq as the input.
+- Every target utterance_seq must be covered exactly once across all items. No gaps. No overlaps.
+- Each item must contain source_seqs: a non-empty contiguous array of target utterance_seq values such as [4] or [4, 5].
+- You may merge adjacent target utterances only when they clearly belong to the same speaker and form one natural spoken sentence or ASR-fragment span.
+- Do not merge across different speakers.
+- Never leave suggested_text empty.
 - Keep edits minimal if the sentence is already natural.
 - Do not invent facts, change tense without reason, or change the speaker's intent.
 - Prefer one natural spoken sentence. Two short sentences are acceptable when needed.
@@ -93,7 +97,7 @@ Output schema:
 {
   "items": [
     {
-      "utterance_seq": 1,
+      "source_seqs": [1],
       "suggested_text": "What did you do last weekend?",
       "suggested_cue": "有点好奇的,用轻松又带点分享欲的语气读这句,像是在和朋友聊周末经历.",
       "score": 88,
@@ -122,7 +126,7 @@ class FakeRevisionGenerator:
         for item in req.utterances:
             suggestions.append(
                 RevisionSuggestion(
-                    utterance_seq=int(item.utterance_seq),
+                    source_seqs=[int(item.utterance_seq)],
                     suggested_text="This is a fake revised sentence for debugging.",
                     suggested_cue="用夸张又兴奋的语气读这句，像是在调试时故意把情绪拉满。",
                     score=78,
@@ -131,6 +135,11 @@ class FakeRevisionGenerator:
                 )
             )
         return suggestions
+
+    def generate_progressively(self, req: RevisionGenerateRequest):
+        if not req.utterances:
+            return
+        yield self.generate(req)
 
 
 class LLMRevisionGenerator:
@@ -145,21 +154,27 @@ class LLMRevisionGenerator:
         self._client: OpenAI | None = None
 
     def generate(self, req: RevisionGenerateRequest) -> list[RevisionSuggestion]:
+        suggestions: list[RevisionSuggestion] = []
+        for segment_suggestions in self.generate_progressively(req):
+            suggestions.extend(segment_suggestions)
+        return self._deduplicate_suggestions(suggestions)
+
+    def generate_progressively(self, req: RevisionGenerateRequest):
         if not req.utterances:
-            return []
+            return
 
         segments = self._plan_segments(
             task_id=req.task_id,
             utterances=req.utterances,
             user_prompt=req.user_prompt,
         )
-        suggestions = self._generate_segmented_revisions(
+        for segment_suggestions in self._generate_segmented_revisions(
             task_id=req.task_id,
             utterances=req.utterances,
             user_prompt=req.user_prompt,
             segments=segments,
-        )
-        return self._deduplicate_suggestions(suggestions)
+        ):
+            yield segment_suggestions
 
     def _plan_segments(
         self,
@@ -187,13 +202,12 @@ class LLMRevisionGenerator:
         utterances: list[RevisionPromptUtterance],
         user_prompt: str | None,
         segments: list[RevisionSegment],
-    ) -> list[RevisionSuggestion]:
+    ):
         if not segments:
-            return []
+            return
 
         utterance_index_by_seq = {int(item.utterance_seq): index for index, item in enumerate(utterances)}
         max_workers = max(1, min(_SEGMENT_MAX_WORKERS, len(segments)))
-        suggestions: list[RevisionSuggestion] = []
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
@@ -210,12 +224,11 @@ class LLMRevisionGenerator:
             for future in as_completed(futures):
                 segment = futures[future]
                 try:
-                    suggestions.extend(future.result())
+                    yield future.result()
                 except Exception as exc:
                     raise RuntimeError(
                         f"Segment revision failed for seq range {segment.start_seq}-{segment.end_seq}: {exc}"
                     ) from exc
-        return suggestions
 
     def _generate_single_segment_revision(
         self,
@@ -545,7 +558,7 @@ class LLMRevisionGenerator:
             suggestion = self._normalize_suggestion(raw_item=raw_item, utterance_by_seq=utterance_by_seq)
             if suggestion is not None:
                 suggestions.append(suggestion)
-        return suggestions
+        return self._validate_revision_suggestions(suggestions=suggestions, utterances=utterances)
 
     def _normalize_suggestion(
         self,
@@ -553,23 +566,28 @@ class LLMRevisionGenerator:
         raw_item: dict[str, Any],
         utterance_by_seq: dict[int, RevisionPromptUtterance],
     ) -> RevisionSuggestion | None:
-        utterance_seq = self._coerce_int(raw_item.get("utterance_seq"))
-        if utterance_seq is None:
+        source_seqs = self._normalize_source_seqs(raw_item=raw_item, utterance_by_seq=utterance_by_seq)
+        if not source_seqs:
             return None
 
-        if utterance_seq not in utterance_by_seq:
-            return None
+        source_seq_start = int(source_seqs[0])
+        speakers = {
+            (utterance_by_seq[int(seq)].speaker or "").strip()
+            for seq in source_seqs
+        }
+        if len(speakers) > 1:
+            raise RuntimeError(f"LLM merged utterances from different speakers in source_seqs={source_seqs}")
 
         issue_tags_list = self._normalize_string_list(raw_item.get("issue_tags"), max_items=_MAX_ISSUE_TAGS)
         explanations_text = self._normalize_explanations_text(raw_item.get("explanations"))
-        score = self._require_score(raw_item.get("score"), utterance_seq=utterance_seq)
+        score = self._require_score(raw_item.get("score"), utterance_seq=source_seq_start)
 
         return RevisionSuggestion(
-            utterance_seq=utterance_seq,
+            source_seqs=source_seqs,
             suggested_text=self._require_text(
                 raw_item.get("suggested_text"),
                 field_name="suggested_text",
-                utterance_seq=utterance_seq,
+                utterance_seq=source_seq_start,
             ),
             suggested_cue=self._normalize_cue_text(raw_item.get("suggested_cue")),
             score=score,
@@ -671,14 +689,74 @@ class LLMRevisionGenerator:
     @staticmethod
     def _deduplicate_suggestions(suggestions: list[RevisionSuggestion]) -> list[RevisionSuggestion]:
         deduplicated: list[RevisionSuggestion] = []
-        seen_seqs: set[int] = set()
-        for suggestion in sorted(suggestions, key=lambda item: int(item.utterance_seq)):
-            utterance_seq = int(suggestion.utterance_seq)
-            if utterance_seq in seen_seqs:
+        seen_spans: set[tuple[int, ...]] = set()
+        for suggestion in sorted(
+            suggestions,
+            key=lambda item: (
+                int(item.source_seqs[0]),
+                int(item.source_seqs[-1]),
+            ),
+        ):
+            span_key = tuple(int(seq) for seq in suggestion.source_seqs)
+            if span_key in seen_spans:
                 continue
             deduplicated.append(suggestion)
-            seen_seqs.add(utterance_seq)
+            seen_spans.add(span_key)
         return deduplicated
+
+    @staticmethod
+    def _normalize_source_seqs(
+        *,
+        raw_item: dict[str, Any],
+        utterance_by_seq: dict[int, RevisionPromptUtterance],
+    ) -> list[int]:
+        raw_source_seqs = raw_item.get("source_seqs")
+        if isinstance(raw_source_seqs, list):
+            normalized_source_seqs: list[int] = []
+            seen_seqs: set[int] = set()
+            for raw_source_seq in raw_source_seqs:
+                source_seq = LLMRevisionGenerator._coerce_int(raw_source_seq)
+                if source_seq is None or source_seq not in utterance_by_seq or source_seq in seen_seqs:
+                    return []
+                normalized_source_seqs.append(int(source_seq))
+                seen_seqs.add(int(source_seq))
+            ordered_source_seqs = sorted(normalized_source_seqs)
+            if not ordered_source_seqs:
+                return []
+            expected_source_seqs = list(range(ordered_source_seqs[0], ordered_source_seqs[-1] + 1))
+            if ordered_source_seqs != expected_source_seqs:
+                return []
+            return ordered_source_seqs
+
+        utterance_seq = LLMRevisionGenerator._coerce_int(raw_item.get("utterance_seq"))
+        if utterance_seq is None or utterance_seq not in utterance_by_seq:
+            return []
+        return [int(utterance_seq)]
+
+    @staticmethod
+    def _validate_revision_suggestions(
+        *,
+        suggestions: list[RevisionSuggestion],
+        utterances: list[RevisionPromptUtterance],
+    ) -> list[RevisionSuggestion]:
+        expected_seqs = [int(item.utterance_seq) for item in utterances]
+        if not suggestions:
+            raise RuntimeError("LLM returned no valid revision items")
+
+        normalized_suggestions = sorted(
+            suggestions,
+            key=lambda item: (
+                int(item.source_seqs[0]),
+                int(item.source_seqs[-1]),
+            ),
+        )
+        covered_seqs: list[int] = []
+        for suggestion in normalized_suggestions:
+            covered_seqs.extend(int(seq) for seq in suggestion.source_seqs)
+
+        if covered_seqs != expected_seqs:
+            raise RuntimeError("LLM revision items do not fully cover target utterance_seq without gaps or overlaps")
+        return normalized_suggestions
 
     @staticmethod
     def _loads_json(content: str) -> Any:
