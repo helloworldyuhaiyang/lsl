@@ -52,14 +52,16 @@ LSL 「口语录音的智能复盘工具」。
 - 已完成：ASR 任务模块（Task Module）
 - 已完成：会话管理模块（Session Module）
 - 已完成：Revision 模块（utterance 级 revise + 打分 + 草稿保存）
+- 已完成：TTS 模块设计文档（待实现）
 - 已完成：模块化后端结构（`core` + `modules`）
-- 未完成：LLM/TTS 调度、鉴权、前端页面
+- 未完成：TTS 模块实现、鉴权、前端页面
 
 模块详细文档见：
 - `backend/src/lsl/modules/asset/README.md`
 - `backend/src/lsl/modules/task/README.md`
 - `backend/src/lsl/modules/session/README.md`
 - `backend/src/lsl/modules/revision/README.md`
+- `backend/src/lsl/modules/tts/README.md`
 
 ## 本地启动（当前后端原型）
 

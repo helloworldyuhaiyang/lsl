@@ -41,7 +41,6 @@ export async function updateRevisionItem(itemId: string, payload: UpdateRevision
     },
     body: JSON.stringify({
       draft_text: payload.draftText,
-      draft_cue: payload.draftCue,
     }),
   })
 

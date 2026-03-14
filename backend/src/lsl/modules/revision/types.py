@@ -34,9 +34,7 @@ class GeneratedRevisionItem:
     end_time: int
     original_text: str
     suggested_text: str
-    suggested_cue: str | None
     draft_text: str | None = None
-    draft_cue: str | None = None
     score: int = 0
     issue_tags: str = ""
     explanations: str = ""
@@ -80,7 +78,6 @@ class RevisionGenerator(Protocol):
 class RevisionSuggestion:
     source_seqs: list[int]
     suggested_text: str
-    suggested_cue: str | None
     score: int
     issue_tags: str = ""
     explanations: str = ""

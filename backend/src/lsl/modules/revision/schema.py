@@ -41,19 +41,10 @@ class CreateRevisionRequest(BaseModel):
 
 class UpdateRevisionItemRequest(BaseModel):
     draft_text: str | None = Field(default=None, max_length=8000)
-    draft_cue: str | None = Field(default=None, max_length=1000)
 
     @field_validator("draft_text")
     @classmethod
     def normalize_draft_text(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        normalized = value.strip()
-        return normalized or None
-
-    @field_validator("draft_cue")
-    @classmethod
-    def normalize_draft_cue(cls, value: str | None) -> str | None:
         if value is None:
             return None
         normalized = value.strip()
@@ -73,9 +64,7 @@ class RevisionItemData(BaseModel):
     end_time: int
     original_text: str
     suggested_text: str
-    suggested_cue: str | None = None
     draft_text: str | None = None
-    draft_cue: str | None = None
     score: int
     issue_tags: str
     explanations: str

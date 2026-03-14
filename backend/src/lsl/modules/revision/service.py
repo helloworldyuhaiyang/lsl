@@ -120,7 +120,7 @@ class RevisionService:
     def update_revision_item(self, *, item_id: str, payload: UpdateRevisionItemRequest) -> RevisionItemData:
         updates = payload.model_dump(exclude_unset=True)
         if not updates:
-            raise ValueError("draft_text or draft_cue is required")
+            raise ValueError("draft_text is required")
 
         item = self._repository.update_revision_item(item_id=item_id, updates=updates)
         if item is None:
@@ -233,7 +233,6 @@ class RevisionService:
                 end_time=int(item.end_time),
                 original_text=item.text,
                 suggested_text=item.text,
-                suggested_cue=None,
                 score=0,
                 issue_tags="",
                 explanations="",
@@ -270,7 +269,6 @@ class RevisionService:
             end_time=max(int(item.end_time) for item in ordered_utterances),
             original_text=RevisionService._join_original_text([item.text for item in ordered_utterances]),
             suggested_text=suggestion.suggested_text,
-            suggested_cue=suggestion.suggested_cue,
             score=int(suggestion.score),
             issue_tags=suggestion.issue_tags,
             explanations=suggestion.explanations,
@@ -378,9 +376,7 @@ class RevisionService:
             end_time=int(model.end_time),
             original_text=model.original_text,
             suggested_text=model.suggested_text,
-            suggested_cue=model.suggested_cue,
             draft_text=model.draft_text,
-            draft_cue=model.draft_cue,
             score=int(model.score),
             issue_tags=model.issue_tags,
             explanations=model.explanations,

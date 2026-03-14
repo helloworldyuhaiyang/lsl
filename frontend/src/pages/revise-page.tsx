@@ -8,7 +8,7 @@ import { createRevision, getRevision, updateRevisionItem } from '@/lib/api/revis
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { getListeningPath, getSessionPath, ROUTES } from '@/lib/constants/routes'
-import { formatCueText, formatExpressionCue, inferExpressionCue, scoreRevisionIssues, type RevisionItem } from '@/lib/session/revision'
+import { scoreRevisionIssues, type RevisionItem } from '@/lib/session/revision'
 import { getSessionSummary, type SessionSummary } from '@/lib/session/sessions'
 import { formatDuration } from '@/lib/utils/format'
 import type { RevisionResponse } from '@/types/api'
@@ -34,20 +34,21 @@ function splitExplanationText(value: string | null | undefined): string[] {
     .filter(Boolean)
 }
 
+const CUE_SEGMENT_PATTERN = /\[[^[\]]*]/g
+
 function extractSpeechText(value: string): string {
   return value
-    .replace(/\[[^[\]]*]/g, ' ')
+    .replace(CUE_SEGMENT_PATTERN, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 }
 
-function buildEditableDraft(sentence: string, cue?: string): string {
-  const resolvedCue = cue?.trim() || formatExpressionCue(inferExpressionCue(sentence))
-  return `${resolvedCue} ${sentence.trim()}`.trim()
+function buildEditableDraft(script: string): string {
+  return script.trim()
 }
 
 function buildDraftsByItem(items: RevisionItem[]): Record<string, string> {
-  return Object.fromEntries(items.map((item) => [item.id, item.persistedDraft ?? buildEditableDraft(item.suggested, item.cue)]))
+  return Object.fromEntries(items.map((item) => [item.id, item.persistedDraft ?? buildEditableDraft(item.suggested)]))
 }
 
 function formatSeqLabel(item: RevisionItem): string {
@@ -58,14 +59,10 @@ function normalizeDraftValue(value: string | null | undefined): string {
   return value?.trim() || ''
 }
 
-function buildPersistedDraft(draftText: string | null | undefined, draftCue: string | null | undefined): string | null {
+function buildPersistedDraft(draftText: string | null | undefined): string | null {
   const normalizedDraftText = draftText?.trim() || ''
-  const normalizedDraftCue = draftCue?.trim() || ''
   if (normalizedDraftText) {
     return normalizedDraftText
-  }
-  if (normalizedDraftCue) {
-    return formatCueText(normalizedDraftCue)
   }
   return null
 }
@@ -81,12 +78,11 @@ function mapRevisionResponseToItems(revision: RevisionResponse): RevisionItem[] 
     startTimeMs: item.start_time,
     endTimeMs: item.end_time,
     original: item.original_text,
-    suggested: extractSpeechText(item.draft_text?.trim() || item.suggested_text),
-    cue: formatCueText(item.draft_cue?.trim() || item.suggested_cue?.trim() || formatExpressionCue(inferExpressionCue(item.suggested_text))),
+    suggested: item.suggested_text,
     score: item.score,
     issues: splitCommaSeparated(item.issue_tags),
     explanations: splitExplanationText(item.explanations),
-    persistedDraft: buildPersistedDraft(item.draft_text, item.draft_cue),
+    persistedDraft: buildPersistedDraft(item.draft_text),
   }))
 }
 
@@ -301,7 +297,6 @@ export function RevisePage() {
       setErrorMessage(null)
       await updateRevisionItem(item.id, {
         draftText: nextDraftValue || null,
-        draftCue: null,
       })
       setPersistedDrafts((value) => ({
         ...value,
@@ -370,7 +365,7 @@ export function RevisePage() {
   }
 
   function synthesizeItem(item: RevisionItem) {
-    const sentence = extractSpeechText(drafts[item.id] ?? buildEditableDraft(item.suggested, item.cue))
+    const sentence = extractSpeechText(drafts[item.id] ?? buildEditableDraft(item.suggested))
     if (!sentence) {
       return
     }
@@ -521,7 +516,7 @@ export function RevisePage() {
       {!isLoading && !errorMessage && items.length > 0 ? (
         <div className="space-y-4">
           {items.map((item) => {
-            const draftText = drafts[item.id] ?? buildEditableDraft(item.suggested, item.cue)
+            const draftText = drafts[item.id] ?? buildEditableDraft(item.suggested)
             const isExplanationOpen = expandedExplanation[item.id] ?? false
             const hasDraft = extractSpeechText(draftText).length > 0
             const score = Number.isFinite(item.score) ? item.score : scoreRevisionIssues(item.issues)

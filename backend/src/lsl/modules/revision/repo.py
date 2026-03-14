@@ -124,9 +124,7 @@ class RevisionRepository:
                             end_time=int(item.end_time),
                             original_text=item.original_text,
                             suggested_text=item.suggested_text,
-                            suggested_cue=item.suggested_cue,
                             draft_text=item.draft_text,
-                            draft_cue=item.draft_cue,
                             score=int(item.score),
                             issue_tags=item.issue_tags,
                             explanations=item.explanations,
@@ -144,15 +142,11 @@ class RevisionRepository:
                     model_item.end_time = int(item.end_time)
                     model_item.original_text = item.original_text
                     model_item.suggested_text = item.suggested_text
-                    model_item.suggested_cue = item.suggested_cue
                     if preserve_existing_drafts:
                         if item.draft_text is not None:
                             model_item.draft_text = item.draft_text
-                        if item.draft_cue is not None:
-                            model_item.draft_cue = item.draft_cue
                     else:
                         model_item.draft_text = item.draft_text
-                        model_item.draft_cue = item.draft_cue
                     model_item.score = int(item.score)
                     model_item.issue_tags = item.issue_tags
                     model_item.explanations = item.explanations

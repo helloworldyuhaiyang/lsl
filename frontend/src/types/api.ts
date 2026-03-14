@@ -109,7 +109,6 @@ export interface CreateRevisionRequest {
 
 export interface UpdateRevisionItemRequest {
   draftText?: string | null
-  draftCue?: string | null
 }
 
 export interface RevisionItemResponse {
@@ -125,9 +124,7 @@ export interface RevisionItemResponse {
   end_time: number
   original_text: string
   suggested_text: string
-  suggested_cue?: string | null
   draft_text?: string | null
-  draft_cue?: string | null
   score: number
   issue_tags: string
   explanations: string

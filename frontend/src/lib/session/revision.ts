@@ -11,7 +11,6 @@ export interface RevisionItem {
   endTimeMs: number
   original: string
   suggested: string
-  cue: string
   score: number
   issues: string[]
   explanations: string[]
@@ -266,8 +265,7 @@ export function buildRevisionItems(utterances: TaskTranscriptUtterance[]): Revis
       startTimeMs: item.start_time,
       endTimeMs: item.end_time,
       original: item.text,
-      suggested: suggestion.suggested,
-      cue,
+      suggested: `${cue} ${suggestion.suggested}`.trim(),
       score: scoreRevisionIssues(suggestion.issues),
       issues: suggestion.issues,
       explanations: suggestion.explanations,
