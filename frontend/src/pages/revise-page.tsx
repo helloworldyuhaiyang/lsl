@@ -5,13 +5,14 @@ import { PageTitle } from '@/components/common/page-title'
 import { HighlightedTextarea } from '@/components/ui/highlighted-textarea'
 import { ApiRequestError } from '@/lib/api/client'
 import { createRevision, getRevision, updateRevisionItem } from '@/lib/api/revisions'
+import { createTtsSynthesis, generateTtsItemAudio, getTtsSettings, getTtsSpeakers, getTtsSynthesis, updateTtsSettings } from '@/lib/api/tts'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { getListeningPath, getSessionPath, ROUTES } from '@/lib/constants/routes'
 import { scoreRevisionIssues, type RevisionItem } from '@/lib/session/revision'
 import { getSessionSummary, type SessionSummary } from '@/lib/session/sessions'
 import { formatDuration } from '@/lib/utils/format'
-import type { RevisionResponse } from '@/types/api'
+import type { RevisionResponse, TtsSettingsResponse, TtsSpeakerItem, TtsSynthesisResponse } from '@/types/api'
 
 function toggleById(value: Record<string, boolean>, id: string): Record<string, boolean> {
   return {
@@ -67,6 +68,84 @@ function buildPersistedDraft(draftText: string | null | undefined): string | nul
   return null
 }
 
+interface TtsSettingsForm {
+  format: string
+  emotionScale: number
+  speechRate: number
+  loudnessRate: number
+  speakerMappings: Record<string, string>
+}
+
+function buildDefaultTtsSettingsForm(): TtsSettingsForm {
+  return {
+    format: 'mp3',
+    emotionScale: 1,
+    speechRate: 1,
+    loudnessRate: 1,
+    speakerMappings: {},
+  }
+}
+
+function mapTtsSettingsResponseToForm(settings: TtsSettingsResponse): TtsSettingsForm {
+  return {
+    format: settings.format,
+    emotionScale: settings.emotion_scale,
+    speechRate: settings.speech_rate,
+    loudnessRate: settings.loudness_rate,
+    speakerMappings: Object.fromEntries(
+      settings.speaker_mappings.map((item) => [item.conversation_speaker, item.provider_speaker_id]),
+    ),
+  }
+}
+
+function serializeTtsSettingsForm(value: TtsSettingsForm | null): string {
+  if (!value) {
+    return ''
+  }
+  const speakerMappings = Object.entries(value.speakerMappings).sort(([left], [right]) => left.localeCompare(right))
+  return JSON.stringify({
+    format: value.format,
+    emotionScale: value.emotionScale,
+    speechRate: value.speechRate,
+    loudnessRate: value.loudnessRate,
+    speakerMappings,
+  })
+}
+
+function listConversationSpeakers(items: RevisionItem[]): string[] {
+  const result: string[] = []
+  const seen = new Set<string>()
+  items.forEach((item) => {
+    const speaker = item.speaker.trim() || 'Speaker'
+    if (seen.has(speaker)) {
+      return
+    }
+    seen.add(speaker)
+    result.push(speaker)
+  })
+  return result
+}
+
+function normalizeTtsSettingsForm(
+  value: TtsSettingsForm | null,
+  conversationSpeakers: string[],
+  defaultProviderSpeakerId: string,
+): TtsSettingsForm | null {
+  if (!value) {
+    return null
+  }
+
+  const speakerMappings: Record<string, string> = {}
+  conversationSpeakers.forEach((speaker) => {
+    speakerMappings[speaker] = value.speakerMappings[speaker] || defaultProviderSpeakerId
+  })
+
+  return {
+    ...value,
+    speakerMappings,
+  }
+}
+
 function mapRevisionResponseToItems(revision: RevisionResponse): RevisionItem[] {
   return revision.items.map((item) => ({
     id: item.item_id,
@@ -98,6 +177,29 @@ function getScoreButtonClassName(score: number): string {
   return 'bg-rose-50 text-rose-700 ring-1 ring-rose-200 hover:bg-rose-100'
 }
 
+function getErrorMessage(error: unknown, fallbackMessage: string): string {
+  return error instanceof Error ? error.message : fallbackMessage
+}
+
+function formatTtsActionError(error: unknown, fallbackMessage: string): string {
+  const message = getErrorMessage(error, fallbackMessage)
+  if (/requested resource not granted|resource is not granted/i.test(message)) {
+    return [
+      message,
+      '请检查 .env 里的 TTS_VOLC_APP_ID、TTS_VOLC_ACCESS_KEY、TTS_VOLC_RESOURCE_ID。',
+      '不要复用只开通了 ASR 的火山凭证。',
+      '如果只是本地联调，可以先把 TTS_PROVIDER 改成 fake。',
+    ].join('\n\n')
+  }
+  return message
+}
+
+function showPopupMessage(message: string) {
+  if (typeof window !== 'undefined') {
+    window.alert(message)
+  }
+}
+
 export function RevisePage() {
   const { sessionId = '' } = useParams()
   const [session, setSession] = useState<SessionSummary | null>(null)
@@ -111,16 +213,36 @@ export function RevisePage() {
   const [expandedExplanation, setExpandedExplanation] = useState<Record<string, boolean>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmittingRevision, setIsSubmittingRevision] = useState(false)
+  const [isSubmittingTtsBatch, setIsSubmittingTtsBatch] = useState(false)
+  const [isSavingTtsSettings, setIsSavingTtsSettings] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [playbackMessage, setPlaybackMessage] = useState<string | null>(null)
   const [activeOriginalId, setActiveOriginalId] = useState<string | null>(null)
   const [activeSynthesisId, setActiveSynthesisId] = useState<string | null>(null)
+  const [ttsSettings, setTtsSettings] = useState<TtsSettingsForm | null>(null)
+  const [persistedTtsSettings, setPersistedTtsSettings] = useState<TtsSettingsForm | null>(null)
+  const [ttsSpeakers, setTtsSpeakers] = useState<TtsSpeakerItem[]>([])
+  const [ttsStatusName, setTtsStatusName] = useState<string | null>(null)
+  const [ttsFullAssetUrl, setTtsFullAssetUrl] = useState<string | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const snippetEndRef = useRef<number | null>(null)
+  const synthAudioRef = useRef<HTMLAudioElement | null>(null)
+  const synthAudioUrlRef = useRef<string | null>(null)
   const resolvedSessionId = session?.sessionId || sessionId
   const isRevisionGenerating = revisionStatusName === 'generating'
   const hasActiveDraftMutation =
     Object.keys(editingItemIds).length > 0 || Object.keys(savingItemIds).length > 0
+  const conversationSpeakers = listConversationSpeakers(items)
+  const defaultProviderSpeakerId = ttsSpeakers[0]?.speaker_id ?? ''
+  const resolvedTtsSettings = normalizeTtsSettingsForm(ttsSettings, conversationSpeakers, defaultProviderSpeakerId)
+  const resolvedPersistedTtsSettings = normalizeTtsSettingsForm(
+    persistedTtsSettings,
+    conversationSpeakers,
+    defaultProviderSpeakerId,
+  )
+  const hasPendingTtsSettings =
+    serializeTtsSettingsForm(resolvedTtsSettings) !== serializeTtsSettingsForm(resolvedPersistedTtsSettings)
+  const canUseTts = Boolean(resolvedSessionId) && Boolean(resolvedTtsSettings) && ttsSpeakers.length > 0
   const canRevise = Boolean(resolvedSessionId) && !isLoading && !isSubmittingRevision && !isRevisionGenerating && session?.status === 'completed'
 
   function applyRevision(revision: RevisionResponse) {
@@ -131,6 +253,35 @@ export function RevisePage() {
     setDrafts(nextDrafts)
     setPersistedDrafts(nextDrafts)
     setUserPrompt(revision.user_prompt?.trim() || '')
+  }
+
+  function applyTtsSynthesis(synthesis: TtsSynthesisResponse) {
+    setTtsStatusName(synthesis.status_name)
+    setTtsFullAssetUrl(synthesis.full_asset_url ?? null)
+  }
+
+  function stopSynthesisPreview(clearMessage = true) {
+    const synthAudio = synthAudioRef.current
+    if (synthAudio) {
+      synthAudio.pause()
+      synthAudio.currentTime = 0
+      synthAudio.onended = null
+      synthAudio.onerror = null
+    }
+    if (synthAudioUrlRef.current) {
+      URL.revokeObjectURL(synthAudioUrlRef.current)
+      synthAudioUrlRef.current = null
+    }
+    setActiveSynthesisId(null)
+    if (clearMessage) {
+      setPlaybackMessage(null)
+    }
+  }
+
+  function stopOriginalPreview() {
+    audioRef.current?.pause()
+    snippetEndRef.current = null
+    setActiveOriginalId(null)
   }
 
   useEffect(() => {
@@ -175,6 +326,36 @@ export function RevisePage() {
             setEditingItemIds({})
             setSavingItemIds({})
             setUserPrompt('')
+          } else {
+            throw error
+          }
+        }
+
+        const [settings, speakers] = await Promise.all([
+          getTtsSettings(sessionId),
+          getTtsSpeakers('active'),
+        ])
+        if (cancelled) {
+          return
+        }
+        const mappedSettings = mapTtsSettingsResponseToForm(settings)
+        setTtsSettings(mappedSettings)
+        setPersistedTtsSettings(mappedSettings)
+        setTtsSpeakers(speakers.items)
+
+        try {
+          const synthesis = await getTtsSynthesis(sessionId)
+          if (cancelled) {
+            return
+          }
+          applyTtsSynthesis(synthesis)
+        } catch (error) {
+          if (cancelled) {
+            return
+          }
+          if (error instanceof ApiRequestError && error.status === 404) {
+            setTtsStatusName(null)
+            setTtsFullAssetUrl(null)
           } else {
             throw error
           }
@@ -236,12 +417,61 @@ export function RevisePage() {
     return () => {
       audio?.pause()
       snippetEndRef.current = null
-
-      if (typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.cancel()
+      const synthAudio = synthAudioRef.current
+      if (synthAudio) {
+        synthAudio.pause()
+        synthAudio.currentTime = 0
+        synthAudio.onended = null
+        synthAudio.onerror = null
+      }
+      if (synthAudioUrlRef.current) {
+        URL.revokeObjectURL(synthAudioUrlRef.current)
+        synthAudioUrlRef.current = null
       }
     }
   }, [session?.audioUrl])
+
+  useEffect(() => {
+    if (!resolvedSessionId || ttsStatusName !== 'generating') {
+      return
+    }
+
+    let cancelled = false
+    const timerId = window.setInterval(() => {
+      void (async () => {
+        try {
+          const synthesis = await getTtsSynthesis(resolvedSessionId)
+          if (cancelled) {
+            return
+          }
+          applyTtsSynthesis(synthesis)
+        } catch (error) {
+          if (cancelled) {
+            return
+          }
+          if (error instanceof ApiRequestError && error.status === 404) {
+            setTtsStatusName(null)
+            setTtsFullAssetUrl(null)
+            return
+          }
+          setErrorMessage(error instanceof Error ? error.message : 'Failed to refresh TTS status.')
+        }
+      })()
+    }, 2000)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(timerId)
+    }
+  }, [resolvedSessionId, ttsStatusName])
+
+  function getEditableTtsSettingsBase(): TtsSettingsForm {
+    return (
+      resolvedTtsSettings ??
+      resolvedPersistedTtsSettings ??
+      buildDefaultTtsSettingsForm()
+    )
+  }
 
   function updateDraft(itemId: string, nextValue: string) {
     setDrafts((value) => ({
@@ -264,6 +494,17 @@ export function RevisePage() {
       const nextValue = { ...value }
       delete nextValue[itemId]
       return nextValue
+    })
+  }
+
+  function updateTtsSettingsForm(nextValue: Partial<TtsSettingsForm>) {
+    const current = getEditableTtsSettingsBase()
+    setTtsSettings({
+      format: nextValue.format ?? current.format,
+      emotionScale: nextValue.emotionScale ?? current.emotionScale,
+      speechRate: nextValue.speechRate ?? current.speechRate,
+      loudnessRate: nextValue.loudnessRate ?? current.loudnessRate,
+      speakerMappings: nextValue.speakerMappings ?? current.speakerMappings,
     })
   }
 
@@ -309,6 +550,84 @@ export function RevisePage() {
     }
   }
 
+  async function persistDraftChanges() {
+    const pendingItems = items.filter((item) => {
+      const draftValue = normalizeDraftValue(drafts[item.id])
+      const persistedDraftValue = normalizeDraftValue(persistedDrafts[item.id])
+      return draftValue !== persistedDraftValue
+    })
+
+    if (pendingItems.length === 0) {
+      setEditingItemIds({})
+      return
+    }
+
+    setEditingItemIds({})
+    await Promise.all(
+      pendingItems.map(async (item) => {
+        markItemSaving(item.id, true)
+        try {
+          const nextDraftValue = normalizeDraftValue(drafts[item.id])
+          await updateRevisionItem(item.id, {
+            draftText: nextDraftValue || null,
+          })
+          setPersistedDrafts((value) => ({
+            ...value,
+            [item.id]: nextDraftValue,
+          }))
+        } finally {
+          markItemSaving(item.id, false)
+        }
+      }),
+    )
+  }
+
+  async function persistTtsSettingsIfNeeded() {
+    if (!resolvedSessionId) {
+      throw new Error('Missing session id.')
+    }
+
+    const nextSettings = resolvedTtsSettings
+    if (!nextSettings) {
+      throw new Error('TTS settings are not ready.')
+    }
+    if (!hasPendingTtsSettings) {
+      return nextSettings
+    }
+
+    setIsSavingTtsSettings(true)
+    try {
+      const saved = await updateTtsSettings({
+        sessionId: resolvedSessionId,
+        format: nextSettings.format,
+        emotionScale: nextSettings.emotionScale,
+        speechRate: nextSettings.speechRate,
+        loudnessRate: nextSettings.loudnessRate,
+        speakerMappings: conversationSpeakers
+          .filter((speaker) => nextSettings.speakerMappings[speaker])
+          .map((speaker) => ({
+            conversation_speaker: speaker,
+            provider_speaker_id: nextSettings.speakerMappings[speaker],
+          })),
+      })
+      const mapped = mapTtsSettingsResponseToForm(saved)
+      setTtsSettings(mapped)
+      setPersistedTtsSettings(mapped)
+      return normalizeTtsSettingsForm(mapped, conversationSpeakers, defaultProviderSpeakerId) ?? mapped
+    } finally {
+      setIsSavingTtsSettings(false)
+    }
+  }
+
+  async function handleSaveTtsSettings() {
+    try {
+      setErrorMessage(null)
+      await persistTtsSettingsIfNeeded()
+    } catch (error) {
+      showPopupMessage(formatTtsActionError(error, 'Failed to save TTS settings.'))
+    }
+  }
+
   async function handleRevise() {
     if (!resolvedSessionId) {
       setErrorMessage('Missing session id.')
@@ -327,6 +646,8 @@ export function RevisePage() {
       })
 
       applyRevision(revision)
+      setTtsStatusName(null)
+      setTtsFullAssetUrl(null)
       setExpandedExplanation({})
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to create revise content.')
@@ -347,10 +668,7 @@ export function RevisePage() {
       return
     }
 
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
-      window.speechSynthesis.cancel()
-    }
-
+    stopSynthesisPreview(false)
     setActiveSynthesisId(null)
     setPlaybackMessage(null)
     audioRef.current.currentTime = item.startTimeMs / 1000
@@ -364,46 +682,91 @@ export function RevisePage() {
     })
   }
 
-  function synthesizeItem(item: RevisionItem) {
-    const sentence = extractSpeechText(drafts[item.id] ?? buildEditableDraft(item.suggested))
-    if (!sentence) {
+  async function synthesizeItem(item: RevisionItem) {
+    const content = normalizeDraftValue(drafts[item.id] ?? buildEditableDraft(item.suggested))
+    if (!content) {
       return
     }
-
-    if (typeof window === 'undefined' || !window.speechSynthesis) {
-      setPlaybackMessage('Speech synthesis is not available in this browser.')
+    if (!resolvedSessionId) {
+      setErrorMessage('Missing session id.')
       return
     }
 
     if (activeSynthesisId === item.id) {
-      window.speechSynthesis.cancel()
-      setActiveSynthesisId(null)
-      setPlaybackMessage(null)
+      stopSynthesisPreview()
       return
     }
 
-    audioRef.current?.pause()
-    snippetEndRef.current = null
-    setActiveOriginalId(null)
-    window.speechSynthesis.cancel()
+    try {
+      setErrorMessage(null)
+      setPlaybackMessage(`Generating synth preview: ${item.speaker}`)
+      stopOriginalPreview()
+      stopSynthesisPreview(false)
+      setActiveSynthesisId(item.id)
+      await persistTtsSettingsIfNeeded()
 
-    const utterance = new SpeechSynthesisUtterance(sentence)
-    utterance.lang = 'en-US'
-    utterance.rate = 1
-    utterance.onstart = () => {
+      const audioBlob = await generateTtsItemAudio({
+        itemId: item.id,
+        sessionId: resolvedSessionId,
+        content,
+      })
+      const audioUrl = URL.createObjectURL(audioBlob)
+      synthAudioUrlRef.current = audioUrl
+
+      const synthAudio = synthAudioRef.current ?? new Audio()
+      synthAudioRef.current = synthAudio
+      synthAudio.src = audioUrl
+      synthAudio.currentTime = 0
+      synthAudio.onended = () => {
+        setActiveSynthesisId(null)
+        setPlaybackMessage(null)
+      }
+      synthAudio.onerror = () => {
+        stopSynthesisPreview(false)
+        setPlaybackMessage('Failed to play synthesized preview.')
+      }
+
+      await synthAudio.play()
       setActiveSynthesisId(item.id)
       setPlaybackMessage(`Synthesize preview: ${item.speaker}`)
-    }
-    utterance.onend = () => {
-      setActiveSynthesisId(null)
-      setPlaybackMessage(null)
-    }
-    utterance.onerror = () => {
+    } catch (error) {
+      stopSynthesisPreview(false)
       setActiveSynthesisId(null)
       setPlaybackMessage('Failed to synthesize preview.')
+      showPopupMessage(formatTtsActionError(error, 'Failed to synthesize preview.'))
+    }
+  }
+
+  async function handleSynthesizeAll() {
+    if (!resolvedSessionId) {
+      setErrorMessage('Missing session id.')
+      return
+    }
+    if (!canUseTts) {
+      setErrorMessage('TTS speakers are not available.')
+      return
     }
 
-    window.speechSynthesis.speak(utterance)
+    try {
+      setIsSubmittingTtsBatch(true)
+      setErrorMessage(null)
+      setPlaybackMessage(null)
+      stopOriginalPreview()
+      stopSynthesisPreview()
+      await persistDraftChanges()
+      await persistTtsSettingsIfNeeded()
+      const synthesis = await createTtsSynthesis({
+        sessionId: resolvedSessionId,
+      })
+      applyTtsSynthesis(synthesis)
+      if (synthesis.status_name === 'generating') {
+        setPlaybackMessage('Generating full synthesized audio...')
+      }
+    } catch (error) {
+      showPopupMessage(formatTtsActionError(error, 'Failed to synthesize all items.'))
+    } finally {
+      setIsSubmittingTtsBatch(false)
+    }
   }
 
   return (
@@ -491,6 +854,152 @@ export function RevisePage() {
         </CardContent>
       </Card>
 
+      <Card className="border-slate-200/80 bg-white/95 shadow-sm">
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-2">
+            <CardTitle>TTS Settings</CardTitle>
+            <CardDescription>Configure provider voice mapping and synthesize the full revised script.</CardDescription>
+          </div>
+          <div className="flex items-center gap-2 self-start">
+            {ttsStatusName ? (
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-slate-600">
+                {ttsStatusName}
+              </span>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void handleSaveTtsSettings()}
+              disabled={!resolvedTtsSettings || !hasPendingTtsSettings || isSavingTtsSettings}
+            >
+              {isSavingTtsSettings ? 'Saving...' : 'Save TTS Settings'}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void handleSynthesizeAll()}
+              disabled={!canUseTts || isSubmittingTtsBatch || items.length === 0}
+            >
+              {isSubmittingTtsBatch ? 'Synthesizing...' : 'Synthesize All'}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4 pt-0">
+          {resolvedTtsSettings ? (
+            <>
+              <div className="grid gap-3 md:grid-cols-4">
+                <label className="space-y-1.5 text-sm text-slate-700">
+                  <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Format</span>
+                  <select
+                    value={resolvedTtsSettings.format}
+                    onChange={(event) => updateTtsSettingsForm({ format: event.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                  >
+                    <option value="mp3">mp3</option>
+                    <option value="wav">wav</option>
+                  </select>
+                </label>
+                <label className="space-y-1.5 text-sm text-slate-700">
+                  <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Emotion Scale</span>
+                  <input
+                    type="number"
+                    min="0.1"
+                    max="4"
+                    step="0.1"
+                    value={resolvedTtsSettings.emotionScale}
+                    onChange={(event) => updateTtsSettingsForm({ emotionScale: Number(event.target.value) || 1 })}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                  />
+                </label>
+                <label className="space-y-1.5 text-sm text-slate-700">
+                  <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Speech Rate</span>
+                  <input
+                    type="number"
+                    min="0.1"
+                    max="4"
+                    step="0.1"
+                    value={resolvedTtsSettings.speechRate}
+                    onChange={(event) => updateTtsSettingsForm({ speechRate: Number(event.target.value) || 1 })}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                  />
+                </label>
+                <label className="space-y-1.5 text-sm text-slate-700">
+                  <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Loudness Rate</span>
+                  <input
+                    type="number"
+                    min="0.1"
+                    max="4"
+                    step="0.1"
+                    value={resolvedTtsSettings.loudnessRate}
+                    onChange={(event) => updateTtsSettingsForm({ loudnessRate: Number(event.target.value) || 1 })}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                  />
+                </label>
+              </div>
+
+              <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Speaker Mapping</p>
+                  <p className="text-sm text-slate-600">Map each conversation speaker to one provider speaker.</p>
+                </div>
+                {conversationSpeakers.length > 0 ? (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {conversationSpeakers.map((speaker) => (
+                      <label key={speaker} className="space-y-1.5 text-sm text-slate-700">
+                        <span className="text-xs font-medium uppercase tracking-wide text-slate-500">{speaker}</span>
+                        <select
+                          value={resolvedTtsSettings.speakerMappings[speaker] || defaultProviderSpeakerId}
+                          onChange={(event) =>
+                            updateTtsSettingsForm({
+                              speakerMappings: {
+                                ...resolvedTtsSettings.speakerMappings,
+                                [speaker]: event.target.value,
+                              },
+                            })
+                          }
+                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                          disabled={ttsSpeakers.length === 0}
+                        >
+                          {ttsSpeakers.map((ttsSpeaker) => (
+                            <option key={ttsSpeaker.speaker_id} value={ttsSpeaker.speaker_id}>
+                              {ttsSpeaker.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-500">Speaker mapping is available after revise items are generated.</p>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                <span className="rounded-full bg-slate-100 px-2.5 py-1">{ttsSpeakers.length} provider speakers</span>
+                {hasPendingTtsSettings ? (
+                  <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-800 ring-1 ring-amber-200/80">
+                    unsaved settings
+                  </span>
+                ) : null}
+                {ttsFullAssetUrl ? (
+                  <a
+                    href={ttsFullAssetUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700 ring-1 ring-emerald-200/80"
+                  >
+                    Open Full Audio
+                  </a>
+                ) : null}
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-slate-500">Loading TTS settings...</p>
+          )}
+        </CardContent>
+      </Card>
+
       {isLoading ? (
         <Card className="border-slate-200/80 bg-white/95 shadow-sm">
           <CardContent className="p-4 text-sm text-slate-600">Loading revise content...</CardContent>
@@ -513,7 +1022,7 @@ export function RevisePage() {
         </Card>
       ) : null}
 
-      {!isLoading && !errorMessage && items.length > 0 ? (
+      {!isLoading && items.length > 0 ? (
         <div className="space-y-4">
           {items.map((item) => {
             const draftText = drafts[item.id] ?? buildEditableDraft(item.suggested)
@@ -574,8 +1083,8 @@ export function RevisePage() {
                       type="button"
                       size="xs"
                       variant="outline"
-                      onClick={() => synthesizeItem(item)}
-                      disabled={!hasDraft}
+                      onClick={() => void synthesizeItem(item)}
+                      disabled={!hasDraft || !canUseTts}
                     >
                       {activeSynthesisId === item.id ? 'Stop Synthesize' : 'Synthesize'}
                     </Button>

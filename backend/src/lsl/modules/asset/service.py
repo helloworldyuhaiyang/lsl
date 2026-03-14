@@ -3,6 +3,8 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any, Optional
 
+import requests
+
 from lsl.core.config import Settings
 from lsl.modules.asset.repo import AssetRepository
 from lsl.modules.asset.types import StorageProvider
@@ -102,6 +104,57 @@ class AssetService:
             storage_provider=self._settings.STORAGE_PROVIDER,
             upload_status=0,
         )
+
+    def save_generated_asset(
+        self,
+        *,
+        category: str,
+        entity_id: str,
+        filename: str,
+        content_type: str,
+        data: bytes,
+    ) -> dict[str, Any]:
+        object_key = self.generate_object_key(
+            category=category,
+            entity_id=entity_id,
+            filename=filename,
+        )
+        normalized_content_type = content_type.strip() or "application/octet-stream"
+
+        if self._settings.STORAGE_PROVIDER != "fake":
+            upload_url = self.generate_upload_url(
+                object_key=object_key,
+                content_type=normalized_content_type,
+            )
+            response = requests.put(
+                upload_url,
+                data=data,
+                headers={"Content-Type": normalized_content_type},
+                timeout=60,
+            )
+            if response.status_code not in (200, 201):
+                raise RuntimeError(
+                    f"Failed to upload generated asset: status={response.status_code} body={response.text[:200]}"
+                )
+            etag = response.headers.get("ETag")
+        else:
+            etag = None
+
+        self.complete_upload(
+            object_key=object_key,
+            category=category,
+            entity_id=entity_id,
+            filename=filename,
+            content_type=normalized_content_type,
+            file_size=len(data),
+            etag=etag,
+        )
+        return {
+            "object_key": object_key,
+            "asset_url": self.build_asset_url(object_key),
+            "content_type": normalized_content_type,
+            "file_size": len(data),
+        }
 
     def list_assets(
         self,

@@ -101,8 +101,10 @@ if __name__ == "__main__":
             "speaker": speaker,
             "audio_params": {
                 "format": "mp3",
-                "sample_rate": 24000,
-                "enable_timestamp": True
+                "emotion_scale": 1,  #  范围1~5，不设置时默认值为4。
+                                     #注：理论上情绪值越大，情感越明显。但情绪值1~5实际为非线性增长，可能存在超过某个值后，情绪增加不明显，例如设置3和5时情绪值可能接近。
+               "speech_rate": 0,  # 语速，取值范围[-50,100]，100代表2.0倍速，-50代表0.5倍数
+                "loudness_rate": 50,  # 音量，取值范围[-50,100]，100代表2.0倍音量，-50代表0.5倍音量（mix音色暂不支持）
             },
              "additions": json.dumps(additions)
         }

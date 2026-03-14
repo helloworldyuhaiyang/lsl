@@ -163,3 +163,75 @@ export interface TaskTranscriptData {
   utterances: TaskTranscriptUtterance[]
   raw_result?: Record<string, unknown> | null
 }
+
+export interface TtsSpeakerMapping {
+  conversation_speaker: string
+  provider_speaker_id: string
+}
+
+export interface TtsSpeakerItem {
+  speaker_id: string
+  name: string
+  language?: string | null
+  gender?: string | null
+  style?: string | null
+  description?: string | null
+}
+
+export interface TtsSpeakerListResponse {
+  items: TtsSpeakerItem[]
+}
+
+export interface TtsSettingsResponse {
+  session_id: string
+  format: string
+  emotion_scale: number
+  speech_rate: number
+  loudness_rate: number
+  speaker_mappings: TtsSpeakerMapping[]
+}
+
+export interface UpdateTtsSettingsRequest {
+  sessionId: string
+  format: string
+  emotionScale: number
+  speechRate: number
+  loudnessRate: number
+  speakerMappings: TtsSpeakerMapping[]
+}
+
+export interface CreateTtsSynthesisRequest {
+  sessionId: string
+  force?: boolean
+}
+
+export interface TtsSynthesisItemResponse {
+  item_id: string
+  conversation_speaker?: string | null
+  provider_speaker_id: string
+  content: string
+  plain_text: string
+  cue_texts: string[]
+  content_hash: string
+  duration_ms?: number | null
+  status: number
+  status_name: string
+}
+
+export interface TtsSynthesisResponse {
+  synthesis_id: string
+  session_id: string
+  provider: string
+  full_asset_url?: string | null
+  full_duration_ms?: number | null
+  item_count: number
+  completed_item_count: number
+  failed_item_count: number
+  status: number
+  status_name: string
+  error_code?: string | null
+  error_message?: string | null
+  created_at: string
+  updated_at: string
+  items: TtsSynthesisItemResponse[]
+}

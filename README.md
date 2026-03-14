@@ -70,7 +70,7 @@ LSL 「口语录音的智能复盘工具」。
 当前项目使用 `uv pip install` 安装 Python 依赖。后端当前运行链路至少需要以下依赖：
 
 ```bash
-uv pip install fastapi uvicorn pydantic sqlalchemy python-dotenv requests httpx openai json-repair alibabacloud-oss-v2 'psycopg[binary]' psycopg-pool
+uv pip install fastapi uvicorn pydantic sqlalchemy python-dotenv requests httpx openai json-repair redis alibabacloud-oss-v2 'psycopg[binary]' psycopg-pool
 ```
 
 说明：

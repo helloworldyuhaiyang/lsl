@@ -15,6 +15,8 @@ from lsl.modules.session import SessionRepository, SessionService
 from lsl.modules.session.api import router as session_router
 from lsl.modules.task import TaskRepository, TaskService, create_asr_provider
 from lsl.modules.task.api import router as task_router
+from lsl.modules.tts import TtsCache, TtsRepository, TtsService, create_tts_provider
+from lsl.modules.tts.api import router as tts_router
 
 T = TypeVar("T")
 
@@ -46,6 +48,11 @@ async def lifespan(app: FastAPI):
     )
     revision_repository = (
         RevisionRepository(db_resources.session_factory)
+        if db_resources.session_factory is not None
+        else None
+    )
+    tts_repository = (
+        TtsRepository(db_resources.session_factory)
         if db_resources.session_factory is not None
         else None
     )
@@ -82,6 +89,22 @@ async def lifespan(app: FastAPI):
         if revision_repository is not None and session_service is not None and task_service is not None
         else None
     )
+    tts_service = (
+        TtsService(
+            repository=tts_repository,
+            provider=create_tts_provider(settings),
+            cache=TtsCache(
+                redis_url=settings.TTS_REDIS_URL,
+                ttl_seconds=settings.TTS_CACHE_TTL_SECONDS,
+            ),
+            session_service=session_service,
+            revision_service=revision_service,
+            asset_service=asset_service,
+            settings=settings,
+        )
+        if tts_repository is not None and session_service is not None and revision_service is not None
+        else None
+    )
 
     app.state.settings = settings
     app.state.db_resources = db_resources
@@ -89,10 +112,13 @@ async def lifespan(app: FastAPI):
     app.state.task_service = task_service
     app.state.session_service = session_service
     app.state.revision_service = revision_service
+    app.state.tts_service = tts_service
 
     try:
         yield
     finally:
+        if tts_service is not None:
+            tts_service.shutdown()
         if revision_service is not None:
             revision_service.shutdown()
         close_database_resources(db_resources)
@@ -103,6 +129,7 @@ app.include_router(asset_router)
 app.include_router(task_router)
 app.include_router(session_router)
 app.include_router(revision_router)
+app.include_router(tts_router)
 
 
 @app.get("/health", response_model=ApiResponse[HealthData])

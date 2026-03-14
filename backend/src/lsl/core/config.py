@@ -69,6 +69,20 @@ class Settings:
     REVISION_LLM_HTTP_TIMEOUT: float = 60.0
     REVISION_LLM_DEBUG_FILE: str = ""
 
+    # TTS
+    TTS_PROVIDER: str = "fake"
+    TTS_REDIS_URL: str = "redis://127.0.0.1:6379/0"
+    TTS_CACHE_TTL_SECONDS: int = 7200
+    TTS_VOLC_APP_ID: str = ""
+    TTS_VOLC_ACCESS_KEY: str = ""
+    TTS_VOLC_RESOURCE_ID: str = "seed-tts-2.0"
+    TTS_VOLC_URL: str = "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
+    TTS_VOLC_HTTP_TIMEOUT: float = 60.0
+    TTS_DEFAULT_FORMAT: str = "mp3"
+    TTS_DEFAULT_EMOTION_SCALE: float = 1.0
+    TTS_DEFAULT_SPEECH_RATE: float = 1.0
+    TTS_DEFAULT_LOUDNESS_RATE: float = 1.0
+
     @classmethod
     def from_env(cls) -> "Settings":
         load_dotenv(override=False)
@@ -87,6 +101,11 @@ class Settings:
             "REVISION_LLM_HTTP_TIMEOUT",
             cls.REVISION_LLM_HTTP_TIMEOUT,
         )
+        tts_cache_ttl_seconds = _get_env_int("TTS_CACHE_TTL_SECONDS", cls.TTS_CACHE_TTL_SECONDS)
+        tts_volc_http_timeout = _get_env_float("TTS_VOLC_HTTP_TIMEOUT", cls.TTS_VOLC_HTTP_TIMEOUT)
+        tts_default_emotion_scale = _get_env_float("TTS_DEFAULT_EMOTION_SCALE", cls.TTS_DEFAULT_EMOTION_SCALE)
+        tts_default_speech_rate = _get_env_float("TTS_DEFAULT_SPEECH_RATE", cls.TTS_DEFAULT_SPEECH_RATE)
+        tts_default_loudness_rate = _get_env_float("TTS_DEFAULT_LOUDNESS_RATE", cls.TTS_DEFAULT_LOUDNESS_RATE)
 
         if db_pool_min_size <= 0:
             raise ValueError("DB_POOL_MIN_SIZE must be greater than 0")
@@ -98,7 +117,21 @@ class Settings:
             raise ValueError("VOLC_HTTP_TIMEOUT must be greater than 0")
         if revision_llm_http_timeout <= 0:
             raise ValueError("REVISION_LLM_HTTP_TIMEOUT must be greater than 0")
+        if tts_cache_ttl_seconds <= 0:
+            raise ValueError("TTS_CACHE_TTL_SECONDS must be greater than 0")
+        if tts_volc_http_timeout <= 0:
+            raise ValueError("TTS_VOLC_HTTP_TIMEOUT must be greater than 0")
+        if tts_default_emotion_scale <= 0:
+            raise ValueError("TTS_DEFAULT_EMOTION_SCALE must be greater than 0")
+        if tts_default_speech_rate <= 0:
+            raise ValueError("TTS_DEFAULT_SPEECH_RATE must be greater than 0")
+        if tts_default_loudness_rate <= 0:
+            raise ValueError("TTS_DEFAULT_LOUDNESS_RATE must be greater than 0")
         
+        tts_volc_app_id = _get_env_str("TTS_VOLC_APP_ID", cls.TTS_VOLC_APP_ID)
+        tts_volc_access_key = _get_env_str("TTS_VOLC_ACCESS_KEY", cls.TTS_VOLC_ACCESS_KEY)
+        tts_provider = os.getenv("TTS_PROVIDER", cls.TTS_PROVIDER).strip().lower() or cls.TTS_PROVIDER
+
         return cls(
             STORAGE_PROVIDER=provider,
             ASSET_BASE_URL=asset_base_url,
@@ -125,4 +158,16 @@ class Settings:
             REVISION_LLM_MODEL=_get_env_str("REVISION_LLM_MODEL", cls.REVISION_LLM_MODEL),
             REVISION_LLM_HTTP_TIMEOUT=revision_llm_http_timeout,
             REVISION_LLM_DEBUG_FILE=_get_env_str("REVISION_LLM_DEBUG_FILE", cls.REVISION_LLM_DEBUG_FILE),
+            TTS_PROVIDER=tts_provider,
+            TTS_REDIS_URL=_get_env_str("TTS_REDIS_URL", cls.TTS_REDIS_URL),
+            TTS_CACHE_TTL_SECONDS=tts_cache_ttl_seconds,
+            TTS_VOLC_APP_ID=tts_volc_app_id,
+            TTS_VOLC_ACCESS_KEY=tts_volc_access_key,
+            TTS_VOLC_RESOURCE_ID=_get_env_str("TTS_VOLC_RESOURCE_ID", cls.TTS_VOLC_RESOURCE_ID),
+            TTS_VOLC_URL=_get_env_str("TTS_VOLC_URL", cls.TTS_VOLC_URL),
+            TTS_VOLC_HTTP_TIMEOUT=tts_volc_http_timeout,
+            TTS_DEFAULT_FORMAT=_get_env_str("TTS_DEFAULT_FORMAT", cls.TTS_DEFAULT_FORMAT).lower(),
+            TTS_DEFAULT_EMOTION_SCALE=tts_default_emotion_scale,
+            TTS_DEFAULT_SPEECH_RATE=tts_default_speech_rate,
+            TTS_DEFAULT_LOUDNESS_RATE=tts_default_loudness_rate,
         )
