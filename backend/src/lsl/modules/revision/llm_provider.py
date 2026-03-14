@@ -584,7 +584,6 @@ class LLMRevisionGenerator:
             source_seqs=source_seqs,
             suggested_text=self._build_suggested_script(
                 suggested_text=raw_item.get("suggested_text"),
-                suggested_cue=raw_item.get("suggested_cue"),
                 utterance_seq=source_seq_start,
             ),
             score=score,
@@ -839,16 +838,12 @@ class LLMRevisionGenerator:
         raise RuntimeError(f"LLM response missing {field_name} for utterance_seq={utterance_seq}")
 
     @staticmethod
-    def _build_suggested_script(*, suggested_text: Any, suggested_cue: Any, utterance_seq: int) -> str:
-        normalized_text = LLMRevisionGenerator._require_text(
+    def _build_suggested_script(*, suggested_text: Any, utterance_seq: int) -> str:
+        return LLMRevisionGenerator._require_text(
             suggested_text,
             field_name="suggested_text",
             utterance_seq=utterance_seq,
         )
-        normalized_cue = re.sub(r"\s+", " ", str(suggested_cue).strip()) if suggested_cue is not None else ""
-        if not normalized_cue or normalized_text.startswith("["):
-            return normalized_text
-        return f"[{normalized_cue}] {normalized_text}".strip()
 
     @staticmethod
     def _normalize_string_list(value: Any, *, max_items: int) -> list[str]:
