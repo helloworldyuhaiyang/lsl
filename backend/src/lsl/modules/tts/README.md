@@ -29,7 +29,7 @@ TTS 模块负责当前脚本的语音合成、speaker 映射、试听缓存和�
 ## ID 规范
 
 - 对外 `synthesis_id` 格式约定为 `tts_{uuidhex}`，例如 `tts_196f132e85f34227a6d7274dfb310b39`。
-- 当前 README 下方建表 SQL 仍以裸 `UUID` 为例；如果要按此前缀落地，需要同步调整表结构与仓储层校验逻辑。
+- 当前数据库内部实际存的是 32 位无横线十六进制字符串；`synthesis_id` 对外返回时会再拼上 `tts_` 前缀。
 
 ## 环境变量
 
@@ -316,27 +316,25 @@ tts/
 
 ## 建表 SQL
 
+默认本地运行使用 `SQLite` 并由 SQLAlchemy 自动建表；下面这份 SQL 主要用于手动初始化 `PostgreSQL`。
+
 ```sql
 -- session 级 TTS 设置：保存合成参数和 speaker 映射
 CREATE TABLE IF NOT EXISTS public.session_tts_settings (
-    session_id              UUID PRIMARY KEY,                      -- 会话 ID
+    session_id              VARCHAR(32) PRIMARY KEY,               -- 会话 ID（uuid hex）
     format                  VARCHAR(16) NOT NULL DEFAULT 'mp3',   -- 输出格式
     emotion_scale           NUMERIC(4,2) NOT NULL DEFAULT 1.0,    -- 情感强度
     speech_rate             NUMERIC(4,2) NOT NULL DEFAULT 1.0,    -- 语速
     loudness_rate           NUMERIC(4,2) NOT NULL DEFAULT 1.0,    -- 音量倍率
-    speaker_mappings_json   JSONB NOT NULL DEFAULT '[]'::jsonb,   -- speaker 映射数组
-    created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),   -- 创建时间
-    updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),   -- 更新时间,
-    CONSTRAINT fk_session_tts_settings_session
-        FOREIGN KEY (session_id)
-        REFERENCES public.sessions(session_id)
-        ON DELETE CASCADE
+    speaker_mappings_json   TEXT NOT NULL DEFAULT '[]',           -- speaker 映射数组 JSON 字符串
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP -- 更新时间
 );
 
 -- 当前 session 的整段 TTS 结果
 CREATE TABLE IF NOT EXISTS public.speech_syntheses (
-    synthesis_id           UUID PRIMARY KEY,                       -- 合成主键
-    session_id             UUID NOT NULL UNIQUE,                   -- 一次 session 只保留当前结果
+    synthesis_id           VARCHAR(32) PRIMARY KEY,                -- 合成主键（uuid hex）
+    session_id             VARCHAR(32) NOT NULL UNIQUE,            -- 一次 session 只保留当前结果
     x_provider             VARCHAR(32) NOT NULL,                   -- 实际使用的 provider
     full_content_hash      VARCHAR(64) NOT NULL,                   -- 整段脚本 hash
     full_asset_object_key  TEXT,                                   -- 最终整段音频 object_key
@@ -347,12 +345,8 @@ CREATE TABLE IF NOT EXISTS public.speech_syntheses (
     x_status               SMALLINT NOT NULL DEFAULT 0,            -- 状态码
     error_code             VARCHAR(64),                            -- 错误码
     error_message          TEXT,                                   -- 错误信息
-    created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),     -- 创建时间
-    updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),     -- 更新时间,
-    CONSTRAINT fk_speech_syntheses_session
-        FOREIGN KEY (session_id)
-        REFERENCES public.sessions(session_id)
-        ON DELETE CASCADE
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    updated_at             TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP -- 更新时间
 );
 
 CREATE INDEX IF NOT EXISTS idx_speech_syntheses_session_created_at
@@ -360,40 +354,37 @@ CREATE INDEX IF NOT EXISTS idx_speech_syntheses_session_created_at
 
 -- item 级 TTS 快照：一个脚本 item 对应一条
 CREATE TABLE IF NOT EXISTS public.speech_synthesis_items (
-    tts_item_id           UUID PRIMARY KEY,                        -- item 主键
-    synthesis_id          UUID NOT NULL,                           -- 关联 synthesis
-    source_item_id        UUID NOT NULL,                           -- 对应脚本 item
+    tts_item_id           VARCHAR(32) PRIMARY KEY,                 -- item 主键（uuid hex）
+    synthesis_id          VARCHAR(32) NOT NULL,                    -- 关联 synthesis
+    source_item_id        VARCHAR(32) NOT NULL,                    -- 对应脚本 item
     source_seq_start      INTEGER NOT NULL,                        -- span 起始 seq
     source_seq_end        INTEGER NOT NULL,                        -- span 结束 seq
-    source_seqs           JSONB NOT NULL DEFAULT '[]'::jsonb,      -- 完整 seq 列表
+    source_seqs           TEXT NOT NULL DEFAULT '[]',              -- 完整 seq 列表 JSON 字符串
     conversation_speaker  VARCHAR(64),                             -- 原对话 speaker
     provider_speaker_id   VARCHAR(128) NOT NULL,                   -- provider speaker
     content               TEXT NOT NULL,                           -- 输入内容
     plain_text            TEXT NOT NULL,                           -- 剥离 cue 后的正文
-    cue_texts             JSONB NOT NULL DEFAULT '[]'::jsonb,      -- cue 列表
+    cue_texts             TEXT NOT NULL DEFAULT '[]',              -- cue 列表 JSON 字符串
     content_hash          VARCHAR(64) NOT NULL,                    -- clip hash
     duration_ms           INTEGER,                                 -- clip 时长
     x_status              SMALLINT NOT NULL DEFAULT 0,             -- 状态码
     error_code            VARCHAR(64),                             -- 错误码
     error_message         TEXT,                                    -- 错误信息
-    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),      -- 创建时间
-    updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),      -- 更新时间,
-    CONSTRAINT fk_speech_synthesis_items_synthesis
-        FOREIGN KEY (synthesis_id)
-        REFERENCES public.speech_syntheses(synthesis_id)
-        ON DELETE CASCADE,
-    CONSTRAINT uq_speech_synthesis_items_source_item
-        UNIQUE (synthesis_id, source_item_id)
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    updated_at            TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP -- 更新时间
 );
 
 CREATE INDEX IF NOT EXISTS idx_speech_synthesis_items_seq_span
     ON public.speech_synthesis_items (synthesis_id, source_seq_start, source_seq_end);
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_speech_synthesis_items_source_item
+    ON public.speech_synthesis_items (synthesis_id, source_item_id);
+
 -- 统一更新时间函数：每次 UPDATE 自动刷新 updated_at
 CREATE OR REPLACE FUNCTION public.set_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
-    NEW.updated_at = NOW();
+    NEW.updated_at = CURRENT_TIMESTAMP;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

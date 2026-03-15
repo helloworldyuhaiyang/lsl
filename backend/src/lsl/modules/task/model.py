@@ -2,18 +2,17 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, DateTime, Integer, SmallInteger, String, Text, UniqueConstraint, text as sa_text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import DateTime, Integer, SmallInteger, String, Text, UniqueConstraint, text as sa_text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from lsl.core.db import Base
+from lsl.core.sql_types import JSONString, UUIDHexString
 
 
 class TaskModel(Base):
     __tablename__ = "tasks"
-    __table_args__ = {"schema": "public"}
 
-    task_id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    task_id: Mapped[str] = mapped_column(UUIDHexString(), primary_key=True)
     object_key: Mapped[str] = mapped_column(Text, nullable=False)
     audio_url: Mapped[str] = mapped_column(Text, nullable=False)
     duration_ms: Mapped[int | None] = mapped_column("x_duration_ms", Integer, nullable=True)
@@ -34,30 +33,30 @@ class TaskModel(Base):
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
-        server_default=sa_text("NOW()"),
+        server_default=sa_text("CURRENT_TIMESTAMP"),
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
-        server_default=sa_text("NOW()"),
+        onupdate=lambda: datetime.now(timezone.utc),
+        server_default=sa_text("CURRENT_TIMESTAMP"),
     )
 
 
 class AsrResultModel(Base):
     __tablename__ = "asr_results"
-    __table_args__ = {"schema": "public"}
 
-    task_id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    task_id: Mapped[str] = mapped_column(UUIDHexString(), primary_key=True)
     provider: Mapped[str | None] = mapped_column("x_provider", String(32), nullable=True)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     full_text: Mapped[str | None] = mapped_column("x_full_text", Text, nullable=True)
-    raw_result_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    raw_result_json: Mapped[dict | None] = mapped_column(JSONString(), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
-        server_default=sa_text("NOW()"),
+        server_default=sa_text("CURRENT_TIMESTAMP"),
     )
 
 
@@ -65,20 +64,19 @@ class AsrUtteranceModel(Base):
     __tablename__ = "asr_utterances"
     __table_args__ = (
         UniqueConstraint("task_id", "seq", name="uq_asr_utterance_task_seq"),
-        {"schema": "public"},
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    task_id: Mapped[str] = mapped_column(UUID(as_uuid=False), nullable=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    task_id: Mapped[str] = mapped_column(UUIDHexString(), nullable=False)
     seq: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column("x_text", Text, nullable=False)
     speaker: Mapped[str | None] = mapped_column(String(64), nullable=True)
     start_time: Mapped[int] = mapped_column(Integer, nullable=False)
     end_time: Mapped[int] = mapped_column(Integer, nullable=False)
-    additions_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    additions_json: Mapped[dict | None] = mapped_column(JSONString(), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
-        server_default=sa_text("NOW()"),
+        server_default=sa_text("CURRENT_TIMESTAMP"),
     )

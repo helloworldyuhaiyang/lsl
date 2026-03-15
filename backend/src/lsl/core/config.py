@@ -39,7 +39,7 @@ class Settings:
     # 存储相关
     STORAGE_PROVIDER: str = ""
     ASSET_BASE_URL: str = ""
-    DATABASE_URL: str = "postgresql://yuhaiyang:@127.0.0.1:5432/lsl"
+    DATABASE_URL: str = "sqlite:///./data/lsl.sqlite3"
     DB_POOL_MIN_SIZE: int = 1
     DB_POOL_MAX_SIZE: int = 10
     DB_POOL_TIMEOUT: float = 30.0

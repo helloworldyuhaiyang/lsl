@@ -53,7 +53,7 @@ backend/src/lsl/
 ### 1. 安装依赖（一次）
 
 ```bash
-uv pip install fastapi uvicorn alibabacloud-oss-v2 python-dotenv 'psycopg[binary]' psycopg-pool
+uv pip install fastapi uvicorn alibabacloud-oss-v2 python-dotenv sqlalchemy
 ```
 
 ### 2. 配置 `.env`
@@ -65,7 +65,7 @@ OSS_BUCKET=your-real-bucket
 OSS_ACCESS_KEY_ID=your-real-ak
 OSS_ACCESS_KEY_SECRET='your-real-sk'
 ASSET_BASE_URL=https://your-real-bucket.oss-cn-hangzhou.aliyuncs.com
-DATABASE_URL=postgresql://<user>:<password>@<host>:5432/lsl
+DATABASE_URL=sqlite:///./data/lsl.sqlite3
 DB_POOL_MIN_SIZE=1
 DB_POOL_MAX_SIZE=10
 DB_POOL_TIMEOUT=30
@@ -75,8 +75,11 @@ DB_POOL_TIMEOUT=30
 - `STORAGE_PROVIDER=oss` 时，`OSS_BUCKET/OSS_ACCESS_KEY_ID/OSS_ACCESS_KEY_SECRET` 必填。
 - `ASSET_BASE_URL` 用于生成读 URL，可替换为 CDN 域名。
 - `DATABASE_URL` 用于 `POST /assets/complete-upload` 入库。
+- 默认本地运行使用 `SQLite`；如果要接 `PostgreSQL`，再把 `DATABASE_URL` 改成 `postgresql://...` 并额外安装 `psycopg`。
 
-### 3. PostgreSQL 建表（public.assets）
+### 3. PostgreSQL 手动建表（可选）
+
+默认本地运行会通过 SQLAlchemy 自动建表；如果你要手动初始化 PostgreSQL，可执行下面这份 SQL：
 
 连接到 `lsl` 数据库后执行：
 
@@ -89,19 +92,12 @@ CREATE TABLE IF NOT EXISTS public.assets (
     entity_id         VARCHAR(128) NOT NULL,                      -- 业务实体 ID（如 user/session）
     filename          VARCHAR(255),                               -- 原始文件名
     content_type      VARCHAR(128),                               -- MIME 类型
-    file_size         BIGINT CHECK (file_size IS NULL OR file_size >= 0), -- 文件大小（字节）
+    file_size         BIGINT,                                     -- 文件大小（字节）
     etag              VARCHAR(128),                               -- 对象存储返回的 ETag
     storage_provider  VARCHAR(16) NOT NULL DEFAULT 'oss',         -- 存储后端类型
     upload_status     SMALLINT NOT NULL DEFAULT 0,                -- 处理状态码
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),         -- 创建时间
-    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),         -- 更新时间
-
-    -- 限制可用的存储后端
-    CONSTRAINT ck_assets_storage_provider
-        CHECK (storage_provider IN ('oss', 's3', 'gcs', 'fake')),
-    -- 限制状态码范围
-    CONSTRAINT ck_assets_upload_status
-        CHECK (upload_status IN (0,1,2,3,4))
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP -- 更新时间
 );
 
 -- 按业务分类/实体查询最近上传文件
@@ -116,7 +112,7 @@ CREATE INDEX IF NOT EXISTS idx_assets_created_at
 CREATE OR REPLACE FUNCTION public.set_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
-    NEW.updated_at = NOW();
+    NEW.updated_at = CURRENT_TIMESTAMP;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -178,7 +174,7 @@ curl -X POST "http://127.0.0.1:8000/assets/upload-url" \
 ### `POST /assets/complete-upload`
 
 前端完成 OSS 上传后，调用此接口通知后端。
-当前接口会将资产信息写入 PostgreSQL（`public.assets`）。
+当前接口会将资产信息写入当前配置的数据库（默认是本地 `SQLite`，也可切到 `PostgreSQL`）。
 
 请求示例：
 

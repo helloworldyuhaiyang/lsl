@@ -111,7 +111,7 @@ class TtsRepository:
                 model = db.execute(stmt).scalar_one_or_none()
                 if model is None:
                     model = SpeechSynthesisModel(
-                        synthesis_id=str(uuid.uuid4()),
+                        synthesis_id=uuid.uuid4().hex,
                         session_id=normalized_session_id,
                     )
                     db.add(model)
@@ -145,7 +145,7 @@ class TtsRepository:
                     model_item = existing_items_by_source_id.get(source_item_id)
                     if model_item is None:
                         model_item = SpeechSynthesisItemModel(
-                            tts_item_id=str(uuid.uuid4()),
+                            tts_item_id=uuid.uuid4().hex,
                             source_item_id=source_item_id,
                             source_seq_start=int(item.source_seq_start),
                             source_seq_end=int(item.source_seq_end),
@@ -189,7 +189,7 @@ class TtsRepository:
     @staticmethod
     def _parse_uuid_str(value: str) -> str | None:
         try:
-            return str(uuid.UUID(value))
+            return uuid.UUID(value).hex
         except (TypeError, ValueError):
             return None
 

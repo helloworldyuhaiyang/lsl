@@ -3,26 +3,25 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from sqlalchemy import DateTime, Index, Integer, SmallInteger, String, Text, text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, foreign, mapped_column, relationship
 
 from lsl.core.db import Base
+from lsl.core.sql_types import JSONString, UUIDHexString
 
 
 class UtterancesRevisionModel(Base):
     __tablename__ = "utterances_revisions"
     __table_args__ = (
         Index("idx_utterances_revisions_session_id", "session_id"),
-        {"schema": "public"},
     )
 
-    revision_id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    revision_id: Mapped[str] = mapped_column(UUIDHexString(), primary_key=True)
     session_id: Mapped[str] = mapped_column(
-        UUID(as_uuid=False),
+        UUIDHexString(),
         nullable=False,
     )
     task_id: Mapped[str] = mapped_column(
-        UUID(as_uuid=False),
+        UUIDHexString(),
         nullable=False,
     )
     user_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -34,13 +33,14 @@ class UtterancesRevisionModel(Base):
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
-        server_default=text("NOW()"),
+        server_default=text("CURRENT_TIMESTAMP"),
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
-        server_default=text("NOW()"),
+        onupdate=lambda: datetime.now(timezone.utc),
+        server_default=text("CURRENT_TIMESTAMP"),
     )
 
     items: Mapped[list["UtterancesRevisionItemModel"]] = relationship(
@@ -71,26 +71,25 @@ class UtterancesRevisionItemModel(Base):
             "source_seq_start",
             "source_seq_end",
         ),
-        {"schema": "public"},
     )
 
-    item_id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    item_id: Mapped[str] = mapped_column(UUIDHexString(), primary_key=True)
     revision_id: Mapped[str] = mapped_column(
-        UUID(as_uuid=False),
+        UUIDHexString(),
         nullable=False,
     )
     task_id: Mapped[str] = mapped_column(
-        UUID(as_uuid=False),
+        UUIDHexString(),
         nullable=False,
     )
     source_seq_start: Mapped[int] = mapped_column(Integer, nullable=False)
     source_seq_end: Mapped[int] = mapped_column(Integer, nullable=False)
     source_seq_count: Mapped[int] = mapped_column(Integer, nullable=False)
     source_seqs: Mapped[list[int]] = mapped_column(
-        JSONB,
+        JSONString(),
         nullable=False,
         default=list,
-        server_default=text("'[]'::jsonb"),
+        server_default=text("'[]'"),
     )
     speaker: Mapped[str | None] = mapped_column(String(64), nullable=True)
     start_time: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -105,13 +104,14 @@ class UtterancesRevisionItemModel(Base):
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
-        server_default=text("NOW()"),
+        server_default=text("CURRENT_TIMESTAMP"),
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
-        server_default=text("NOW()"),
+        onupdate=lambda: datetime.now(timezone.utc),
+        server_default=text("CURRENT_TIMESTAMP"),
     )
 
     revision: Mapped[UtterancesRevisionModel] = relationship(

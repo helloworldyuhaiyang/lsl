@@ -31,7 +31,7 @@ class SessionService:
         self._task_service = task_service
 
     def create_session(self, payload: CreateSessionRequest) -> SessionData:
-        session_id = str(uuid.uuid4())
+        session_id = uuid.uuid4().hex
         asset_object_key = self._normalize_object_key(payload.asset_object_key)
         current_task_id = payload.current_task_id
 

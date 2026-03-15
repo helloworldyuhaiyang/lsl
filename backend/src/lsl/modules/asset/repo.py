@@ -1,17 +1,27 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional
+from contextlib import contextmanager
+from typing import Any, Iterator
 
-import psycopg
-from psycopg.rows import dict_row
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session as OrmSession
+from sqlalchemy.orm import sessionmaker
 
-if TYPE_CHECKING:
-    from psycopg_pool import ConnectionPool
+from lsl.modules.asset.model import AssetModel
 
 
 class AssetRepository:
-    def __init__(self, pool: "ConnectionPool") -> None:
-        self._pool = pool
+    def __init__(self, session_factory: sessionmaker[OrmSession]) -> None:
+        self._session_factory = session_factory
+
+    @contextmanager
+    def _session_scope(self) -> Iterator[OrmSession]:
+        db = self._session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
 
     def upsert_completed_upload(
         self,
@@ -19,155 +29,85 @@ class AssetRepository:
         object_key: str,
         category: str,
         entity_id: str,
-        filename: Optional[str],
-        content_type: Optional[str],
-        file_size: Optional[int],
-        etag: Optional[str],
+        filename: str | None,
+        content_type: str | None,
+        file_size: int | None,
+        etag: str | None,
         storage_provider: str,
         upload_status: int,
     ) -> None:
-        sql = """
-            INSERT INTO public.assets (
-                object_key,
-                category,
-                entity_id,
-                filename,
-                content_type,
-                file_size,
-                etag,
-                storage_provider,
-                upload_status
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (object_key) DO UPDATE SET
-                category = EXCLUDED.category,
-                entity_id = EXCLUDED.entity_id,
-                filename = COALESCE(EXCLUDED.filename, public.assets.filename),
-                content_type = COALESCE(EXCLUDED.content_type, public.assets.content_type),
-                file_size = COALESCE(EXCLUDED.file_size, public.assets.file_size),
-                etag = COALESCE(EXCLUDED.etag, public.assets.etag),
-                storage_provider = EXCLUDED.storage_provider,
-                upload_status = EXCLUDED.upload_status
-        """
-
+        stmt = select(AssetModel).where(AssetModel.object_key == object_key).limit(1)
         try:
-            with self._pool.connection() as conn:
-                with conn.cursor() as cursor:
-                    cursor.execute(
-                        sql,
-                        (
-                            object_key,
-                            category,
-                            entity_id,
-                            filename,
-                            content_type,
-                            file_size,
-                            etag,
-                            storage_provider,
-                            upload_status,
-                        ),
-                    )
-        except psycopg.Error as exc:  # pragma: no cover
+            with self._session_scope() as db:
+                model = db.execute(stmt).scalar_one_or_none()
+                if model is None:
+                    model = AssetModel(object_key=object_key)
+                    db.add(model)
+
+                model.category = category
+                model.entity_id = entity_id
+                model.filename = filename or model.filename
+                model.content_type = content_type or model.content_type
+                model.file_size = file_size if file_size is not None else model.file_size
+                model.etag = etag or model.etag
+                model.storage_provider = storage_provider
+                model.upload_status = int(upload_status)
+                db.commit()
+        except SQLAlchemyError as exc:  # pragma: no cover
             raise RuntimeError(f"Failed to persist asset record: {exc}") from exc
 
     def list_assets(
         self,
         *,
         limit: int,
-        category: Optional[str] = None,
-        entity_id: Optional[str] = None,
+        category: str | None = None,
+        entity_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        clauses: list[str] = []
-        params: list[Any] = []
-
+        stmt = select(AssetModel)
         if category:
-            clauses.append("category = %s")
-            params.append(category)
+            stmt = stmt.where(AssetModel.category == category)
         if entity_id:
-            clauses.append("entity_id = %s")
-            params.append(entity_id)
-
-        where_sql = ""
-        if clauses:
-            where_sql = "WHERE " + " AND ".join(clauses)
-
-        query_sql = f"""
-            SELECT
-                object_key,
-                category,
-                entity_id,
-                filename,
-                content_type,
-                file_size,
-                etag,
-                upload_status,
-                created_at
-            FROM public.assets
-            {where_sql}
-            ORDER BY created_at DESC
-            LIMIT %s
-        """
-        params.append(limit)
+            stmt = stmt.where(AssetModel.entity_id == entity_id)
+        stmt = stmt.order_by(AssetModel.created_at.desc()).limit(limit)
 
         try:
-            with self._pool.connection() as conn:
-                with conn.cursor(row_factory=dict_row) as cursor:
-                    cursor.execute(query_sql, tuple(params))
-                    rows = cursor.fetchall()
-                    return [dict(row) for row in rows]
-        except psycopg.Error as exc:  # pragma: no cover
+            with self._session_scope() as db:
+                rows = db.execute(stmt).scalars().all()
+                return [self._to_row(model) for model in rows]
+        except SQLAlchemyError as exc:  # pragma: no cover
             raise RuntimeError(f"Failed to list asset records: {exc}") from exc
 
     def get_asset_by_object_key(self, *, object_key: str) -> dict[str, Any] | None:
-        sql = """
-            SELECT
-                object_key,
-                category,
-                entity_id,
-                filename,
-                content_type,
-                file_size,
-                etag,
-                upload_status,
-                created_at
-            FROM public.assets
-            WHERE object_key = %s
-            LIMIT 1
-        """
-
+        stmt = select(AssetModel).where(AssetModel.object_key == object_key).limit(1)
         try:
-            with self._pool.connection() as conn:
-                with conn.cursor(row_factory=dict_row) as cursor:
-                    cursor.execute(sql, (object_key,))
-                    row = cursor.fetchone()
-                    return dict(row) if row else None
-        except psycopg.Error as exc:  # pragma: no cover
+            with self._session_scope() as db:
+                model = db.execute(stmt).scalar_one_or_none()
+                return self._to_row(model) if model is not None else None
+        except SQLAlchemyError as exc:  # pragma: no cover
             raise RuntimeError(f"Failed to query asset by object_key: {exc}") from exc
 
     def list_assets_by_object_keys(self, *, object_keys: list[str]) -> list[dict[str, Any]]:
         if not object_keys:
             return []
 
-        sql = """
-            SELECT
-                object_key,
-                category,
-                entity_id,
-                filename,
-                content_type,
-                file_size,
-                etag,
-                upload_status,
-                created_at
-            FROM public.assets
-            WHERE object_key = ANY(%s)
-        """
-
+        stmt = select(AssetModel).where(AssetModel.object_key.in_(object_keys))
         try:
-            with self._pool.connection() as conn:
-                with conn.cursor(row_factory=dict_row) as cursor:
-                    cursor.execute(sql, (object_keys,))
-                    rows = cursor.fetchall()
-                    return [dict(row) for row in rows]
-        except psycopg.Error as exc:  # pragma: no cover
+            with self._session_scope() as db:
+                rows = db.execute(stmt).scalars().all()
+                return [self._to_row(model) for model in rows]
+        except SQLAlchemyError as exc:  # pragma: no cover
             raise RuntimeError(f"Failed to query assets by object_keys: {exc}") from exc
+
+    @staticmethod
+    def _to_row(model: AssetModel) -> dict[str, Any]:
+        return {
+            "object_key": model.object_key,
+            "category": model.category,
+            "entity_id": model.entity_id,
+            "filename": model.filename,
+            "content_type": model.content_type,
+            "file_size": model.file_size,
+            "etag": model.etag,
+            "upload_status": int(model.upload_status),
+            "created_at": model.created_at,
+        }

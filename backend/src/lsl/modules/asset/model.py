@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import BigInteger, DateTime, SmallInteger, String, Text, text
+from sqlalchemy import BigInteger, DateTime, Integer, SmallInteger, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from lsl.core.db import Base
@@ -10,9 +10,8 @@ from lsl.core.db import Base
 
 class AssetModel(Base):
     __tablename__ = "assets"
-    __table_args__ = {"schema": "public"}
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     object_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     category: Mapped[str] = mapped_column(String(64), nullable=False)
     entity_id: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -30,11 +29,12 @@ class AssetModel(Base):
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
-        server_default=text("NOW()"),
+        server_default=text("CURRENT_TIMESTAMP"),
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
-        server_default=text("NOW()"),
+        onupdate=lambda: datetime.now(timezone.utc),
+        server_default=text("CURRENT_TIMESTAMP"),
     )

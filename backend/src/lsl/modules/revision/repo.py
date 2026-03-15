@@ -74,7 +74,7 @@ class RevisionRepository:
 
                 if model is None:
                     model = UtterancesRevisionModel(
-                        revision_id=str(uuid.uuid4()),
+                        revision_id=uuid.uuid4().hex,
                         session_id=normalized_session_id,
                         task_id=normalized_task_id,
                     )
@@ -113,7 +113,7 @@ class RevisionRepository:
                     model_item = existing_items_by_span.get(span_key)
                     if model_item is None:
                         model_item = UtterancesRevisionItemModel(
-                            item_id=str(uuid.uuid4()),
+                            item_id=uuid.uuid4().hex,
                             task_id=self._require_uuid(item.task_id, field_name="task_id"),
                             source_seq_start=int(item.source_seq_start),
                             source_seq_end=int(item.source_seq_end),
@@ -185,7 +185,7 @@ class RevisionRepository:
     @staticmethod
     def _parse_uuid_str(value: str) -> str | None:
         try:
-            return str(uuid.UUID(value))
+            return uuid.UUID(value).hex
         except (TypeError, ValueError):
             return None
 

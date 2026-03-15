@@ -114,7 +114,7 @@ REVISION_LLM_DEBUG_FILE=./revision_debug.log
 
 ```json
 {
-  "item_id": "4b0cbfc2-36f3-42d1-93ef-5fdf80c21149",
+  "item_id": "4b0cbfc236f342d193ef5fdf80c21149",
   "source_seq_start": 4,
   "source_seq_end": 5,
   "source_seq_count": 2,
@@ -184,13 +184,13 @@ revision/
 
 ```sql
 CREATE TABLE IF NOT EXISTS public.utterances_revision_items (
-    item_id             UUID PRIMARY KEY,
-    revision_id         UUID NOT NULL,
-    task_id             UUID NOT NULL,
+    item_id             VARCHAR(32) PRIMARY KEY,
+    revision_id         VARCHAR(32) NOT NULL,
+    task_id             VARCHAR(32) NOT NULL,
     source_seq_start    INTEGER NOT NULL,
     source_seq_end      INTEGER NOT NULL,
     source_seq_count    INTEGER NOT NULL,
-    source_seqs         JSONB NOT NULL DEFAULT '[]'::jsonb,
+    source_seqs         TEXT NOT NULL DEFAULT '[]',
     speaker             VARCHAR(64),
     start_time          INTEGER NOT NULL,
     end_time            INTEGER NOT NULL,
@@ -200,8 +200,8 @@ CREATE TABLE IF NOT EXISTS public.utterances_revision_items (
     score               SMALLINT NOT NULL,
     issue_tags          TEXT NOT NULL DEFAULT '',
     explanations        TEXT NOT NULL DEFAULT '',
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 ```
 

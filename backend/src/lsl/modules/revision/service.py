@@ -322,7 +322,7 @@ class RevisionService:
         return filtered
 
     def _register_job(self, session_id: str) -> str:
-        job_token = str(uuid.uuid4())
+        job_token = uuid.uuid4().hex
         with self._job_tokens_lock:
             self._job_tokens[session_id] = job_token
         return job_token

@@ -48,7 +48,7 @@ class TaskService:
         if existing is not None:
             return TaskData.from_row(existing)
 
-        task_id = str(uuid.uuid4())
+        task_id = uuid.uuid4().hex
         provider_name = self._provider_name()
         self._repository.create_task(
             task_id=task_id,

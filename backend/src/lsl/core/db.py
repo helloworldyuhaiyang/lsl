@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from sqlalchemy import create_engine
@@ -36,31 +37,46 @@ def create_database_resources(settings: Settings) -> DatabaseResources:
     if not settings.DATABASE_URL:
         return DatabaseResources()
 
-    try:
-        from psycopg_pool import ConnectionPool
-    except ImportError as exc:
-        raise RuntimeError(
-            "psycopg_pool is required. Run: uv pip install psycopg-pool"
-        ) from exc
+    database_url = settings.DATABASE_URL
+    sqlalchemy_database_url = to_sqlalchemy_database_url(database_url)
 
-    connect_pool = ConnectionPool(
-        conninfo=settings.DATABASE_URL,
-        min_size=settings.DB_POOL_MIN_SIZE,
-        max_size=settings.DB_POOL_MAX_SIZE,
-        timeout=settings.DB_POOL_TIMEOUT,
-        open=False,
-    )
-    connect_pool.open(wait=True)
+    connect_pool = None
+    engine_kwargs: dict[str, object] = {
+        "pool_pre_ping": True,
+    }
+
+    if sqlalchemy_database_url.startswith("sqlite:///"):
+        sqlite_path = sqlalchemy_database_url[len("sqlite:///") :]
+        if sqlite_path and sqlite_path != ":memory:" and not sqlite_path.startswith("file:"):
+            Path(sqlite_path).expanduser().resolve().parent.mkdir(parents=True, exist_ok=True)
+        engine_kwargs["connect_args"] = {"check_same_thread": False}
+    else:
+        try:
+            from psycopg_pool import ConnectionPool
+        except ImportError as exc:
+            raise RuntimeError(
+                "psycopg_pool is required. Run: uv pip install psycopg-pool"
+            ) from exc
+
+        connect_pool = ConnectionPool(
+            conninfo=database_url,
+            min_size=settings.DB_POOL_MIN_SIZE,
+            max_size=settings.DB_POOL_MAX_SIZE,
+            timeout=settings.DB_POOL_TIMEOUT,
+            open=False,
+        )
+        connect_pool.open(wait=True)
 
     engine = create_engine(
-        to_sqlalchemy_database_url(settings.DATABASE_URL),
-        pool_pre_ping=True,
+        sqlalchemy_database_url,
+        **engine_kwargs,
     )
     session_factory = sessionmaker(
         bind=engine,
         autoflush=False,
         expire_on_commit=False,
     )
+    Base.metadata.create_all(engine)
     return DatabaseResources(
         pool=connect_pool,
         engine=engine,

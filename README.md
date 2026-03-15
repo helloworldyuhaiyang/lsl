@@ -70,11 +70,13 @@ LSL 「口语录音的智能复盘工具」。
 当前项目使用 `uv pip install` 安装 Python 依赖。后端当前运行链路至少需要以下依赖：
 
 ```bash
-uv pip install fastapi uvicorn pydantic sqlalchemy python-dotenv requests httpx openai json-repair redis alibabacloud-oss-v2 'psycopg[binary]' psycopg-pool
+uv pip install fastapi uvicorn pydantic sqlalchemy python-dotenv requests httpx openai json-repair redis alibabacloud-oss-v2
 ```
 
 说明：
 - `json-repair` 用于修复 revision 模块里大模型偶发返回的非严格 JSON。
+- 默认数据库已经切到 `SQLite`，本地运行不再要求先起 `PostgreSQL`。
+- 如果你仍然要接 `PostgreSQL`，再额外安装：`'psycopg[binary]' psycopg-pool`
 - 如果本地已经有 `uv` 管理的虚拟环境，直接在对应环境里执行上面的命令即可。
 
 2. 配置 `.env`
@@ -82,7 +84,7 @@ uv pip install fastapi uvicorn pydantic sqlalchemy python-dotenv requests httpx 
 
 ```env
 基本配置
-DATABASE_URL=postgresql://<user>:<password>@<host>:5432/lsl
+DATABASE_URL=sqlite:///./data/lsl.sqlite3
 
 文件存储
 STORAGE_PROVIDER=oss
@@ -103,6 +105,14 @@ VOLC_ACCESS_KEY='Bxge8EJzR7jVBuqxG3G_bZGTVMlq40AQ'
 ```bash
 uv run uvicorn --app-dir backend/src lsl.main:app --reload --env-file .env
 ```
+
+使用 `PostgreSQL`，把 `DATABASE_URL` 改成：
+
+```env
+DATABASE_URL=postgresql://<user>:<password>@<host>:5432/lsl
+```
+
+部署到 `PostgreSQL` 时，请先按当前最新的建表 SQL 初始化数据库。
 
 4. 后端规范
 ```
@@ -173,6 +183,7 @@ backend/
 - `repo.py` 只依赖 `model.py`、数据库驱动、SQLAlchemy，返回ORM Model, 不要返回 dict[str, Any]。
 - `core/` 不能反向依赖 `modules/`。
 - 外部厂商适配代码放在所属模块内部，例如 `asset/providers.py`、`task/asr_provider.py` 与 `task/asr/*.py`，不要散落到全局。
+- UUID/JSONB 这种 PostgreSQL 特有的，请使用 string 这种通用的类型。
 
 ### 3.3 模块边界
 
@@ -190,7 +201,7 @@ backend/
   - Session 模块：`s_{uuid}`
   - Revision 模块：`r_{uuid}`
 
-说明：以上是对外 ID 规范。当前仓库实现与建表 SQL 仍主要使用裸 `UUID` 字段；如果要把此前缀真正落到运行时代码，需要连同表结构、repo 校验和跨模块关联一并调整。
+说明：以上是对外 ID 规范。当前仓库内部数据库已经统一改为 32 位无横线的十六进制字符串；如果要把这些前缀真正落到运行时代码，还需要继续调整 API 返回、repo 校验和跨模块关联。
 
 ### 3.5 接口与错误处理规范
 

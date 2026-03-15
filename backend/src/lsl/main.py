@@ -39,8 +39,16 @@ settings = Settings.from_env()
 async def lifespan(app: FastAPI):
     db_resources = create_database_resources(settings)
 
-    asset_repository = AssetRepository(db_resources.pool) if db_resources.pool is not None else None
-    task_repository = TaskRepository(db_resources.pool) if db_resources.pool is not None else None
+    asset_repository = (
+        AssetRepository(db_resources.session_factory)
+        if db_resources.session_factory is not None
+        else None
+    )
+    task_repository = (
+        TaskRepository(db_resources.session_factory)
+        if db_resources.session_factory is not None
+        else None
+    )
     session_repository = (
         SessionRepository(db_resources.session_factory)
         if db_resources.session_factory is not None

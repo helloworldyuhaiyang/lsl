@@ -114,7 +114,7 @@ class SessionRepository:
                         if value is None:
                             setattr(model, key, None)
                         elif isinstance(value, uuid.UUID):
-                            setattr(model, key, str(value))
+                            setattr(model, key, value.hex)
                         elif isinstance(value, str):
                             setattr(model, key, self._require_uuid(value, field_name="current_task_id"))
                         else:
@@ -153,7 +153,7 @@ class SessionRepository:
     @staticmethod
     def _parse_uuid_str(value: str) -> str | None:
         try:
-            return str(uuid.UUID(value))
+            return uuid.UUID(value).hex
         except (TypeError, ValueError):
             return None
 

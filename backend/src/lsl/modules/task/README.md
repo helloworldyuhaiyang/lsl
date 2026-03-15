@@ -13,7 +13,7 @@ Task 模块负责 ASR 任务编排，不直接依赖具体厂商实现。
 ## ID 规范
 
 - 对外 `task_id` 格式约定为 `t_{uuid}`，例如 `t_196f132e-85f3-4227-a6d7-274dfb310b39`。
-- 当前 README 下方建表 SQL 仍以裸 `UUID` 为例；如果要按此前缀落地，需要同步调整表结构与仓储层校验逻辑。
+- 当前数据库内部实际存的是 32 位无横线十六进制字符串；对外前缀格式如果要真正落地，还需要继续调整 API 和跨模块校验。
 
 ## 模块结构
 
@@ -101,14 +101,16 @@ curl -s "$BASE_URL/tasks?limit=20&status=3"
 
 ## 建表 SQL
 
+默认本地运行使用 `SQLite` 并由 SQLAlchemy 自动建表；下面这份 SQL 主要用于手动初始化 `PostgreSQL`。
+
 ```sql
 -- 任务主表：记录 ASR 调度状态与 provider 元数据
 CREATE TABLE IF NOT EXISTS public.tasks (
-    task_id               UUID PRIMARY KEY,                        -- 任务唯一 ID
+    task_id               VARCHAR(32) PRIMARY KEY,                 -- 任务唯一 ID（uuid hex）
     object_key            TEXT NOT NULL UNIQUE,                    -- 音频对象键（同一音频幂等）
     audio_url             TEXT NOT NULL,                           -- 音频可访问 URL
     x_duration_ms         INTEGER,                                 -- 冗余总时长（毫秒）
-    x_status              SMALLINT NOT NULL DEFAULT 0 CHECK (x_status IN (0,1,2,3,4)), -- 状态码
+    x_status              SMALLINT NOT NULL DEFAULT 0,             -- 状态码
     x_language            VARCHAR(16),                             -- 语种
     x_provider            VARCHAR(32) NOT NULL DEFAULT 'noop',     -- ASR 提供方
     x_provider_request_id VARCHAR(128),                            -- provider 请求 ID
@@ -121,8 +123,8 @@ CREATE TABLE IF NOT EXISTS public.tasks (
     poll_count            INTEGER NOT NULL DEFAULT 0,              -- 已轮询次数
     last_polled_at        TIMESTAMPTZ,                             -- 最近轮询时间
     next_poll_at          TIMESTAMPTZ,                             -- 下次轮询时间
-    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),      -- 创建时间
-    updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()       -- 更新时间
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 创建时间
+    updated_at            TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP  -- 更新时间
 );
 
 -- 轮询任务查询索引（按状态 + 下次轮询时间）
@@ -135,37 +137,40 @@ CREATE INDEX IF NOT EXISTS idx_tasks_created_at
 
 -- ASR 结果主表：一条任务一份结构化结果
 CREATE TABLE IF NOT EXISTS public.asr_results (
-    task_id           UUID PRIMARY KEY REFERENCES public.tasks(task_id) ON DELETE CASCADE, -- 与任务 1:1
+    task_id           VARCHAR(32) PRIMARY KEY,                    -- 与任务 1:1
     x_provider        VARCHAR(32) NOT NULL,                      -- 实际使用的 provider
     duration_ms       INTEGER,                                   -- 音频总时长（毫秒）
     x_full_text       TEXT,                                      -- 全量拼接文本
-    raw_result_json   JSONB NOT NULL,                            -- provider 原始回包
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()         -- 入库时间
+    raw_result_json   TEXT NOT NULL,                             -- provider 原始回包 JSON 字符串
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP -- 入库时间
 );
 
 -- ASR 分句表：保存每个分句的时间戳与说话人
 CREATE TABLE IF NOT EXISTS public.asr_utterances (
     id               BIGSERIAL PRIMARY KEY,                      -- 自增主键
-    task_id          UUID NOT NULL REFERENCES public.tasks(task_id) ON DELETE CASCADE, -- 关联任务
+    task_id          VARCHAR(32) NOT NULL,                       -- 关联任务
     seq              INTEGER NOT NULL,                           -- 句子序号（从 0 或 1 递增）
     x_text           TEXT NOT NULL,                              -- 分句文本
     speaker          VARCHAR(32),                                -- 说话人标识
     start_time       INTEGER NOT NULL,                           -- 开始时间（毫秒）
     end_time         INTEGER NOT NULL,                           -- 结束时间（毫秒）
-    additions_json   JSONB NOT NULL DEFAULT '{}'::jsonb,         -- 扩展字段
-    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),         -- 创建时间
-    CONSTRAINT uq_asr_utterance_task_seq UNIQUE (task_id, seq)   -- 同一任务内 seq 唯一
+    additions_json   TEXT,                                       -- 扩展字段 JSON 字符串
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP -- 创建时间
 );
 
 -- 分句读取索引：按任务顺序读取转写文本
 CREATE INDEX IF NOT EXISTS idx_asr_utterances_task_id
     ON public.asr_utterances (task_id, seq);
 
+-- 同一任务内 seq 唯一
+CREATE UNIQUE INDEX IF NOT EXISTS uq_asr_utterance_task_seq
+    ON public.asr_utterances (task_id, seq);
+
 -- 统一更新时间函数：每次 UPDATE 自动刷新 updated_at
 CREATE OR REPLACE FUNCTION public.set_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
-    NEW.updated_at = NOW();
+    NEW.updated_at = CURRENT_TIMESTAMP;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
