@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 
 import { PageTitle } from '@/components/common/page-title'
 import { HighlightedTextarea } from '@/components/ui/highlighted-textarea'
@@ -202,6 +202,7 @@ function showPopupMessage(message: string) {
 
 export function RevisePage() {
   const { sessionId = '' } = useParams()
+  const navigate = useNavigate()
   const [session, setSession] = useState<SessionSummary | null>(null)
   const [items, setItems] = useState<RevisionItem[]>([])
   const [drafts, setDrafts] = useState<Record<string, string>>({})
@@ -230,6 +231,8 @@ export function RevisePage() {
   const synthAudioUrlRef = useRef<string | null>(null)
   const resolvedSessionId = session?.sessionId || sessionId
   const isRevisionGenerating = revisionStatusName === 'generating'
+  const isTtsGenerating = ttsStatusName === 'generating'
+  const isAnyGenerating = isSubmittingRevision || isRevisionGenerating || isSubmittingTtsBatch || isTtsGenerating
   const hasActiveDraftMutation =
     Object.keys(editingItemIds).length > 0 || Object.keys(savingItemIds).length > 0
   const conversationSpeakers = listConversationSpeakers(items)
@@ -243,7 +246,7 @@ export function RevisePage() {
   const hasPendingTtsSettings =
     serializeTtsSettingsForm(resolvedTtsSettings) !== serializeTtsSettingsForm(resolvedPersistedTtsSettings)
   const canUseTts = Boolean(resolvedSessionId) && Boolean(resolvedTtsSettings) && ttsSpeakers.length > 0
-  const canRevise = Boolean(resolvedSessionId) && !isLoading && !isSubmittingRevision && !isRevisionGenerating && session?.status === 'completed'
+  const canRevise = Boolean(resolvedSessionId) && !isLoading && !isAnyGenerating && session?.status === 'completed'
 
   function applyRevision(revision: RevisionResponse) {
     const nextItems = mapRevisionResponseToItems(revision)
@@ -628,6 +631,13 @@ export function RevisePage() {
     }
   }
 
+  function handleTtsSettingsBlur() {
+    if (!hasPendingTtsSettings || isSavingTtsSettings) {
+      return
+    }
+    void handleSaveTtsSettings()
+  }
+
   async function handleRevise() {
     if (!resolvedSessionId) {
       setErrorMessage('Missing session id.')
@@ -759,9 +769,7 @@ export function RevisePage() {
         sessionId: resolvedSessionId,
       })
       applyTtsSynthesis(synthesis)
-      if (synthesis.status_name === 'generating') {
-        setPlaybackMessage('Generating full synthesized audio...')
-      }
+      navigate(getListeningPath(resolvedSessionId))
     } catch (error) {
       showPopupMessage(formatTtsActionError(error, 'Failed to synthesize all items.'))
     } finally {
@@ -824,7 +832,7 @@ export function RevisePage() {
               </span>
             ) : null}
             <Button type="button" size="sm" onClick={() => void handleRevise()} disabled={!canRevise}>
-              {isSubmittingRevision ? 'Submitting...' : isRevisionGenerating ? 'Generating' : 'Revise by AI'}
+              {isAnyGenerating ? 'Generating' : 'Revise by AI'}
             </Button>
           </div>
         </CardHeader>
@@ -868,20 +876,11 @@ export function RevisePage() {
             ) : null}
             <Button
               type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => void handleSaveTtsSettings()}
-              disabled={!resolvedTtsSettings || !hasPendingTtsSettings || isSavingTtsSettings}
-            >
-              {isSavingTtsSettings ? 'Saving...' : 'Save TTS Settings'}
-            </Button>
-            <Button
-              type="button"
               size="sm"
               onClick={() => void handleSynthesizeAll()}
-              disabled={!canUseTts || isSubmittingTtsBatch || items.length === 0}
+              disabled={!canUseTts || isAnyGenerating || items.length === 0}
             >
-              {isSubmittingTtsBatch ? 'Synthesizing...' : 'Synthesize All'}
+              {isAnyGenerating ? 'Generating' : 'Synthesize All'}
             </Button>
           </div>
         </CardHeader>
@@ -894,6 +893,7 @@ export function RevisePage() {
                   <select
                     value={resolvedTtsSettings.format}
                     onChange={(event) => updateTtsSettingsForm({ format: event.target.value })}
+                    onBlur={handleTtsSettingsBlur}
                     className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
                   >
                     <option value="mp3">mp3</option>
@@ -909,6 +909,7 @@ export function RevisePage() {
                     step="0.1"
                     value={resolvedTtsSettings.emotionScale}
                     onChange={(event) => updateTtsSettingsForm({ emotionScale: Number(event.target.value) || 1 })}
+                    onBlur={handleTtsSettingsBlur}
                     className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
                   />
                 </label>
@@ -921,6 +922,7 @@ export function RevisePage() {
                     step="0.1"
                     value={resolvedTtsSettings.speechRate}
                     onChange={(event) => updateTtsSettingsForm({ speechRate: Number(event.target.value) || 1 })}
+                    onBlur={handleTtsSettingsBlur}
                     className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
                   />
                 </label>
@@ -933,6 +935,7 @@ export function RevisePage() {
                     step="0.1"
                     value={resolvedTtsSettings.loudnessRate}
                     onChange={(event) => updateTtsSettingsForm({ loudnessRate: Number(event.target.value) || 1 })}
+                    onBlur={handleTtsSettingsBlur}
                     className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
                   />
                 </label>
@@ -958,6 +961,7 @@ export function RevisePage() {
                               },
                             })
                           }
+                          onBlur={handleTtsSettingsBlur}
                           className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
                           disabled={ttsSpeakers.length === 0}
                         >

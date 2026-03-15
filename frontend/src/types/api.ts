@@ -213,6 +213,8 @@ export interface TtsSynthesisItemResponse {
   plain_text: string
   cue_texts: string[]
   content_hash: string
+  start_time_ms?: number | null
+  end_time_ms?: number | null
   duration_ms?: number | null
   status: number
   status_name: string

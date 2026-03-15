@@ -577,6 +577,7 @@ class TtsService:
             if model.full_asset_object_key
             else None
         )
+        timeline_offsets = self._build_item_timeline_offsets(model.items)
         items = [
             TtsSynthesisItemData.build(
                 item_id=str(item.source_item_id),
@@ -586,6 +587,8 @@ class TtsService:
                 plain_text=item.plain_text,
                 cue_texts=list(item.cue_texts),
                 content_hash=item.content_hash,
+                start_time_ms=timeline_offsets.get(str(item.source_item_id), {}).get("start_time_ms"),
+                end_time_ms=timeline_offsets.get(str(item.source_item_id), {}).get("end_time_ms"),
                 duration_ms=item.duration_ms,
                 status=int(item.status),
             )
@@ -688,6 +691,26 @@ class TtsService:
         if not values or any(value is None for value in values):
             return None
         return sum(int(value) for value in values if value is not None)
+
+    @staticmethod
+    def _build_item_timeline_offsets(items: list) -> dict[str, dict[str, int | None]]:
+        offsets: dict[str, dict[str, int | None]] = {}
+        cursor_ms = 0
+        for item in items:
+            item_id = str(item.source_item_id)
+            duration_ms = int(item.duration_ms) if item.duration_ms is not None else None
+            if duration_ms is None:
+                offsets[item_id] = {
+                    "start_time_ms": None,
+                    "end_time_ms": None,
+                }
+                continue
+            offsets[item_id] = {
+                "start_time_ms": cursor_ms,
+                "end_time_ms": cursor_ms + duration_ms,
+            }
+            cursor_ms += duration_ms
+        return offsets
 
     @staticmethod
     def _merge_audio_segments(*, format_name: str, audio_segments: list[bytes]) -> bytes:

@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 _VOLC_TTS_2_SPEAKER_ROWS: list[tuple[str, str, str, str, str, str]] = [
     ("通用场景", "Vivi 2.0", "zh_female_vv_uranus_bigtts", "中文、日文、印尼、墨西哥西班牙语", "情感变化、指令遵循、ASMR", ""),
     ("通用场景", "小何 2.0", "zh_female_xiaohe_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
+    ("视频配音", "猴哥 2.0", "zh_male_sunwukong_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
     ("通用场景", "云舟 2.0", "zh_male_m191_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
     ("通用场景", "小天 2.0", "zh_male_taocheng_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
     ("通用场景", "刘飞 2.0", "zh_male_liufei_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
@@ -28,7 +29,6 @@ _VOLC_TTS_2_SPEAKER_ROWS: list[tuple[str, str, str, str, str, str]] = [
     ("视频配音", "佩奇猪 2.0", "zh_female_peiqi_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
     ("通用场景", "邻家女孩 2.0", "zh_female_linjianvhai_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
     ("通用场景", "少年梓辛/Brayan 2.0", "zh_male_shaonianzixin_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
-    ("视频配音", "猴哥 2.0", "zh_male_sunwukong_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
     ("教育场景", "Tina老师 2.0", "zh_female_yingyujiaoxue_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
     ("客服场景", "暖阳女声 2.0", "zh_female_kefunvsheng_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
     ("有声阅读", "儿童绘本 2.0", "zh_female_xiaoxue_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
@@ -132,6 +132,7 @@ class VolcTtsProvider:
                     "emotion_scale": req.emotion_scale,
                     "speech_rate": req.speech_rate,
                     "loudness_rate": req.loudness_rate,
+                    "enable_subtitle": True,
                 },
                 "additions": json.dumps(additions, ensure_ascii=False),
             },
@@ -181,15 +182,24 @@ class VolcTtsProvider:
                 )
 
             audio_data = bytearray()
-            for chunk in response.iter_lines(decode_unicode=True):
-                if not chunk:
-                    continue
-                data = json.loads(chunk)
+            max_subtitle_end_time_ms: int | None = None
+            for event_name, data in self._iter_response_events(response):
                 code = int(data.get("code", 0))
                 if code == 0 and data.get("data"):
                     audio_data.extend(base64.b64decode(data["data"]))
                     continue
                 if code == 0 and data.get("sentence"):
+                    sentence_duration_ms = self._extract_sentence_end_time_ms(data.get("sentence"))
+                    if sentence_duration_ms is not None:
+                        max_subtitle_end_time_ms = max(
+                            max_subtitle_end_time_ms or 0,
+                            sentence_duration_ms,
+                        )
+                    logger.info(
+                        "Volc TTS subtitle event=%s sentence=%s",
+                        event_name or "json",
+                        json.dumps(data.get("sentence"), ensure_ascii=False),
+                    )
                     continue
                 if code == 20000000:
                     break
@@ -202,7 +212,7 @@ class VolcTtsProvider:
             return TtsSynthesizeResult(
                 audio_bytes=bytes(audio_data),
                 content_type=self._content_type_for_format(req.format),
-                duration_ms=None,
+                duration_ms=max_subtitle_end_time_ms,
                 provider_speaker_id=req.provider_speaker_id,
             )
         finally:
@@ -224,3 +234,47 @@ class VolcTtsProvider:
         if format_name.lower() == "wav":
             return "audio/wav"
         return "audio/mpeg"
+
+    @staticmethod
+    def _iter_response_events(response: requests.Response) -> list[tuple[str | None, dict[str, Any]]]:
+        current_event: str | None = None
+        events: list[tuple[str | None, dict[str, Any]]] = []
+        for chunk in response.iter_lines(decode_unicode=True):
+            if not chunk:
+                continue
+            line = chunk.strip()
+            if not line:
+                continue
+            if line.startswith("event:"):
+                current_event = line.partition(":")[2].strip() or None
+                continue
+            payload = line.partition(":")[2].strip() if line.startswith("data:") else line
+            try:
+                message = json.loads(payload)
+            except json.JSONDecodeError:
+                logger.warning("Volc TTS returned non-JSON chunk: %s", line[:200])
+                continue
+            events.append((current_event, message))
+        return events
+
+    @staticmethod
+    def _extract_sentence_end_time_ms(sentence_payload: Any) -> int | None:
+        if not isinstance(sentence_payload, dict):
+            return None
+        words = sentence_payload.get("words")
+        if not isinstance(words, list) or not words:
+            return None
+        max_end_time = 0.0
+        found = False
+        for item in words:
+            if not isinstance(item, dict):
+                continue
+            try:
+                end_time = float(item.get("endTime", 0))
+            except (TypeError, ValueError):
+                continue
+            max_end_time = max(max_end_time, end_time)
+            found = True
+        if not found:
+            return None
+        return int(max_end_time * 1000)

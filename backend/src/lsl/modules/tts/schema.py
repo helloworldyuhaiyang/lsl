@@ -112,6 +112,8 @@ class TtsSynthesisItemData(BaseModel):
     plain_text: str
     cue_texts: list[str]
     content_hash: str
+    start_time_ms: int | None = None
+    end_time_ms: int | None = None
     duration_ms: int | None = None
     status: int
     status_name: str
@@ -127,6 +129,8 @@ class TtsSynthesisItemData(BaseModel):
         plain_text: str,
         cue_texts: list[str],
         content_hash: str,
+        start_time_ms: int | None,
+        end_time_ms: int | None,
         duration_ms: int | None,
         status: int,
     ) -> "TtsSynthesisItemData":
@@ -138,6 +142,8 @@ class TtsSynthesisItemData(BaseModel):
             plain_text=plain_text,
             cue_texts=cue_texts,
             content_hash=content_hash,
+            start_time_ms=start_time_ms,
+            end_time_ms=end_time_ms,
             duration_ms=duration_ms,
             status=status,
             status_name=status_code_to_name(status),

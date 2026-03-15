@@ -4,6 +4,7 @@ import logging
 import pickle
 import time
 from dataclasses import dataclass
+from typing import cast
 
 from lsl.modules.tts.types import CachedAudio
 
@@ -37,7 +38,14 @@ class TtsCache:
                 payload = self._redis.get(cache_key)
                 if not payload:
                     return None
-                return pickle.loads(payload)
+                if not isinstance(payload, (bytes, bytearray, memoryview)):
+                    logger.warning(
+                        "Unexpected TTS cache payload type key=%s type=%s",
+                        cache_key,
+                        type(payload).__name__,
+                    )
+                    return None
+                return cast(CachedAudio, pickle.loads(bytes(payload)))
             except Exception as exc:  # pragma: no cover
                 logger.warning("Failed to read TTS cache key=%s: %s", cache_key, exc)
 
