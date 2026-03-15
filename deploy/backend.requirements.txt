@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+pydantic
+sqlalchemy
+python-dotenv
+requests
+httpx
+openai
+json-repair
+redis
+alibabacloud-oss-v2
+psycopg[binary]
+psycopg-pool
+
