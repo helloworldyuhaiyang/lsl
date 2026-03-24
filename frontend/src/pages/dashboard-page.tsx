@@ -96,7 +96,7 @@ export function DashboardPage() {
         description="Manage your sessions and track processing status in one place."
         actions={
           <Button asChild>
-            <Link to={ROUTES.upload}>Upload Session</Link>
+            <Link to={ROUTES.upload}>Create Session</Link>
           </Button>
         }
       />

@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import time
 from typing import Any
 
 import requests
@@ -150,6 +151,16 @@ class VolcTtsProvider:
             json.dumps(debug_headers, ensure_ascii=False),
             json.dumps(payload, ensure_ascii=False),
         )
+        request_started_at = time.monotonic()
+        logger.info(
+            "Volc TTS request started session_id=%s speaker=%s format=%s timeout_s=%s text_length=%s cue_count=%s",
+            req.session_id,
+            req.provider_speaker_id,
+            req.format,
+            self._timeout,
+            len(req.plain_text),
+            len(req.cue_texts),
+        )
 
         response = requests.post(
             self._url,
@@ -160,9 +171,11 @@ class VolcTtsProvider:
         )
         try:
             logger.info(
-                "Volc TTS response status=%s x_tt_logid=%s",
+                "Volc TTS response headers received session_id=%s status=%s x_tt_logid=%s elapsed_ms=%s",
+                req.session_id,
                 response.status_code,
                 response.headers.get("X-Tt-Logid"),
+                int((time.monotonic() - request_started_at) * 1000),
             )
             if response.status_code != 200:
                 response_text = response.text[:400]
@@ -183,7 +196,26 @@ class VolcTtsProvider:
 
             audio_data = bytearray()
             max_subtitle_end_time_ms: int | None = None
-            for event_name, data in self._iter_response_events(response):
+            stream_started_at = time.monotonic()
+            try:
+                events = self._iter_response_events(response)
+            except Exception as exc:
+                logger.exception(
+                    "Volc TTS stream read failed session_id=%s speaker=%s elapsed_ms=%s exc_type=%s",
+                    req.session_id,
+                    req.provider_speaker_id,
+                    int((time.monotonic() - stream_started_at) * 1000),
+                    type(exc).__name__,
+                )
+                raise
+            logger.info(
+                "Volc TTS stream parsed session_id=%s speaker=%s event_count=%s elapsed_ms=%s",
+                req.session_id,
+                req.provider_speaker_id,
+                len(events),
+                int((time.monotonic() - stream_started_at) * 1000),
+            )
+            for event_name, data in events:
                 code = int(data.get("code", 0))
                 if code == 0 and data.get("data"):
                     audio_data.extend(base64.b64decode(data["data"]))
@@ -216,6 +248,12 @@ class VolcTtsProvider:
                 provider_speaker_id=req.provider_speaker_id,
             )
         finally:
+            logger.info(
+                "Volc TTS request finished session_id=%s speaker=%s total_elapsed_ms=%s",
+                req.session_id,
+                req.provider_speaker_id,
+                int((time.monotonic() - request_started_at) * 1000),
+            )
             response.close()
 
     @staticmethod

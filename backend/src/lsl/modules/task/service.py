@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -33,6 +34,66 @@ class TaskService:
     ) -> None:
         self._repository = repository
         self._asr_provider = asr_provider
+
+    def create_text_task(
+        self,
+        *,
+        utterances: list[TaskTranscriptUtterance],
+        language: str | None = None,
+        full_text: str | None = None,
+        raw_result: dict[str, Any] | None = None,
+    ) -> TaskData:
+        normalized_utterances = self._normalize_transcript_utterances(utterances)
+        if not normalized_utterances:
+            raise ValueError("utterances are required")
+
+        task_id = uuid.uuid4().hex
+        object_key = f"text/generated/{task_id}.json"
+        plain_lines = [item.text for item in normalized_utterances]
+        resolved_full_text = (full_text or "\n".join(plain_lines)).strip()
+        duration_ms = max(int(item.end_time) for item in normalized_utterances)
+        provider_name = "text"
+        raw_result_json = raw_result or {
+            "provider": provider_name,
+            "utterances": [
+                {
+                    "seq": int(item.seq),
+                    "speaker": item.speaker,
+                    "text": item.text,
+                    "start_time": int(item.start_time),
+                    "end_time": int(item.end_time),
+                    "additions": item.additions,
+                }
+                for item in normalized_utterances
+            ],
+        }
+
+        self._repository.create_completed_text_task(
+            task_id=task_id,
+            object_key=object_key,
+            audio_url="",
+            language=language,
+            provider=provider_name,
+            duration_ms=duration_ms,
+            full_text=resolved_full_text,
+            raw_result_json=raw_result_json,
+            utterances=[
+                {
+                    "seq": int(item.seq),
+                    "speaker": item.speaker,
+                    "text": item.text,
+                    "start_time": int(item.start_time),
+                    "end_time": int(item.end_time),
+                    "additions": item.additions,
+                }
+                for item in normalized_utterances
+            ],
+        )
+
+        row = self._repository.get_task_by_id(task_id)
+        if row is None:
+            raise RuntimeError("Task is missing after text task creation")
+        return TaskData.from_row(row)
 
     def create_task(self, *, object_key: str, audio_url: str, language: str | None = None) -> TaskData:
         # 统一 object_key 规范，避免同一资源因前后斜杠差异导致重复任务。
@@ -311,3 +372,38 @@ class TaskService:
 
     def _provider_name(self) -> str:
         return getattr(self._asr_provider, "provider_name", "unknown")
+
+    @staticmethod
+    def _normalize_transcript_utterances(
+        utterances: list[TaskTranscriptUtterance],
+    ) -> list[TaskTranscriptUtterance]:
+        normalized: list[TaskTranscriptUtterance] = []
+        for item in sorted(utterances, key=lambda value: int(value.seq)):
+            text = item.text.strip()
+            if not text:
+                raise ValueError("utterance text is required")
+            speaker = (item.speaker or "").strip() or None
+            start_time = int(item.start_time)
+            end_time = int(item.end_time)
+            if end_time < start_time:
+                raise ValueError("utterance end_time must be greater than or equal to start_time")
+
+            normalized.append(
+                TaskTranscriptUtterance(
+                    seq=int(item.seq),
+                    text=re.sub(r"\s+", " ", text).strip(),
+                    speaker=speaker,
+                    start_time=start_time,
+                    end_time=end_time,
+                    additions=dict(item.additions or {}),
+                )
+            )
+
+        if not normalized:
+            return []
+
+        seqs = [int(item.seq) for item in normalized]
+        expected = list(range(seqs[0], seqs[0] + len(seqs)))
+        if seqs != expected:
+            raise ValueError("utterance seqs must be contiguous")
+        return normalized

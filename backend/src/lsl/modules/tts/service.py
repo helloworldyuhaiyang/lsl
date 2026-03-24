@@ -5,6 +5,7 @@ import io
 import json
 import logging
 import re
+import time
 import uuid
 import wave
 from concurrent.futures import ThreadPoolExecutor
@@ -288,15 +289,36 @@ class TtsService:
         ]
         audio_segments: list[bytes] = []
         durations: list[int | None] = []
+        job_started_at = time.monotonic()
+
+        logger.info(
+            "TTS background job started session_id=%s item_count=%s force=%s format=%s provider=%s",
+            session_id,
+            len(items),
+            force,
+            settings_value.format,
+            self._provider.provider_name,
+        )
 
         try:
-            for index, item in enumerate(items):
+            for index, item in enumerate(items, start=1):
                 if not self._is_active_job(session_id=session_id, job_token=job_token):
                     logger.info("TTS job superseded session_id=%s", session_id)
                     return
 
+                item_started_at = time.monotonic()
                 try:
                     cached = None if force else self._cache.get_audio(self._build_cache_key(self._provider.provider_name, item.content_hash))
+                    logger.info(
+                        "TTS item started session_id=%s item_id=%s index=%s/%s cache_hit=%s speaker=%s text_length=%s",
+                        session_id,
+                        item.source_item_id,
+                        index,
+                        len(items),
+                        cached is not None,
+                        item.provider_speaker_id,
+                        len(item.plain_text),
+                    )
                     if cached is None:
                         result = self._provider.synthesize(
                             TtsSynthesizeRequest(
@@ -325,16 +347,35 @@ class TtsService:
 
                     audio_segments.append(cached.audio_bytes)
                     durations.append(cached.duration_ms)
-                    current_items[index] = self._replace_stored_item(
+                    current_items[index - 1] = self._replace_stored_item(
                         item,
                         duration_ms=cached.duration_ms,
                         status=int(TtsSynthesisStatus.COMPLETED),
                         error_code=None,
                         error_message=None,
                     )
+                    logger.info(
+                        "TTS item completed session_id=%s item_id=%s index=%s/%s cache_hit=%s elapsed_ms=%s audio_bytes=%s duration_ms=%s",
+                        session_id,
+                        item.source_item_id,
+                        index,
+                        len(items),
+                        cached is not None,
+                        int((time.monotonic() - item_started_at) * 1000),
+                        len(cached.audio_bytes),
+                        cached.duration_ms,
+                    )
                 except Exception as exc:
-                    logger.exception("TTS item generation failed session_id=%s item_id=%s", session_id, item.source_item_id)
-                    current_items[index] = self._replace_stored_item(
+                    logger.exception(
+                        "TTS item generation failed session_id=%s item_id=%s index=%s/%s elapsed_ms=%s exc_type=%s",
+                        session_id,
+                        item.source_item_id,
+                        index,
+                        len(items),
+                        int((time.monotonic() - item_started_at) * 1000),
+                        type(exc).__name__,
+                    )
+                    current_items[index - 1] = self._replace_stored_item(
                         item,
                         duration_ms=None,
                         status=int(TtsSynthesisStatus.FAILED),
@@ -356,6 +397,13 @@ class TtsService:
 
             completed_count = sum(1 for item in current_items if int(item.status) == int(TtsSynthesisStatus.COMPLETED))
             failed_count = sum(1 for item in current_items if int(item.status) == int(TtsSynthesisStatus.FAILED))
+            logger.info(
+                "TTS item loop finished session_id=%s completed_count=%s failed_count=%s elapsed_ms=%s",
+                session_id,
+                completed_count,
+                failed_count,
+                int((time.monotonic() - job_started_at) * 1000),
+            )
 
             if failed_count > 0:
                 status = int(TtsSynthesisStatus.PARTIAL if completed_count > 0 else TtsSynthesisStatus.FAILED)
@@ -370,11 +418,37 @@ class TtsService:
                     error_code="tts_partial_failed" if completed_count > 0 else "tts_generation_failed",
                     error_message=None if completed_count > 0 else "All TTS items failed",
                 )
+                logger.warning(
+                    "TTS background job ended with failed items session_id=%s completed_count=%s failed_count=%s elapsed_ms=%s",
+                    session_id,
+                    completed_count,
+                    failed_count,
+                    int((time.monotonic() - job_started_at) * 1000),
+                )
                 return
 
+            merge_started_at = time.monotonic()
+            logger.info(
+                "TTS merge started session_id=%s segment_count=%s format=%s",
+                session_id,
+                len(audio_segments),
+                settings_value.format,
+            )
             full_audio = self._merge_audio_segments(
                 format_name=settings_value.format,
                 audio_segments=audio_segments,
+            )
+            logger.info(
+                "TTS merge completed session_id=%s bytes=%s elapsed_ms=%s",
+                session_id,
+                len(full_audio),
+                int((time.monotonic() - merge_started_at) * 1000),
+            )
+            logger.info(
+                "TTS full asset upload started session_id=%s bytes=%s content_type=%s",
+                session_id,
+                len(full_audio),
+                self._content_type_for_format(settings_value.format),
             )
             asset = self._asset_service.save_generated_asset(
                 category="tts",
@@ -382,6 +456,11 @@ class TtsService:
                 filename=f"{uuid.uuid4().hex}.{settings_value.format}",
                 content_type=self._content_type_for_format(settings_value.format),
                 data=full_audio,
+            )
+            logger.info(
+                "TTS full asset upload completed session_id=%s object_key=%s",
+                session_id,
+                asset["object_key"],
             )
             full_duration_ms = self._sum_durations(durations)
             self._repository.save_synthesis(
@@ -395,8 +474,19 @@ class TtsService:
                 error_code=None,
                 error_message=None,
             )
+            logger.info(
+                "TTS background job completed session_id=%s full_duration_ms=%s elapsed_ms=%s",
+                session_id,
+                full_duration_ms,
+                int((time.monotonic() - job_started_at) * 1000),
+            )
         except Exception as exc:
-            logger.exception("TTS background job failed session_id=%s", session_id)
+            logger.exception(
+                "TTS background job failed session_id=%s elapsed_ms=%s exc_type=%s",
+                session_id,
+                int((time.monotonic() - job_started_at) * 1000),
+                type(exc).__name__,
+            )
             self._repository.save_synthesis(
                 session_id=session_id,
                 provider=self._provider.provider_name,

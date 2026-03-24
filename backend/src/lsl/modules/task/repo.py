@@ -50,6 +50,61 @@ class TaskRepository:
         except SQLAlchemyError as exc:  # pragma: no cover
             raise RuntimeError(f"Failed to create task: {exc}") from exc
 
+    def create_completed_text_task(
+        self,
+        *,
+        task_id: str,
+        object_key: str,
+        audio_url: str,
+        language: str | None,
+        provider: str,
+        duration_ms: int,
+        full_text: str,
+        raw_result_json: dict[str, Any],
+        utterances: list[dict[str, Any]],
+    ) -> None:
+        normalized_task_id = self._require_uuid(task_id, field_name="task_id")
+        now = datetime.now(timezone.utc)
+        task_model = TaskModel(
+            task_id=normalized_task_id,
+            object_key=object_key,
+            audio_url=audio_url,
+            duration_ms=duration_ms,
+            status=3,
+            language=language,
+            provider=provider,
+            provider_status_code="completed",
+            provider_message="synthetic_text_task",
+            last_polled_at=now,
+            next_poll_at=None,
+        )
+        result_model = AsrResultModel(
+            task_id=normalized_task_id,
+            provider=provider,
+            duration_ms=duration_ms,
+            full_text=full_text,
+            raw_result_json=raw_result_json,
+        )
+        try:
+            with self._session_scope() as db:
+                db.add(task_model)
+                db.add(result_model)
+                for item in utterances:
+                    db.add(
+                        AsrUtteranceModel(
+                            task_id=normalized_task_id,
+                            seq=int(item["seq"]),
+                            text=item["text"],
+                            speaker=item.get("speaker"),
+                            start_time=int(item["start_time"]),
+                            end_time=int(item["end_time"]),
+                            additions_json=item.get("additions") or {},
+                        )
+                    )
+                db.commit()
+        except SQLAlchemyError as exc:  # pragma: no cover
+            raise RuntimeError(f"Failed to create completed text task: {exc}") from exc
+
     def get_task_by_id(self, task_id: str) -> dict[str, Any] | None:
         normalized_task_id = self._parse_uuid_str(task_id)
         if normalized_task_id is None:

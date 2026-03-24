@@ -39,6 +39,7 @@ class Settings:
     # 存储相关
     STORAGE_PROVIDER: str = ""
     ASSET_BASE_URL: str = ""
+    ASSET_PUT_TIMEOUT: float = 180.0
     DATABASE_URL: str = "sqlite:///./data/lsl.sqlite3"
     DB_POOL_MIN_SIZE: int = 1
     DB_POOL_MAX_SIZE: int = 10
@@ -68,6 +69,13 @@ class Settings:
     REVISION_LLM_MODEL: str = "doubao-1-5-pro-32k-250115"
     REVISION_LLM_HTTP_TIMEOUT: float = 60.0
     REVISION_LLM_DEBUG_FILE: str = ""
+
+    # AI Script / LLM
+    SCRIPT_PROVIDER: str = "llm"
+    SCRIPT_LLM_API_KEY: str = ""
+    SCRIPT_LLM_BASE_URL: str = "https://ark.cn-beijing.volces.com/api/v3"
+    SCRIPT_LLM_MODEL: str = "doubao-1-5-pro-32k-250115"
+    SCRIPT_LLM_HTTP_TIMEOUT: float = 60.0
 
     # TTS
     TTS_PROVIDER: str = "fake"
@@ -101,6 +109,10 @@ class Settings:
             "REVISION_LLM_HTTP_TIMEOUT",
             cls.REVISION_LLM_HTTP_TIMEOUT,
         )
+        script_llm_http_timeout = _get_env_float(
+            "SCRIPT_LLM_HTTP_TIMEOUT",
+            cls.SCRIPT_LLM_HTTP_TIMEOUT,
+        )
         tts_cache_ttl_seconds = _get_env_int("TTS_CACHE_TTL_SECONDS", cls.TTS_CACHE_TTL_SECONDS)
         tts_volc_http_timeout = _get_env_float("TTS_VOLC_HTTP_TIMEOUT", cls.TTS_VOLC_HTTP_TIMEOUT)
         tts_default_emotion_scale = _get_env_float("TTS_DEFAULT_EMOTION_SCALE", cls.TTS_DEFAULT_EMOTION_SCALE)
@@ -117,6 +129,8 @@ class Settings:
             raise ValueError("VOLC_HTTP_TIMEOUT must be greater than 0")
         if revision_llm_http_timeout <= 0:
             raise ValueError("REVISION_LLM_HTTP_TIMEOUT must be greater than 0")
+        if script_llm_http_timeout <= 0:
+            raise ValueError("SCRIPT_LLM_HTTP_TIMEOUT must be greater than 0")
         if tts_cache_ttl_seconds <= 0:
             raise ValueError("TTS_CACHE_TTL_SECONDS must be greater than 0")
         if tts_volc_http_timeout <= 0:
@@ -131,6 +145,15 @@ class Settings:
         tts_volc_app_id = _get_env_str("TTS_VOLC_APP_ID", cls.TTS_VOLC_APP_ID)
         tts_volc_access_key = _get_env_str("TTS_VOLC_ACCESS_KEY", cls.TTS_VOLC_ACCESS_KEY)
         tts_provider = os.getenv("TTS_PROVIDER", cls.TTS_PROVIDER).strip().lower() or cls.TTS_PROVIDER
+        revision_provider = os.getenv("REVISION_PROVIDER", cls.REVISION_PROVIDER).strip().lower() or cls.REVISION_PROVIDER
+        revision_llm_api_key = _get_env_str("REVISION_LLM_API_KEY", cls.REVISION_LLM_API_KEY)
+        revision_llm_base_url = _get_env_str("REVISION_LLM_BASE_URL", cls.REVISION_LLM_BASE_URL)
+        revision_llm_model = _get_env_str("REVISION_LLM_MODEL", cls.REVISION_LLM_MODEL)
+        script_provider_default = "llm" if revision_provider == "llm" else cls.SCRIPT_PROVIDER
+        script_provider = os.getenv("SCRIPT_PROVIDER", script_provider_default).strip().lower() or script_provider_default
+        script_llm_api_key = _get_env_str("SCRIPT_LLM_API_KEY", revision_llm_api_key or cls.SCRIPT_LLM_API_KEY)
+        script_llm_base_url = _get_env_str("SCRIPT_LLM_BASE_URL", revision_llm_base_url or cls.SCRIPT_LLM_BASE_URL)
+        script_llm_model = _get_env_str("SCRIPT_LLM_MODEL", revision_llm_model or cls.SCRIPT_LLM_MODEL)
 
         return cls(
             STORAGE_PROVIDER=provider,
@@ -152,12 +175,17 @@ class Settings:
             VOLC_MODEL_NAME=_get_env_str("VOLC_MODEL_NAME", cls.VOLC_MODEL_NAME),
             VOLC_UID=_get_env_str("VOLC_UID", cls.VOLC_UID),
             VOLC_HTTP_TIMEOUT=volc_http_timeout,
-            REVISION_PROVIDER=os.getenv("REVISION_PROVIDER", cls.REVISION_PROVIDER).strip().lower() or cls.REVISION_PROVIDER,
-            REVISION_LLM_API_KEY=_get_env_str("REVISION_LLM_API_KEY", cls.REVISION_LLM_API_KEY),
-            REVISION_LLM_BASE_URL=_get_env_str("REVISION_LLM_BASE_URL", cls.REVISION_LLM_BASE_URL),
-            REVISION_LLM_MODEL=_get_env_str("REVISION_LLM_MODEL", cls.REVISION_LLM_MODEL),
+            REVISION_PROVIDER=revision_provider,
+            REVISION_LLM_API_KEY=revision_llm_api_key,
+            REVISION_LLM_BASE_URL=revision_llm_base_url,
+            REVISION_LLM_MODEL=revision_llm_model,
             REVISION_LLM_HTTP_TIMEOUT=revision_llm_http_timeout,
             REVISION_LLM_DEBUG_FILE=_get_env_str("REVISION_LLM_DEBUG_FILE", cls.REVISION_LLM_DEBUG_FILE),
+            SCRIPT_PROVIDER=script_provider,
+            SCRIPT_LLM_API_KEY=script_llm_api_key,
+            SCRIPT_LLM_BASE_URL=script_llm_base_url,
+            SCRIPT_LLM_MODEL=script_llm_model,
+            SCRIPT_LLM_HTTP_TIMEOUT=script_llm_http_timeout,
             TTS_PROVIDER=tts_provider,
             TTS_REDIS_URL=_get_env_str("TTS_REDIS_URL", cls.TTS_REDIS_URL),
             TTS_CACHE_TTL_SECONDS=tts_cache_ttl_seconds,

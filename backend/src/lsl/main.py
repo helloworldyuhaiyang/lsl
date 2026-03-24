@@ -11,6 +11,8 @@ from lsl.modules.asset import AssetRepository, AssetService, create_storage_prov
 from lsl.modules.asset.api import router as asset_router
 from lsl.modules.revision import RevisionRepository, RevisionService, create_revision_generator
 from lsl.modules.revision.api import router as revision_router
+from lsl.modules.script import ScriptService, create_script_generator
+from lsl.modules.script.api import router as script_router
 from lsl.modules.session import SessionRepository, SessionService
 from lsl.modules.session.api import router as session_router
 from lsl.modules.task import TaskRepository, TaskService, create_asr_provider
@@ -113,6 +115,16 @@ async def lifespan(app: FastAPI):
         if tts_repository is not None and session_service is not None and revision_service is not None
         else None
     )
+    script_service = (
+        ScriptService(
+            generator=create_script_generator(settings),
+            session_service=session_service,
+            task_service=task_service,
+            revision_service=revision_service,
+        )
+        if session_service is not None and task_service is not None and revision_service is not None
+        else None
+    )
 
     app.state.settings = settings
     app.state.db_resources = db_resources
@@ -121,6 +133,7 @@ async def lifespan(app: FastAPI):
     app.state.session_service = session_service
     app.state.revision_service = revision_service
     app.state.tts_service = tts_service
+    app.state.script_service = script_service
 
     try:
         yield
@@ -136,6 +149,7 @@ app = FastAPI(title="LSL", lifespan=lifespan)
 app.include_router(asset_router)
 app.include_router(task_router)
 app.include_router(session_router)
+app.include_router(script_router)
 app.include_router(revision_router)
 app.include_router(tts_router)
 

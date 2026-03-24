@@ -75,12 +75,14 @@ LSL 里的脚本不是纯文本，而是“脚本正文 + 内嵌 cue”组成的
 - 已完成：ASR 任务模块（Task Module）
 - 已完成：会话管理模块（Session Module，已支持录音 / 文本类型建模）
 - 已完成：Revision 模块（utterance 级 revise + 打分 + 草稿保存）
+- 已完成：AI cue 脚本生成（生成文本 Session + synthetic transcript + completed revision）
 - 已完成：TTS 模块设计文档（待实现）
 - 已完成：模块化后端结构（`core` + `modules`）
-- 未完成：文本 Session 创建流、AI cue 脚本生成、TTS 模块实现、鉴权、前端页面
+- 未完成：TTS 模块实现、鉴权
 
 模块详细文档见：
 - `backend/src/lsl/modules/asset/README.md`
+- `backend/src/lsl/modules/script/README.md`
 - `backend/src/lsl/modules/task/README.md`
 - `backend/src/lsl/modules/session/README.md`
 - `backend/src/lsl/modules/revision/README.md`

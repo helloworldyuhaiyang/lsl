@@ -101,6 +101,23 @@ export interface CreateSessionRequest {
   currentTaskId?: string
 }
 
+export interface GenerateScriptSessionRequest {
+  title: string
+  description?: string
+  language?: string
+  prompt: string
+  turnCount?: number
+  speakerCount?: number
+  difficulty?: string
+  cueStyle?: string
+  mustInclude?: string[]
+}
+
+export interface GenerateScriptSessionResponse {
+  session: SessionItem
+  revision: RevisionResponse
+}
+
 export interface CreateRevisionRequest {
   sessionId: string
   userPrompt?: string

@@ -117,6 +117,33 @@ class RevisionService:
 
         return self._to_revision_data(model)
 
+    def create_generated_revision(
+        self,
+        *,
+        session_id: str,
+        task_id: str,
+        user_prompt: str | None,
+        items: list[GeneratedRevisionItem],
+    ) -> RevisionData:
+        session_data = self._session_service.get_session(session_id, auto_refresh=False)
+        current_task_id = session_data.session.current_task_id
+        if current_task_id is None:
+            raise ValueError("session current_task_id is missing")
+        if str(current_task_id) != str(task_id):
+            raise ValueError("session current_task_id does not match task_id")
+
+        model = self._repository.save_revision(
+            session_id=session_id,
+            task_id=task_id,
+            user_prompt=user_prompt,
+            status=int(RevisionStatus.COMPLETED),
+            items=items,
+            preserve_existing_drafts=False,
+            error_code=None,
+            error_message=None,
+        )
+        return self._to_revision_data(model)
+
     def update_revision_item(self, *, item_id: str, payload: UpdateRevisionItemRequest) -> RevisionItemData:
         updates = payload.model_dump(exclude_unset=True)
         if not updates:

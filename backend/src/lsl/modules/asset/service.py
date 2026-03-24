@@ -1,13 +1,18 @@
+import logging
+import time
 import uuid
 from datetime import timedelta
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlsplit
 
 import requests
 
 from lsl.core.config import Settings
 from lsl.modules.asset.repo import AssetRepository
 from lsl.modules.asset.types import StorageProvider
+
+logger = logging.getLogger(__name__)
 
 
 class AssetService:
@@ -126,11 +131,39 @@ class AssetService:
                 object_key=object_key,
                 content_type=normalized_content_type,
             )
-            response = requests.put(
-                upload_url,
-                data=data,
-                headers={"Content-Type": normalized_content_type},
-                timeout=60,
+            upload_host = urlsplit(upload_url).netloc
+            upload_started_at = time.monotonic()
+            logger.info(
+                "Generated asset upload started object_key=%s storage_provider=%s size=%s content_type=%s upload_host=%s",
+                object_key,
+                self._settings.STORAGE_PROVIDER,
+                len(data),
+                normalized_content_type,
+                upload_host,
+            )
+            try:
+                response = requests.put(
+                    upload_url,
+                    data=data,
+                    headers={"Content-Type": normalized_content_type},
+                    timeout=self._settings.ASSET_PUT_TIMEOUT,
+                )
+            except Exception as exc:
+                logger.exception(
+                    "Generated asset upload failed object_key=%s storage_provider=%s size=%s upload_host=%s elapsed_ms=%s exc_type=%s",
+                    object_key,
+                    self._settings.STORAGE_PROVIDER,
+                    len(data),
+                    upload_host,
+                    int((time.monotonic() - upload_started_at) * 1000),
+                    type(exc).__name__,
+                )
+                raise
+            logger.info(
+                "Generated asset upload response object_key=%s status=%s elapsed_ms=%s",
+                object_key,
+                response.status_code,
+                int((time.monotonic() - upload_started_at) * 1000),
             )
             if response.status_code not in (200, 201):
                 raise RuntimeError(
@@ -148,6 +181,13 @@ class AssetService:
             content_type=normalized_content_type,
             file_size=len(data),
             etag=etag,
+        )
+        logger.info(
+            "Generated asset saved object_key=%s storage_provider=%s size=%s content_type=%s",
+            object_key,
+            self._settings.STORAGE_PROVIDER,
+            len(data),
+            normalized_content_type,
         )
         return {
             "object_key": object_key,
