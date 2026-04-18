@@ -39,7 +39,7 @@ class Settings:
     # 存储相关
     STORAGE_PROVIDER: str = ""
     ASSET_BASE_URL: str = ""
-    ASSET_PUT_TIMEOUT: float = 180.0
+    ASSET_PUT_TIMEOUT: float = 120.0
     DATABASE_URL: str = "sqlite:///./data/lsl.sqlite3"
     DB_POOL_MIN_SIZE: int = 1
     DB_POOL_MAX_SIZE: int = 10

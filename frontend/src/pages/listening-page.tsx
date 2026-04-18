@@ -114,6 +114,7 @@ export function ListeningPage() {
   const [currentTimeSecond, setCurrentTimeSecond] = useState(0)
   const [durationSecond, setDurationSecond] = useState(0)
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const activeSubtitleRef = useRef<HTMLButtonElement | null>(null)
 
   const resolvedSessionId = session?.sessionId || sessionId
   const audioUrl = synthesis?.full_asset_url ?? null
@@ -271,6 +272,12 @@ export function ListeningPage() {
   const canJumpToPrevious = activeIndex > 0
   const canJumpToNext = activeIndex >= 0 && activeIndex < timeline.length - 1
 
+  useEffect(() => {
+    activeSubtitleRef.current?.scrollIntoView({
+      block: 'nearest',
+    })
+  }, [activeTimelineItem?.item.item_id])
+
   return (
     <section className="space-y-6">
       <PageTitle
@@ -349,22 +356,6 @@ export function ListeningPage() {
                 <track kind="captions" />
               </audio>
 
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm text-slate-600">
-                  <span>{formatDuration(currentTimeSecond)}</span>
-                  <span>{formatDuration(resolvedDurationSecond ?? 0)}</span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={resolvedDurationSecond ?? 0}
-                  step={0.01}
-                  value={Math.min(currentTimeSecond, resolvedDurationSecond ?? 0)}
-                  onChange={(event) => handleSeek(Number(event.target.value))}
-                  disabled={!resolvedDurationSecond || resolvedDurationSecond <= 0}
-                  className="w-full accent-slate-900"
-                />
-              </div>
 
               <p className="text-xs text-slate-500">Shortcut: press Space to toggle play/pause.</p>
             </>
@@ -380,10 +371,10 @@ export function ListeningPage() {
 
       <Card className="border-slate-200/80 bg-white/95 shadow-sm">
         <CardHeader>
-          <CardTitle>Current Sentence</CardTitle>
+          <CardTitle>Subtitles</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          {activeTimelineItem ? (
+        <CardContent className="space-y-4">
+          {timeline.length > 0 ? (
             <>
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -405,18 +396,40 @@ export function ListeningPage() {
                   Next
                 </Button>
               </div>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                <span className="rounded-full bg-slate-100 px-2.5 py-1">
-                  {`${activeIndex + 1} / ${timeline.length}`}
-                </span>
-                <span className="rounded-full bg-slate-100 px-2.5 py-1">
-                  {normalizeSpeakerLabel(activeTimelineItem.item.conversation_speaker)}
-                </span>
+              <div className="max-h-[28rem] space-y-2 overflow-y-auto pr-1">
+                {timeline.map((entry, index) => {
+                  const isActive = entry.item.item_id === activeTimelineItem?.item.item_id
+                  return (
+                    <button
+                      key={entry.item.item_id}
+                      ref={isActive ? activeSubtitleRef : null}
+                      type="button"
+                      onClick={() => handleJumpToTimelineIndex(index)}
+                      className={`w-full rounded-xl border px-4 py-3 text-left transition ${
+                        isActive
+                          ? 'border-cyan-300 bg-cyan-50 shadow-sm'
+                          : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                        <span className={`rounded-full px-2.5 py-1 ${isActive ? 'bg-cyan-100 text-cyan-800' : 'bg-slate-100'}`}>
+                          {`${index + 1} / ${timeline.length}`}
+                        </span>
+                        <span className={`rounded-full px-2.5 py-1 ${isActive ? 'bg-cyan-100 text-cyan-800' : 'bg-slate-100'}`}>
+                          {normalizeSpeakerLabel(entry.item.conversation_speaker)}
+                        </span>
+                        <span>{`${formatDuration(entry.startSecond)}-${formatDuration(entry.endSecond)}`}</span>
+                      </div>
+                      <p className={`mt-3 leading-7 ${isActive ? 'font-semibold text-slate-950' : 'text-slate-700'}`}>
+                        {entry.item.plain_text}
+                      </p>
+                    </button>
+                  )
+                })}
               </div>
-              <p className="text-2xl font-semibold leading-10 text-slate-900">{activeTimelineItem.item.plain_text}</p>
             </>
           ) : isLoading ? (
-            <p className="text-sm text-slate-600">Preparing current sentence...</p>
+            <p className="text-sm text-slate-600">Preparing subtitles...</p>
           ) : (
             <p className="text-sm text-slate-600">No synthesized sentence available yet.</p>
           )}
