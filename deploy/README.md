@@ -101,11 +101,6 @@ http://<your-server-ip>:<HTTP_PORT>/api/...
 cd deploy
 docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" < initdb/001-schema.sql
 ```
-
-注意：
-- `deploy/initdb/001-schema.sql` 现在已经统一成 `VARCHAR(32) + TEXT(JSON 字符串)`。
-- 如果你之前跑过旧版 `UUID / JSONB` 表结构，推荐直接删除旧表或旧 volume 后重建，不要混用。
-
 ## 5. 常用操作
 
 重建服务：
