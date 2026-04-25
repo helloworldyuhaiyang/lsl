@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ListRestart, Pause, Play, Repeat, Repeat1, SkipBack, SkipForward, Volume2 } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 
 import { PageTitle } from '@/components/common/page-title'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Slider } from '@/components/ui/slider'
 import { ApiRequestError } from '@/lib/api/client'
 import { getTtsSynthesis } from '@/lib/api/tts'
 import { getRevisePath, getSessionPath, ROUTES } from '@/lib/constants/routes'
@@ -11,7 +13,14 @@ import { getSessionSummary, type SessionSummary } from '@/lib/session/sessions'
 import { formatDuration } from '@/lib/utils/format'
 import type { TtsSynthesisItemResponse, TtsSynthesisResponse } from '@/types/api'
 
-const SPEED_OPTIONS = [0.75, 1, 1.25] as const
+const SPEED_OPTIONS = [0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5] as const
+const PLAY_MODE_OPTIONS = [
+  { value: 'sequence', label: 'Sequence', icon: ListRestart },
+  { value: 'article-loop', label: 'Full Audio Loop', icon: Repeat },
+  { value: 'sentence-loop', label: 'Sentence Loop', icon: Repeat1 },
+] as const
+
+type PlayMode = (typeof PLAY_MODE_OPTIONS)[number]['value']
 
 interface TtsTimelineItem {
   item: TtsSynthesisItemResponse
@@ -104,16 +113,30 @@ function findActiveTimelineItem(
   return timeline[timeline.length - 1]
 }
 
+function getPlayModeLabel(playMode: PlayMode): string {
+  return PLAY_MODE_OPTIONS.find((option) => option.value === playMode)?.label ?? 'Sequence'
+}
+
+function isSpeedOption(value: number): value is (typeof SPEED_OPTIONS)[number] {
+  return SPEED_OPTIONS.some((option) => option === value)
+}
+
 export function ListeningPage() {
   const { sessionId = '' } = useParams()
   const [session, setSession] = useState<SessionSummary | null>(null)
   const [synthesis, setSynthesis] = useState<TtsSynthesisResponse | null>(null)
   const [speed, setSpeed] = useState<(typeof SPEED_OPTIONS)[number]>(1)
+  const [playMode, setPlayMode] = useState<PlayMode>('sequence')
+  const [isLoopMenuOpen, setIsLoopMenuOpen] = useState(false)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [volume, setVolume] = useState(1)
+  const [revealedItemIds, setRevealedItemIds] = useState<Set<string>>(() => new Set())
   const [isLoading, setIsLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [currentTimeSecond, setCurrentTimeSecond] = useState(0)
   const [durationSecond, setDurationSecond] = useState(0)
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const loopMenuRef = useRef<HTMLDivElement | null>(null)
   const activeSubtitleRef = useRef<HTMLButtonElement | null>(null)
 
   const resolvedSessionId = session?.sessionId || sessionId
@@ -164,6 +187,8 @@ export function ListeningPage() {
         setSynthesis(nextSynthesis)
         setCurrentTimeSecond(0)
         setDurationSecond(0)
+        setIsPlaying(false)
+        setRevealedItemIds(new Set())
         setErrorMessage(null)
       } catch (error) {
         if (cancelled) {
@@ -228,6 +253,48 @@ export function ListeningPage() {
   }, [speed, audioUrl])
 
   useEffect(() => {
+    if (!audioRef.current) {
+      return
+    }
+
+    audioRef.current.volume = volume
+  }, [volume, audioUrl])
+
+  useEffect(() => {
+    if (!audioRef.current) {
+      return
+    }
+
+    audioRef.current.loop = playMode === 'article-loop'
+  }, [playMode, audioUrl])
+
+  useEffect(() => {
+    if (!isLoopMenuOpen) {
+      return
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      if (loopMenuRef.current?.contains(event.target as Node)) {
+        return
+      }
+      setIsLoopMenuOpen(false)
+    }
+
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setIsLoopMenuOpen(false)
+      }
+    }
+
+    window.addEventListener('pointerdown', handlePointerDown)
+    window.addEventListener('keydown', handleEscape)
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown)
+      window.removeEventListener('keydown', handleEscape)
+    }
+  }, [isLoopMenuOpen])
+
+  useEffect(() => {
     function handleSpace(event: KeyboardEvent) {
       if (event.code !== 'Space' || event.defaultPrevented) {
         return
@@ -257,8 +324,10 @@ export function ListeningPage() {
       return
     }
 
-    audioRef.current.currentTime = nextSecond
-    setCurrentTimeSecond(nextSecond)
+    const upperBound = resolvedDurationSecond ?? durationSecond
+    const clampedSecond = upperBound && upperBound > 0 ? Math.min(Math.max(0, nextSecond), upperBound) : Math.max(0, nextSecond)
+    audioRef.current.currentTime = clampedSecond
+    setCurrentTimeSecond(clampedSecond)
   }
 
   function handleJumpToTimelineIndex(nextIndex: number) {
@@ -269,8 +338,61 @@ export function ListeningPage() {
     handleSeek(Math.max(0, timeline[nextIndex].startSecond))
   }
 
+  function handleTimeUpdate() {
+    if (!audioRef.current) {
+      return
+    }
+
+    const currentSecond = audioRef.current.currentTime
+    if (playMode === 'sentence-loop') {
+      const loopingEntry = timeline[activeIndex] ?? findActiveTimelineItem(timeline, currentSecond)
+      if (loopingEntry && currentSecond >= loopingEntry.endSecond - 0.05) {
+        audioRef.current.currentTime = loopingEntry.startSecond
+        setCurrentTimeSecond(loopingEntry.startSecond)
+        return
+      }
+    }
+
+    setCurrentTimeSecond(currentSecond)
+  }
+
+  function togglePlayPause() {
+    if (!audioRef.current) {
+      return
+    }
+
+    if (audioRef.current.paused) {
+      if (durationSecond > 0 && audioRef.current.currentTime >= durationSecond - 0.1) {
+        audioRef.current.currentTime = 0
+        setCurrentTimeSecond(0)
+      }
+      void audioRef.current.play().catch(() => {
+        // Ignore autoplay restrictions.
+      })
+      return
+    }
+
+    audioRef.current.pause()
+  }
+
+  function toggleItemReveal(itemId: string) {
+    setRevealedItemIds((current) => {
+      const next = new Set(current)
+      if (next.has(itemId)) {
+        next.delete(itemId)
+      } else {
+        next.add(itemId)
+      }
+      return next
+    })
+  }
+
   const canJumpToPrevious = activeIndex > 0
   const canJumpToNext = activeIndex >= 0 && activeIndex < timeline.length - 1
+  const progressDurationSecond = resolvedDurationSecond ?? durationSecond
+  const playbackSliderMax = Math.max(progressDurationSecond ?? 0, 0.01)
+  const playbackSliderValue = Math.min(currentTimeSecond, playbackSliderMax)
+  const CurrentPlayModeIcon = playMode === 'sentence-loop' ? Repeat1 : playMode === 'article-loop' ? Repeat : ListRestart
 
   useEffect(() => {
     activeSubtitleRef.current?.scrollIntoView({
@@ -297,25 +419,12 @@ export function ListeningPage() {
       />
 
       <Card className="border-slate-200/80 bg-white/95 shadow-sm">
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-1">
+        <CardHeader className="py-4">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <CardTitle>Generated Audio</CardTitle>
             {synthesis?.status_name ? (
               <p className="text-sm text-slate-500">{`Status: ${synthesis.status_name}`}</p>
             ) : null}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {SPEED_OPTIONS.map((value) => (
-              <Button
-                key={value}
-                type="button"
-                variant={speed === value ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setSpeed(value)}
-              >
-                {value}x
-              </Button>
-            ))}
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -329,8 +438,8 @@ export function ListeningPage() {
             <>
               <audio
                 ref={audioRef}
-                className="w-full"
-                controls
+                className="hidden"
+                loop={playMode === 'article-loop'}
                 src={audioUrl}
                 onLoadedMetadata={() => {
                   if (!audioRef.current) {
@@ -346,18 +455,145 @@ export function ListeningPage() {
                   const nextDuration = Number.isFinite(audioRef.current.duration) ? audioRef.current.duration : 0
                   setDurationSecond(nextDuration)
                 }}
-                onTimeUpdate={() => {
-                  if (!audioRef.current) {
-                    return
-                  }
-                  setCurrentTimeSecond(audioRef.current.currentTime)
-                }}
+                onPlay={() => setIsPlaying(true)}
+                onPause={() => setIsPlaying(false)}
+                onEnded={() => setIsPlaying(false)}
+                onTimeUpdate={handleTimeUpdate}
               >
                 <track kind="captions" />
               </audio>
 
+              <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-4 py-3 text-slate-800 shadow-sm">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                  <div className="flex items-center justify-center gap-2 md:justify-start">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-slate-600 hover:bg-white hover:text-slate-950 disabled:text-slate-300"
+                      onClick={() => handleJumpToTimelineIndex(activeIndex - 1)}
+                      disabled={!canJumpToPrevious}
+                      aria-label="Previous sentence"
+                      title="Previous sentence"
+                    >
+                      <SkipBack className="size-5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-lg"
+                      className="rounded-full border border-slate-200 bg-white text-slate-700 shadow-xs hover:bg-slate-100 hover:text-slate-900"
+                      onClick={togglePlayPause}
+                      aria-label={isPlaying ? 'Pause' : 'Play'}
+                      title={isPlaying ? 'Pause' : 'Play'}
+                    >
+                      {isPlaying ? <Pause className="size-6" /> : <Play className="size-6 fill-current" />}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-slate-600 hover:bg-white hover:text-slate-950 disabled:text-slate-300"
+                      onClick={() => handleJumpToTimelineIndex(activeIndex + 1)}
+                      disabled={!canJumpToNext}
+                      aria-label="Next sentence"
+                      title="Next sentence"
+                    >
+                      <SkipForward className="size-5" />
+                    </Button>
 
-              <p className="text-xs text-slate-500">Shortcut: press Space to toggle play/pause.</p>
+                    <div ref={loopMenuRef} className="relative">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        className={`text-slate-600 hover:bg-white hover:text-slate-950 ${playMode === 'sequence' ? '' : 'bg-white text-slate-700 shadow-xs'
+                          }`}
+                        onClick={() => setIsLoopMenuOpen((value) => !value)}
+                        aria-expanded={isLoopMenuOpen}
+                        aria-label={getPlayModeLabel(playMode)}
+                        title={getPlayModeLabel(playMode)}
+                      >
+                        <CurrentPlayModeIcon className="size-5" />
+                      </Button>
+
+                      {isLoopMenuOpen ? (
+                        <div className="absolute bottom-11 left-1/2 z-20 w-14 -translate-x-1/2 rounded-md border border-slate-200 bg-white py-1 shadow-lg">
+                          {PLAY_MODE_OPTIONS.map((option) => {
+                            const Icon = option.icon
+                            const isSelected = playMode === option.value
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                className={`group relative flex h-12 w-full items-center justify-center transition ${isSelected ? 'bg-slate-100 text-slate-800' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                                  }`}
+                                onClick={() => {
+                                  setPlayMode(option.value)
+                                  setIsLoopMenuOpen(false)
+                                }}
+                                aria-label={option.label}
+                              >
+                                <Icon className="size-5" />
+                                <span className="pointer-events-none absolute right-full top-1/2 mr-2 hidden -translate-y-1/2 whitespace-nowrap rounded bg-slate-900 px-2.5 py-1.5 text-sm font-medium text-white shadow-sm group-hover:block">
+                                  {option.label}
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <Volume2 className="size-5 text-slate-500" aria-hidden="true" />
+                      <Slider
+                        className="w-16"
+                        max={1}
+                        min={0}
+                        onValueChange={(nextValue) => setVolume(nextValue[0] ?? 0)}
+                        step={0.01}
+                        thumbLabel="Volume"
+                        value={[volume]}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
+                    <span className="w-11 text-right text-xs tabular-nums text-slate-500">{formatDuration(currentTimeSecond)}</span>
+                    <Slider
+                      className="min-w-0 flex-1"
+                      min={0}
+                      max={playbackSliderMax}
+                      onValueChange={(nextValue) => handleSeek(nextValue[0] ?? 0)}
+                      step={0.01}
+                      thumbLabel="Playback progress"
+                      value={[playbackSliderValue]}
+                    />
+                    <span className="w-11 text-xs tabular-nums text-slate-500">{formatDuration(progressDurationSecond ?? null)}</span>
+                  </div>
+
+                  <div className="flex items-center justify-center md:justify-end">
+                    <select
+                      className="h-8 rounded-md border border-slate-200 bg-white px-2 text-sm font-medium text-slate-600 shadow-xs outline-none transition hover:text-slate-900 focus:border-slate-300 focus:ring-2 focus:ring-slate-200"
+                      value={speed}
+                      onChange={(event) => {
+                        const nextSpeed = Number(event.target.value)
+                        if (isSpeedOption(nextSpeed)) {
+                          setSpeed(nextSpeed)
+                        }
+                      }}
+                      aria-label="Playback speed"
+                    >
+                      {SPEED_OPTIONS.map((value) => (
+                        <option key={value} value={value}>
+                          {value}x
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
             </>
           ) : !isLoading && synthesis?.status_name === 'generating' ? (
             <p className="text-sm text-slate-600">Synthesized audio is generating. This page will refresh automatically.</p>
@@ -375,59 +611,55 @@ export function ListeningPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           {timeline.length > 0 ? (
-            <>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleJumpToTimelineIndex(activeIndex - 1)}
-                  disabled={!canJumpToPrevious}
-                >
-                  Previous
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleJumpToTimelineIndex(activeIndex + 1)}
-                  disabled={!canJumpToNext}
-                >
-                  Next
-                </Button>
-              </div>
-              <div className="max-h-[28rem] space-y-2 overflow-y-auto pr-1">
-                {timeline.map((entry, index) => {
-                  const isActive = entry.item.item_id === activeTimelineItem?.item.item_id
-                  return (
-                    <button
-                      key={entry.item.item_id}
-                      ref={isActive ? activeSubtitleRef : null}
-                      type="button"
-                      onClick={() => handleJumpToTimelineIndex(index)}
-                      className={`w-full rounded-xl border px-4 py-3 text-left transition ${
-                        isActive
-                          ? 'border-cyan-300 bg-cyan-50 shadow-sm'
-                          : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+            <div className="max-h-[28rem] space-y-2 overflow-y-auto pr-1">
+              {timeline.map((entry, index) => {
+                const isActive = entry.item.item_id === activeTimelineItem?.item.item_id
+                const isRevealed = revealedItemIds.has(entry.item.item_id)
+                return (
+                  <button
+                    key={entry.item.item_id}
+                    ref={isActive ? activeSubtitleRef : null}
+                    type="button"
+                    onClick={() => {
+                      handleJumpToTimelineIndex(index)
+                      toggleItemReveal(entry.item.item_id)
+                    }}
+                    className={`w-full rounded-lg border px-4 py-3 text-left transition ${isActive
+                      ? 'border-slate-300 bg-slate-100 shadow-sm'
+                      : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
                       }`}
-                    >
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                        <span className={`rounded-full px-2.5 py-1 ${isActive ? 'bg-cyan-100 text-cyan-800' : 'bg-slate-100'}`}>
-                          {`${index + 1} / ${timeline.length}`}
+                  >
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                      <span className={`rounded-full px-2.5 py-1 ${isActive ? 'bg-slate-200 text-slate-700' : 'bg-slate-100'}`}>
+                        {`Sentence ${index + 1}`}
+                      </span>
+                      <span className={`rounded-full px-2.5 py-1 ${isActive ? 'bg-slate-200 text-slate-700' : 'bg-slate-100'}`}>
+                        {normalizeSpeakerLabel(entry.item.conversation_speaker)}
+                      </span>
+                      <span>{`${formatDuration(entry.startSecond)}-${formatDuration(entry.endSecond)}`}</span>
+                      {isActive && isPlaying ? (
+                        <span className="inline-flex size-6 items-center justify-center rounded-full bg-white text-slate-800 shadow-sm">
+                          <Play className="size-3 animate-spin fill-current" />
                         </span>
-                        <span className={`rounded-full px-2.5 py-1 ${isActive ? 'bg-cyan-100 text-cyan-800' : 'bg-slate-100'}`}>
-                          {normalizeSpeakerLabel(entry.item.conversation_speaker)}
-                        </span>
-                        <span>{`${formatDuration(entry.startSecond)}-${formatDuration(entry.endSecond)}`}</span>
-                      </div>
+                      ) : null}
+                    </div>
+                    {isRevealed ? (
                       <p className={`mt-3 leading-7 ${isActive ? 'font-semibold text-slate-950' : 'text-slate-700'}`}>
                         {entry.item.plain_text}
                       </p>
-                    </button>
-                  )
-                })}
-              </div>
-            </>
+                    ) : (
+                      <div
+                        className={`mt-3 flex min-h-20 items-center justify-center rounded-md text-sm font-medium ${
+                          isActive ? 'bg-slate-200/70 text-slate-700' : 'bg-slate-50 text-slate-500'
+                        }`}
+                      >
+                        Click to show original text
+                      </div>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
           ) : isLoading ? (
             <p className="text-sm text-slate-600">Preparing subtitles...</p>
           ) : (
