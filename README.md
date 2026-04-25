@@ -6,7 +6,11 @@ Turn your own recording, or an AI-generated script, into listening material that
 
 ## What LSL Is
 
-LSL is listening material generation software built around `CUE`.
+LSL is dialogue generation software built around `CUE`. Here, `CUE` means cues, signals, and clues that guide how a conversation should be created and delivered. For example, `[English interview scenario, candidate sounds natural and confident]` is a `CUE`, and it influences both the dialogue content and the way the speakers express themselves.
+
+The core belief behind LSL is that language learning should follow a loop: `listening -> speak -> listening`. You listen first, speak from what you have absorbed, then return to listening with clearer intent.
+
+People are also more interested in language material that connects to their own lives. For example, if you have an English interview tomorrow, you can use LSL to generate an interview dialogue based on your background, then practice both listening and expression around that exact situation.
 
 You can attach explicit `CUE`s to content, such as the speaking scenario, emotion, attitude, relationship, tone, and rhythm. That makes the same content much closer to the exact listening situation you want to train for.
 
