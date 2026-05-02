@@ -46,9 +46,9 @@ TTS_VOLC_URL=https://openspeech.bytedance.com/api/v3/tts/unidirectional
 TTS_VOLC_HTTP_TIMEOUT=60
 
 TTS_DEFAULT_FORMAT=mp3
-TTS_DEFAULT_EMOTION_SCALE=1.0
-TTS_DEFAULT_SPEECH_RATE=1.0
-TTS_DEFAULT_LOUDNESS_RATE=1.0
+TTS_DEFAULT_EMOTION_SCALE=4.0
+TTS_DEFAULT_SPEECH_RATE=0.0
+TTS_DEFAULT_LOUDNESS_RATE=0.0
 ```
 
 说明：
@@ -128,9 +128,9 @@ TTS_DEFAULT_LOUDNESS_RATE=1.0
 {
   "session_id": "8f85f0be-6f53-4ca4-b6fe-b5d3f0a64047",
   "format": "mp3",
-  "emotion_scale": 1.0,
-  "speech_rate": 1.0,
-  "loudness_rate": 1.0,
+  "emotion_scale": 4.0,
+  "speech_rate": 0.0,
+  "loudness_rate": 0.0,
   "speaker_mappings": [
     {
       "conversation_speaker": "user-1",
@@ -149,7 +149,7 @@ TTS_DEFAULT_LOUDNESS_RATE=1.0
 - `session_id` 必填。
 - `format` 必填。
 - `speaker_mappings[].conversation_speaker` 在同一 session 内必须唯一。
-- `emotion_scale`、`speech_rate`、`loudness_rate` 均为正数。
+- 火山 V3 参数范围：`emotion_scale` 为 1 到 5，`speech_rate` 为 -50 到 100，`loudness_rate` 为 -50 到 100。
 
 ### 4) `POST /tts/items/{item_id}/generate`
 
@@ -323,9 +323,9 @@ tts/
 CREATE TABLE IF NOT EXISTS public.session_tts_settings (
     session_id              VARCHAR(32) PRIMARY KEY,               -- 会话 ID（uuid hex）
     format                  VARCHAR(16) NOT NULL DEFAULT 'mp3',   -- 输出格式
-    emotion_scale           NUMERIC(4,2) NOT NULL DEFAULT 1.0,    -- 情感强度
-    speech_rate             NUMERIC(4,2) NOT NULL DEFAULT 1.0,    -- 语速
-    loudness_rate           NUMERIC(4,2) NOT NULL DEFAULT 1.0,    -- 音量倍率
+    emotion_scale           NUMERIC(4,2) NOT NULL DEFAULT 4.0,    -- 情感强度
+    speech_rate             NUMERIC(5,2) NOT NULL DEFAULT 0.0,    -- 语速
+    loudness_rate           NUMERIC(5,2) NOT NULL DEFAULT 0.0,    -- 音量
     speaker_mappings_json   TEXT NOT NULL DEFAULT '[]',           -- speaker 映射数组 JSON 字符串
     created_at              TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 创建时间
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP -- 更新时间

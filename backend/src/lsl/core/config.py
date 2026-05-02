@@ -87,9 +87,9 @@ class Settings:
     TTS_VOLC_URL: str = "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
     TTS_VOLC_HTTP_TIMEOUT: float = 60.0
     TTS_DEFAULT_FORMAT: str = "mp3"
-    TTS_DEFAULT_EMOTION_SCALE: float = 1.0
-    TTS_DEFAULT_SPEECH_RATE: float = 1.0
-    TTS_DEFAULT_LOUDNESS_RATE: float = 1.0
+    TTS_DEFAULT_EMOTION_SCALE: float = 4.0
+    TTS_DEFAULT_SPEECH_RATE: float = 0.0
+    TTS_DEFAULT_LOUDNESS_RATE: float = 0.0
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -135,12 +135,12 @@ class Settings:
             raise ValueError("TTS_CACHE_TTL_SECONDS must be greater than 0")
         if tts_volc_http_timeout <= 0:
             raise ValueError("TTS_VOLC_HTTP_TIMEOUT must be greater than 0")
-        if tts_default_emotion_scale <= 0:
-            raise ValueError("TTS_DEFAULT_EMOTION_SCALE must be greater than 0")
-        if tts_default_speech_rate <= 0:
-            raise ValueError("TTS_DEFAULT_SPEECH_RATE must be greater than 0")
-        if tts_default_loudness_rate <= 0:
-            raise ValueError("TTS_DEFAULT_LOUDNESS_RATE must be greater than 0")
+        if not 1 <= tts_default_emotion_scale <= 5:
+            raise ValueError("TTS_DEFAULT_EMOTION_SCALE must be between 1 and 5")
+        if not -50 <= tts_default_speech_rate <= 100:
+            raise ValueError("TTS_DEFAULT_SPEECH_RATE must be between -50 and 100")
+        if not -50 <= tts_default_loudness_rate <= 100:
+            raise ValueError("TTS_DEFAULT_LOUDNESS_RATE must be between -50 and 100")
         
         tts_volc_app_id = _get_env_str("TTS_VOLC_APP_ID", cls.TTS_VOLC_APP_ID)
         tts_volc_access_key = _get_env_str("TTS_VOLC_ACCESS_KEY", cls.TTS_VOLC_ACCESS_KEY)

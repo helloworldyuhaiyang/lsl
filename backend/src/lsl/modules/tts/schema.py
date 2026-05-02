@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -20,10 +20,15 @@ class ApiResponse(BaseModel, Generic[T]):
 class TtsSpeakerData(BaseModel):
     speaker_id: str
     name: str
+    provider_name: str | None = None
+    display_name: str
     language: str | None = None
     gender: str | None = None
     style: str | None = None
     description: str | None = None
+    i18n: dict[str, dict[str, str]] = Field(default_factory=dict)
+    avatar: dict[str, Any] = Field(default_factory=dict)
+    traits: dict[str, Any] = Field(default_factory=dict)
 
 
 class TtsSpeakerListData(BaseModel):
@@ -47,9 +52,9 @@ class TtsSettingsData(BaseModel):
 class UpdateTtsSettingsRequest(BaseModel):
     session_id: str = Field(..., min_length=1, max_length=64)
     format: str = Field(..., min_length=1, max_length=16)
-    emotion_scale: float = Field(..., gt=0)
-    speech_rate: float = Field(..., gt=0)
-    loudness_rate: float = Field(..., gt=0)
+    emotion_scale: float = Field(..., ge=1, le=5)
+    speech_rate: float = Field(..., ge=-50, le=100)
+    loudness_rate: float = Field(..., ge=-50, le=100)
     speaker_mappings: list[TtsSpeakerMappingData] = Field(default_factory=list)
 
     @field_validator("session_id")

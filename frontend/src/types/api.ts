@@ -189,10 +189,26 @@ export interface TtsSpeakerMapping {
 export interface TtsSpeakerItem {
   speaker_id: string
   name: string
+  provider_name?: string | null
+  display_name?: string | null
   language?: string | null
   gender?: string | null
   style?: string | null
   description?: string | null
+  i18n?: Record<string, {
+    name?: string
+    language?: string
+    style?: string
+    description?: string
+  }>
+  avatar?: {
+    type?: string
+    key?: string
+    color?: string
+    initials?: string
+    url?: string | null
+  }
+  traits?: Record<string, unknown>
 }
 
 export interface TtsSpeakerListResponse {

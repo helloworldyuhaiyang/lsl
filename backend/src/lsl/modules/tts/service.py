@@ -85,10 +85,15 @@ class TtsService:
             TtsSpeakerData(
                 speaker_id=item.speaker_id,
                 name=item.name,
+                provider_name=item.provider_name,
+                display_name=item.display_name or self._build_speaker_display_name(item.name),
                 language=item.language,
                 gender=item.gender,
                 style=item.style,
                 description=item.description,
+                i18n=item.i18n,
+                avatar=item.avatar,
+                traits=item.traits,
             )
             for item in speakers
         ]
@@ -147,21 +152,56 @@ class TtsService:
         if not payload.force:
             cached = self._cache.get_audio(cache_key)
             if cached is not None:
+                logger.info(
+                    "TTS item preview cache hit session_id=%s item_id=%s provider=%s cache_key=%s",
+                    payload.session_id,
+                    item_id,
+                    self._provider.provider_name,
+                    cache_key,
+                )
                 return cached.audio_bytes, cached.content_type
-
-        result = self._provider.synthesize(
-            TtsSynthesizeRequest(
-                session_id=payload.session_id,
-                content=payload.content,
-                plain_text=parsed.plain_text,
-                cue_texts=parsed.cue_texts,
-                provider_speaker_id=provider_speaker_id,
-                format=settings_value.format,
-                emotion_scale=settings_value.emotion_scale,
-                speech_rate=settings_value.speech_rate,
-                loudness_rate=settings_value.loudness_rate,
+            logger.info(
+                "TTS item preview cache miss session_id=%s item_id=%s provider=%s cache_key=%s",
+                payload.session_id,
+                item_id,
+                self._provider.provider_name,
+                cache_key,
             )
-        )
+        else:
+            logger.info(
+                "TTS item preview cache skipped by force session_id=%s item_id=%s provider=%s cache_key=%s",
+                payload.session_id,
+                item_id,
+                self._provider.provider_name,
+                cache_key,
+            )
+
+        try:
+            result = self._provider.synthesize(
+                TtsSynthesizeRequest(
+                    session_id=payload.session_id,
+                    content=payload.content,
+                    plain_text=parsed.plain_text,
+                    cue_texts=parsed.cue_texts,
+                    provider_speaker_id=provider_speaker_id,
+                    format=settings_value.format,
+                    emotion_scale=settings_value.emotion_scale,
+                    speech_rate=settings_value.speech_rate,
+                    loudness_rate=settings_value.loudness_rate,
+                )
+            )
+        except Exception as exc:
+            logger.exception(
+                "TTS item preview generation failed session_id=%s item_id=%s speaker=%s format=%s text_length=%s exc_type=%s exc_message=%s",
+                payload.session_id,
+                item_id,
+                provider_speaker_id,
+                settings_value.format,
+                len(parsed.plain_text),
+                type(exc).__name__,
+                str(exc),
+            )
+            raise
         self._cache.set_audio(
             cache_key,
             CachedAudio(
@@ -367,13 +407,14 @@ class TtsService:
                     )
                 except Exception as exc:
                     logger.exception(
-                        "TTS item generation failed session_id=%s item_id=%s index=%s/%s elapsed_ms=%s exc_type=%s",
+                        "TTS item generation failed session_id=%s item_id=%s index=%s/%s elapsed_ms=%s exc_type=%s exc_message=%s",
                         session_id,
                         item.source_item_id,
                         index,
                         len(items),
                         int((time.monotonic() - item_started_at) * 1000),
                         type(exc).__name__,
+                        str(exc),
                     )
                     current_items[index - 1] = self._replace_stored_item(
                         item,
@@ -775,6 +816,11 @@ class TtsService:
         if format_name.lower() == "wav":
             return "audio/wav"
         return "audio/mpeg"
+
+    @staticmethod
+    def _build_speaker_display_name(name: str) -> str:
+        normalized = re.sub(r"\s+", " ", (name or "").strip())
+        return re.sub(r"\s+\d+(?:\.\d+)*$", "", normalized).strip() or normalized
 
     @staticmethod
     def _sum_durations(values: list[int | None]) -> int | None:

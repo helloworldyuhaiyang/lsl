@@ -14,9 +14,9 @@ class SessionTtsSettingsModel(Base):
 
     session_id: Mapped[str] = mapped_column(UUIDHexString(), primary_key=True)
     format: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'mp3'"))
-    emotion_scale: Mapped[float] = mapped_column(Numeric(4, 2), nullable=False, server_default=text("1.0"))
-    speech_rate: Mapped[float] = mapped_column(Numeric(4, 2), nullable=False, server_default=text("1.0"))
-    loudness_rate: Mapped[float] = mapped_column(Numeric(4, 2), nullable=False, server_default=text("1.0"))
+    emotion_scale: Mapped[float] = mapped_column(Numeric(4, 2), nullable=False, server_default=text("4.0"))
+    speech_rate: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, server_default=text("0.0"))
+    loudness_rate: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False, server_default=text("0.0"))
     speaker_mappings_json: Mapped[list[dict[str, str]]] = mapped_column(
         JSONString(),
         nullable=False,

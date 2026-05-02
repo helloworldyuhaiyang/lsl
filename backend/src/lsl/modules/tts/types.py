@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import Protocol
+from typing import Any, Protocol
 
 
 class TtsSynthesisStatus(IntEnum):
@@ -28,10 +28,15 @@ def status_code_to_name(status_code: int) -> str:
 class TtsSpeaker:
     speaker_id: str
     name: str
+    provider_name: str | None = None
+    display_name: str | None = None
     language: str | None = None
     gender: str | None = None
     style: str | None = None
     description: str | None = None
+    i18n: dict[str, dict[str, str]] = field(default_factory=dict)
+    avatar: dict[str, Any] = field(default_factory=dict)
+    traits: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
