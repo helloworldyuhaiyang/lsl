@@ -53,6 +53,7 @@ export function Revise() {
   const [voiceList, setVoiceList] = useState<TtsSpeakerItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [synthesizingItemId, setSynthesizingItemId] = useState<string | null>(null);
+  const [playingOriginalItemId, setPlayingOriginalItemId] = useState<string | null>(null);
   const itemAudioRef = useRef<HTMLAudioElement | null>(null);
   const itemAudioUrlRef = useRef<string | null>(null);
 
@@ -143,16 +144,6 @@ export function Revise() {
     });
   }, []);
 
-  const handleRestore = useCallback((itemId: string) => {
-    const item = revision.find((entry) => entry.id === itemId);
-    setRevision(prev => prev.map(entry => entry.id === itemId ? { ...entry, fullText: entry.originalText } : entry));
-    if (item) {
-      void updateRevisionItem(itemId, { draftText: item.originalText }).catch((err) => {
-        setError(err instanceof Error ? err.message : 'Failed to restore revision item');
-      });
-    }
-  }, [revision]);
-
   const handleReviseByAI = useCallback(async () => {
     if (!id) return;
     setIsRevising(true);
@@ -235,9 +226,113 @@ export function Revise() {
     }
   }, [id, format, emotionScale, speechRate, loudnessRate, speakerMappings, session, dispatch, navigate]);
 
+  const stopItemAudio = useCallback(() => {
+    if (itemAudioRef.current) {
+      itemAudioRef.current.pause();
+      itemAudioRef.current = null;
+    }
+    if (itemAudioUrlRef.current) {
+      URL.revokeObjectURL(itemAudioUrlRef.current);
+      itemAudioUrlRef.current = null;
+    }
+  }, []);
+
+  const playAudio = useCallback((
+    audio: HTMLAudioElement,
+    options: {
+      startTime?: number;
+      endTime?: number;
+      objectUrl?: string;
+      onFinish?: () => void;
+    } = {},
+  ) => {
+    stopItemAudio();
+
+    itemAudioRef.current = audio;
+    itemAudioUrlRef.current = options.objectUrl ?? null;
+
+    const finish = () => {
+      options.onFinish?.();
+    };
+    const stopAtEndTime = () => {
+      if (options.endTime !== undefined && audio.currentTime >= options.endTime) {
+        audio.pause();
+        finish();
+        audio.removeEventListener('timeupdate', stopAtEndTime);
+      }
+    };
+    const startPlayback = () => {
+      audio.currentTime = Math.max(0, options.startTime ?? 0);
+      void audio.play().catch((err) => {
+        finish();
+        setError(err instanceof Error ? err.message : 'Failed to play audio');
+      });
+    };
+
+    audio.addEventListener('timeupdate', stopAtEndTime);
+    audio.addEventListener('ended', finish, { once: true });
+    audio.addEventListener('error', finish, { once: true });
+
+    if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) {
+      startPlayback();
+    } else {
+      audio.addEventListener('loadedmetadata', startPlayback, { once: true });
+      audio.load();
+    }
+  }, [stopItemAudio]);
+
+  const prepareItemTtsSettings = useCallback(async () => {
+    if (!id) return;
+
+    await updateTtsSettings({
+      sessionId: id,
+      format,
+      emotionScale: emotionScale[0],
+      speechRate: speechRate[0],
+      loudnessRate: loudnessRate[0],
+      speakerMappings: speakerMappings.map((mapping) => ({
+        conversation_speaker: mapping.speaker,
+        provider_speaker_id: mapping.voice,
+      })),
+    });
+  }, [id, format, emotionScale, speechRate, loudnessRate, speakerMappings]);
+
+  const handlePlayOriginal = useCallback(async (item: RevisionItem) => {
+    if (!id) return;
+    setError(null);
+    setPlayingOriginalItemId(item.id);
+
+    if (session?.audioUrl) {
+      playAudio(new Audio(session.audioUrl), {
+        startTime: item.startTime,
+        endTime: item.endTime,
+        onFinish: () => setPlayingOriginalItemId((current) => current === item.id ? null : current),
+      });
+      return;
+    }
+
+    try {
+      await prepareItemTtsSettings();
+      const audioBlob = await generateTtsItemAudio({
+        itemId: item.id,
+        sessionId: id,
+        content: item.originalText,
+      });
+      const audioUrl = URL.createObjectURL(audioBlob);
+      playAudio(new Audio(audioUrl), {
+        objectUrl: audioUrl,
+        onFinish: () => setPlayingOriginalItemId((current) => current === item.id ? null : current),
+      });
+    } catch (err) {
+      setPlayingOriginalItemId(null);
+      setError(err instanceof Error ? err.message : 'Failed to play original item');
+    }
+  }, [id, session?.audioUrl, playAudio, prepareItemTtsSettings]);
+
   const handleSynthesizeItem = useCallback(async (item: RevisionItem) => {
     if (!id) return;
     setSynthesizingItemId(item.id);
+    setPlayingOriginalItemId(null);
     setError(null);
     try {
       await updateTtsSettings({
@@ -258,24 +353,14 @@ export function Revise() {
         content: item.fullText,
       });
 
-      if (itemAudioRef.current) {
-        itemAudioRef.current.pause();
-      }
-      if (itemAudioUrlRef.current) {
-        URL.revokeObjectURL(itemAudioUrlRef.current);
-      }
-
       const audioUrl = URL.createObjectURL(audioBlob);
-      const audio = new Audio(audioUrl);
-      itemAudioRef.current = audio;
-      itemAudioUrlRef.current = audioUrl;
-      await audio.play();
+      playAudio(new Audio(audioUrl), { objectUrl: audioUrl });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to synthesize item audio');
     } finally {
       setSynthesizingItemId(null);
     }
-  }, [id, format, emotionScale, speechRate, loudnessRate, speakerMappings]);
+  }, [id, format, emotionScale, speechRate, loudnessRate, speakerMappings, playAudio]);
 
   const handleMappingChange = useCallback((speaker: string, voice: string) => {
     setSpeakerMappings(prev => prev.map(m => m.speaker === speaker ? { ...m, voice } : m));
@@ -397,8 +482,9 @@ export function Revise() {
             item={item}
             voice={getVoiceForSpeaker(item.speaker, speakerMappings, voiceList)}
             onUpdate={handleUpdateRevision}
-            onRestore={handleRestore}
+            onPlayOriginal={handlePlayOriginal}
             onSynthesize={handleSynthesizeItem}
+            isPlayingOriginal={playingOriginalItemId === item.id}
             isSynthesizing={synthesizingItemId === item.id}
           />
         )) : (

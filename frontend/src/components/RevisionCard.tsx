@@ -1,16 +1,17 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { formatTime } from '@/utils/formatTime';
 import type { RevisionItem } from '@/types';
 import type { TtsSpeakerItem } from '@/types/api';
 import { VoiceAvatar } from '@/components/VoiceAvatar';
-import { Loader2, RotateCcw, Volume2 } from 'lucide-react';
+import { Loader2, Volume2 } from 'lucide-react';
 
 interface RevisionCardProps {
   item: RevisionItem;
   voice?: TtsSpeakerItem;
   onUpdate: (id: string, fullText: string) => void;
-  onRestore: (id: string) => void;
+  onPlayOriginal: (item: RevisionItem) => void;
   onSynthesize: (item: RevisionItem) => void;
+  isPlayingOriginal?: boolean;
   isSynthesizing?: boolean;
 }
 
@@ -38,9 +39,18 @@ function parseCueSegments(text: string): Array<{ type: 'cue' | 'text'; content: 
   return segments;
 }
 
-export function RevisionCard({ item, voice, onUpdate, onRestore, onSynthesize, isSynthesizing = false }: RevisionCardProps) {
+export function RevisionCard({
+  item,
+  voice,
+  onUpdate,
+  onPlayOriginal,
+  onSynthesize,
+  isPlayingOriginal = false,
+  isSynthesizing = false,
+}: RevisionCardProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const highlightRef = useRef<HTMLDivElement>(null);
+  const [showScoreDetail, setShowScoreDetail] = useState(false);
 
   const handleTextChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onUpdate(item.id, e.target.value);
@@ -70,9 +80,16 @@ export function RevisionCard({ item, voice, onUpdate, onRestore, onSynthesize, i
           </span>
           <span className="text-[10px] text-slate-400 font-mono">#{item.id}</span>
         </div>
-        <div className={`${scoreBg} px-2.5 py-1 rounded-full`}>
-          <span className={`text-[11px] font-bold ${scoreColor}`}>{item.score}</span>
-        </div>
+        <button
+          type="button"
+          onClick={() => setShowScoreDetail((current) => !current)}
+          aria-expanded={showScoreDetail}
+          className={`${scoreBg} px-2.5 py-1 rounded-full border transition-colors ${
+            showScoreDetail ? 'border-current' : 'border-transparent hover:border-current'
+          }`}
+        >
+          <span className={`text-[11px] font-bold ${scoreColor}`}>Score {item.score}</span>
+        </button>
       </div>
 
       {/* Backdrop-highlight textarea: CUE + text on same line, CUE highlighted */}
@@ -109,10 +126,13 @@ export function RevisionCard({ item, voice, onUpdate, onRestore, onSynthesize, i
       {/* Buttons */}
       <div className="flex items-center gap-2 mt-2.5">
         <button
-          onClick={() => onRestore(item.id)}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-slate-500 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors"
+          type="button"
+          onClick={() => onPlayOriginal(item)}
+          disabled={isPlayingOriginal}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-slate-500 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors disabled:pointer-events-none disabled:opacity-60"
         >
-          <RotateCcw className="w-3 h-3" /> Original
+          {isPlayingOriginal ? <Loader2 className="w-3 h-3 animate-spin" /> : <Volume2 className="w-3 h-3" />}
+          Original
         </button>
         <button
           type="button"
@@ -124,6 +144,48 @@ export function RevisionCard({ item, voice, onUpdate, onRestore, onSynthesize, i
           Synthesize
         </button>
       </div>
+
+      {showScoreDetail && (
+        <div className="mt-5 rounded-xl border border-slate-200 bg-white px-4 py-4">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Score Detail</p>
+
+          <div className="mt-4 space-y-4">
+            <div>
+              <p className="text-[15px] font-semibold text-slate-900">Score {item.score}</p>
+            </div>
+
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Original</p>
+              <p className="mt-2 text-[13px] leading-relaxed text-slate-700">{item.originalText}</p>
+            </div>
+
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Problems</p>
+              {item.issueTags && item.issueTags.length > 0 ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {item.issueTags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-[12px] text-slate-400">No problem tags available.</p>
+              )}
+            </div>
+
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Notes</p>
+              <p className="mt-2 text-[13px] leading-relaxed text-slate-700">
+                {item.explanations || 'No score notes available.'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

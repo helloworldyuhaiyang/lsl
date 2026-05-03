@@ -148,9 +148,9 @@ CREATE INDEX IF NOT EXISTS idx_utterances_revision_items_task_seq_span
 CREATE TABLE IF NOT EXISTS public.session_tts_settings (
     session_id              VARCHAR(32) PRIMARY KEY,
     format                  VARCHAR(16) NOT NULL DEFAULT 'mp3',
-    emotion_scale           NUMERIC(4, 2) NOT NULL DEFAULT 4.0,
-    speech_rate             NUMERIC(5, 2) NOT NULL DEFAULT 0.0,
-    loudness_rate           NUMERIC(5, 2) NOT NULL DEFAULT 0.0,
+    emotion_scale           NUMERIC NOT NULL DEFAULT 4.0,
+    speech_rate             NUMERIC NOT NULL DEFAULT 0.0,
+    loudness_rate           NUMERIC NOT NULL DEFAULT 0.0,
     speaker_mappings_json   TEXT NOT NULL DEFAULT '[]',
     created_at              TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP

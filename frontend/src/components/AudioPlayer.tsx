@@ -7,9 +7,10 @@ interface AudioPlayerProps {
   onTimeUpdate?: (time: number) => void;
   onActiveIndexChange?: (index: number) => void;
   items?: { startTime: number; endTime: number }[];
+  seekTo?: { time: number; requestId: number } | null;
 }
 
-export function AudioPlayer({ audioUrl, onTimeUpdate, onActiveIndexChange, items }: AudioPlayerProps) {
+export function AudioPlayer({ audioUrl, onTimeUpdate, onActiveIndexChange, items, seekTo }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -21,8 +22,24 @@ export function AudioPlayer({ audioUrl, onTimeUpdate, onActiveIndexChange, items
     if (audioRef.current && audioUrl) {
       audioRef.current.src = audioUrl;
       audioRef.current.load();
+      setCurrentTime(0);
+      setDuration(0);
+      setIsPlaying(false);
     }
   }, [audioUrl]);
+
+  useEffect(() => {
+    if (!audioRef.current || !seekTo || !audioUrl) return;
+
+    const nextTime = Math.max(0, seekTo.time);
+    audioRef.current.currentTime = nextTime;
+    setCurrentTime(nextTime);
+    onTimeUpdate?.(nextTime);
+
+    void audioRef.current.play().catch(() => {
+      setIsPlaying(false);
+    });
+  }, [audioUrl, onTimeUpdate, seekTo]);
 
   const handleTimeUpdate = useCallback(() => {
     if (audioRef.current) {
@@ -32,9 +49,7 @@ export function AudioPlayer({ audioUrl, onTimeUpdate, onActiveIndexChange, items
 
       if (items) {
         const index = items.findIndex(item => time >= item.startTime && time < item.endTime);
-        if (index !== -1) {
-          onActiveIndexChange?.(index);
-        }
+        onActiveIndexChange?.(index);
       }
     }
   }, [items, onTimeUpdate, onActiveIndexChange]);
@@ -54,9 +69,10 @@ export function AudioPlayer({ audioUrl, onTimeUpdate, onActiveIndexChange, items
       if (isPlaying) {
         audioRef.current.pause();
       } else {
-        audioRef.current.play();
+        void audioRef.current.play().catch(() => {
+          setIsPlaying(false);
+        });
       }
-      setIsPlaying(!isPlaying);
     }
   }, [isPlaying]);
 
@@ -65,8 +81,9 @@ export function AudioPlayer({ audioUrl, onTimeUpdate, onActiveIndexChange, items
     if (audioRef.current) {
       audioRef.current.currentTime = time;
       setCurrentTime(time);
+      onTimeUpdate?.(time);
     }
-  }, []);
+  }, [onTimeUpdate]);
 
   const skipBackward = useCallback(() => {
     if (audioRef.current) {
@@ -114,6 +131,8 @@ export function AudioPlayer({ audioUrl, onTimeUpdate, onActiveIndexChange, items
         onTimeUpdate={handleTimeUpdate}
         onLoadedMetadata={handleLoadedMetadata}
         onEnded={handleEnded}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
         preload="metadata"
       />
 

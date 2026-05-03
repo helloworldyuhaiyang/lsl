@@ -19,6 +19,8 @@ export function SessionDetail() {
   const { getSessionById, dispatch } = useApp();
   const [loadedSession, setLoadedSession] = useState<ReturnType<typeof getSessionById> | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [activeTranscriptIndex, setActiveTranscriptIndex] = useState<number | null>(null);
+  const [seekRequest, setSeekRequest] = useState<{ time: number; requestId: number } | null>(null);
 
   const session = useMemo(() => loadedSession || (id ? getSessionById(id) : undefined), [id, getSessionById, loadedSession]);
 
@@ -85,6 +87,14 @@ export function SessionDetail() {
   const totalDuration = transcript && transcript.length > 0 ? transcript[transcript.length - 1].endTime : 0;
 
   const isRevision = (item: RevisionItem | TranscriptItem): item is RevisionItem => 'cue' in item;
+
+  const handleTranscriptSelect = (index: number, item: RevisionItem | TranscriptItem) => {
+    setActiveTranscriptIndex(index);
+    setSeekRequest((current) => ({
+      time: item.startTime,
+      requestId: (current?.requestId ?? 0) + 1,
+    }));
+  };
 
   return (
     <div className="space-y-6">
@@ -160,7 +170,12 @@ export function SessionDetail() {
       </div>
 
       {/* Audio Player */}
-      <AudioPlayer audioUrl={session.audioUrl} />
+      <AudioPlayer
+        audioUrl={session.audioUrl}
+        items={transcript}
+        seekTo={seekRequest}
+        onActiveIndexChange={(index) => setActiveTranscriptIndex(index === -1 ? null : index)}
+      />
 
       {/* Transcript */}
       {transcript && transcript.length > 0 && (
@@ -179,29 +194,50 @@ export function SessionDetail() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {transcript.map((item) => (
-                  <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="py-3 px-5">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: speakerColors[item.speaker] || '#94A3B8' }} />
-                        <span className="text-[13px] font-medium text-slate-700">{item.speaker}</span>
-                      </div>
-                    </td>
-                    <td className="py-3 px-3 text-[12px] text-slate-400 font-mono">{formatTime(item.startTime)}</td>
-                    <td className="py-3 px-3 text-[13px] text-slate-700 leading-relaxed">
-                      {isRevision(item) && item.cue ? (
-                        <span>
-                          <span className="font-mono text-[11px] bg-amber-50 text-amber-700 border border-amber-200 rounded-md px-1.5 py-0.5 mr-1.5 font-medium">
-                            [{item.cue}]
+                {transcript.map((item, index) => {
+                  const isActive = activeTranscriptIndex === index;
+
+                  return (
+                    <tr
+                      key={item.id}
+                      role="button"
+                      tabIndex={0}
+                      aria-current={isActive ? 'true' : undefined}
+                      onClick={() => handleTranscriptSelect(index, item)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          handleTranscriptSelect(index, item);
+                        }
+                      }}
+                      className={`cursor-pointer transition-colors ${
+                        isActive
+                          ? 'bg-indigo-50/80 ring-1 ring-inset ring-indigo-200'
+                          : 'hover:bg-slate-50/50'
+                      }`}
+                    >
+                      <td className="py-3 px-5">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: speakerColors[item.speaker] || '#94A3B8' }} />
+                          <span className={`text-[13px] font-medium ${isActive ? 'text-indigo-700' : 'text-slate-700'}`}>{item.speaker}</span>
+                        </div>
+                      </td>
+                      <td className={`py-3 px-3 text-[12px] font-mono ${isActive ? 'text-indigo-600 font-semibold' : 'text-slate-400'}`}>{formatTime(item.startTime)}</td>
+                      <td className={`py-3 px-3 text-[13px] leading-relaxed ${isActive ? 'text-slate-900 font-medium' : 'text-slate-700'}`}>
+                        {isRevision(item) && item.cue ? (
+                          <span>
+                            <span className="font-mono text-[11px] bg-amber-50 text-amber-700 border border-amber-200 rounded-md px-1.5 py-0.5 mr-1.5 font-medium">
+                              [{item.cue}]
+                            </span>
+                            {item.content}
                           </span>
-                          {item.content}
-                        </span>
-                      ) : (
-                        'text' in item ? item.text : item.content
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                        ) : (
+                          'text' in item ? item.text : item.content
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

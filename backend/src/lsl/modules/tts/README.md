@@ -323,9 +323,9 @@ tts/
 CREATE TABLE IF NOT EXISTS public.session_tts_settings (
     session_id              VARCHAR(32) PRIMARY KEY,               -- 会话 ID（uuid hex）
     format                  VARCHAR(16) NOT NULL DEFAULT 'mp3',   -- 输出格式
-    emotion_scale           NUMERIC(4,2) NOT NULL DEFAULT 4.0,    -- 情感强度
-    speech_rate             NUMERIC(5,2) NOT NULL DEFAULT 0.0,    -- 语速
-    loudness_rate           NUMERIC(5,2) NOT NULL DEFAULT 0.0,    -- 音量
+    emotion_scale           NUMERIC NOT NULL DEFAULT 4.0,         -- 情感强度
+    speech_rate             NUMERIC NOT NULL DEFAULT 0.0,         -- 语速
+    loudness_rate           NUMERIC NOT NULL DEFAULT 0.0,         -- 音量
     speaker_mappings_json   TEXT NOT NULL DEFAULT '[]',           -- speaker 映射数组 JSON 字符串
     created_at              TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 创建时间
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP -- 更新时间

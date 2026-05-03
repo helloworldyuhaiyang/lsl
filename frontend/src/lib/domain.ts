@@ -48,6 +48,10 @@ export function mapTranscript(data: TaskTranscriptData): TranscriptItem[] {
 function mapRevisionItem(item: RevisionItemResponse): RevisionItem {
   const fullText = item.draft_text || item.suggested_text || item.original_text;
   const parsed = parseCueText(fullText);
+  const issueTags = item.issue_tags
+    .split(/[,，]/)
+    .map((tag) => tag.trim())
+    .filter(Boolean);
 
   return {
     id: item.item_id,
@@ -58,6 +62,8 @@ function mapRevisionItem(item: RevisionItemResponse): RevisionItem {
     content: parsed.content,
     fullText,
     score: item.score,
+    issueTags,
+    explanations: item.explanations,
     originalText: item.original_text,
   };
 }

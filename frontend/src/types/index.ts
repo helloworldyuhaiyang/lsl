@@ -19,6 +19,8 @@ export interface RevisionItem {
   content: string;
   fullText: string;
   score: number;
+  issueTags?: string[];
+  explanations?: string;
   originalText: string;
 }
 
