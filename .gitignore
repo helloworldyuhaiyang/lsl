@@ -75,4 +75,4 @@ Thumbs.db
 .env.local
 .env.*.local
 
-.sqlite3
+*.sqlite3
