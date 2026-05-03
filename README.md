@@ -35,6 +35,7 @@ Whether the source is a real recording or an AI script, LSL turns it into someth
 - Compare original wording against revised wording, with scoring and draft saving.
 - Edit `CUE`-rich scripts as a single string in the UI.
 - Generate script-backed session data that is ready for revise and future listening / TTS flows.
+- Use a shared async job foundation for ASR, AI script generation, and future TTS workflows.
 
 ## A Typical Practice Loop
 
@@ -63,20 +64,10 @@ Example:
 [Agree casually] Yeah, right.
 ```
 
-## Current Scope
-
-- Done: asset upload module
-- Done: ASR task module
-- Done: session module for audio and text sessions
-- Done: revision module with utterance-level revise, scoring, and draft persistence
-- Done: AI `CUE` script generation that creates a text session plus synthetic transcript and completed revision
-- Done: modular backend structure (`core` + `modules`)
-- Documented but not fully shipped: TTS module design
-- Still pending: TTS runtime implementation and authentication
-
 Implementation-oriented module docs:
 
 - `backend/src/lsl/modules/asset/README.md`
+- `backend/src/lsl/modules/job/README.md`
 - `backend/src/lsl/modules/script/README.md`
 - `backend/src/lsl/modules/task/README.md`
 - `backend/src/lsl/modules/session/README.md`
@@ -99,7 +90,7 @@ Note: most module design docs are currently written in Chinese.
   - Create sessions from audio or text
   - Upload files
   - Generate and edit `CUE` scripts
-  - Track async tasks
+  - Track async jobs
   - Review transcript and revision
   - Prepare listening / TTS flows
 
@@ -107,9 +98,9 @@ Note: most module design docs are currently written in Chinese.
 
 [ Thin Backend ]
   - Asset service (pre-signed uploads)
-  - Task status management
+  - Job lifecycle management
   - Session management
-  - ASR / LLM / TTS orchestration
+  - ASR / LLM / TTS domain orchestration
   - Authentication
 
         v
@@ -185,6 +176,7 @@ backend/
 |
 `- modules/
    |- asset/
+   |- job/
    |- task/
    |- session/
    |- revision/
@@ -222,6 +214,7 @@ Additional rules:
 - `core/` must not depend on `modules/`.
 - Vendor-specific integrations should live inside the owning module.
 - Prefer storage-friendly cross-database types over PostgreSQL-only defaults when possible.
+- Table schemas must stay compatible with both `SQLite3` and `PostgreSQL`; 
 
 ### Naming
 

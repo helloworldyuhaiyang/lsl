@@ -9,6 +9,8 @@ from pydantic import BaseModel
 from lsl.core import Settings, close_database_resources, configure_logging, create_database_resources
 from lsl.modules.asset import AssetRepository, AssetService, create_storage_provider
 from lsl.modules.asset.api import router as asset_router
+from lsl.modules.job import JobRepository, JobService
+from lsl.modules.job.api import router as job_router
 from lsl.modules.revision import RevisionRepository, RevisionService, create_revision_generator
 from lsl.modules.revision.api import router as revision_router
 from lsl.modules.script import ScriptService, create_script_generator
@@ -51,6 +53,11 @@ async def lifespan(app: FastAPI):
         if db_resources.session_factory is not None
         else None
     )
+    job_repository = (
+        JobRepository(db_resources.session_factory)
+        if db_resources.session_factory is not None
+        else None
+    )
     session_repository = (
         SessionRepository(db_resources.session_factory)
         if db_resources.session_factory is not None
@@ -78,6 +85,11 @@ async def lifespan(app: FastAPI):
             asr_provider=create_asr_provider(settings),
         )
         if task_repository is not None
+        else None
+    )
+    job_service = (
+        JobService(repository=job_repository)
+        if job_repository is not None
         else None
     )
     session_service = (
@@ -129,6 +141,7 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings
     app.state.db_resources = db_resources
     app.state.asset_service = asset_service
+    app.state.job_service = job_service
     app.state.task_service = task_service
     app.state.session_service = session_service
     app.state.revision_service = revision_service
@@ -147,6 +160,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="LSL", lifespan=lifespan)
 app.include_router(asset_router)
+app.include_router(job_router)
 app.include_router(task_router)
 app.include_router(session_router)
 app.include_router(script_router)

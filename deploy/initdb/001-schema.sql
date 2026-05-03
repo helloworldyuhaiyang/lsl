@@ -29,6 +29,41 @@ CREATE INDEX IF NOT EXISTS idx_assets_category_entity_created_at
 CREATE INDEX IF NOT EXISTS idx_assets_created_at
     ON public.assets (created_at DESC);
 
+CREATE TABLE IF NOT EXISTS public.jobs (
+    job_id        VARCHAR(32) PRIMARY KEY,
+    job_type      VARCHAR(64) NOT NULL,
+    x_status      SMALLINT NOT NULL DEFAULT 0,
+    entity_type   VARCHAR(64),
+    entity_id     VARCHAR(128),
+    priority      INTEGER NOT NULL DEFAULT 0,
+    progress      INTEGER NOT NULL DEFAULT 0,
+    attempts      INTEGER NOT NULL DEFAULT 0,
+    max_attempts  INTEGER NOT NULL DEFAULT 3,
+    payload_json  TEXT NOT NULL DEFAULT '{}',
+    result_json   TEXT,
+    error_code    VARCHAR(64),
+    error_message TEXT,
+    locked_by     VARCHAR(128),
+    locked_until  TIMESTAMPTZ,
+    next_run_at   TIMESTAMPTZ,
+    started_at    TIMESTAMPTZ,
+    finished_at   TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_status_next_run_at
+    ON public.jobs (x_status, next_run_at);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_type_status_next_run_at
+    ON public.jobs (job_type, x_status, next_run_at);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_entity
+    ON public.jobs (entity_type, entity_id);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_created_at
+    ON public.jobs (created_at);
+
 CREATE TABLE IF NOT EXISTS public.tasks (
     task_id                 VARCHAR(32) PRIMARY KEY,
     object_key              TEXT NOT NULL UNIQUE,
@@ -204,6 +239,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_speech_synthesis_items_source_item
     ON public.speech_synthesis_items (synthesis_id, source_item_id);
 
 DROP TRIGGER IF EXISTS trg_assets_set_updated_at ON public.assets;
+DROP TRIGGER IF EXISTS trg_jobs_set_updated_at ON public.jobs;
 DROP TRIGGER IF EXISTS trg_tasks_set_updated_at ON public.tasks;
 DROP TRIGGER IF EXISTS trg_sessions_set_updated_at ON public.sessions;
 DROP TRIGGER IF EXISTS trg_utterances_revisions_set_updated_at ON public.utterances_revisions;
@@ -214,6 +250,11 @@ DROP TRIGGER IF EXISTS trg_speech_synthesis_items_set_updated_at ON public.speec
 
 CREATE TRIGGER trg_assets_set_updated_at
 BEFORE UPDATE ON public.assets
+FOR EACH ROW
+EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TRIGGER trg_jobs_set_updated_at
+BEFORE UPDATE ON public.jobs
 FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();
 

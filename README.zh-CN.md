@@ -35,6 +35,7 @@ LSL 的宗旨是：学习语言应该是 `listening -> speak -> listening`。先
 - 对比原句和优化句，支持打分和草稿保存
 - 在前端把带 `CUE` 的脚本作为单一字符串直接编辑
 - 生成可直接进入 revise 流程、并为后续听力 / TTS 链路做准备的脚本数据
+- 用统一 Job 基础设施承载 ASR、AI 脚本生成和后续 TTS 的异步生命周期
 
 ## 一条典型练习链路
 
@@ -66,6 +67,7 @@ LSL 的宗旨是：学习语言应该是 `listening -> speak -> listening`。先
 ## 当前实现范围
 
 - 已完成：对象存储上传模块（Asset Module）
+- 已完成：通用异步 Job 模块（生命周期、状态查询、handler 分发）
 - 已完成：ASR 任务模块（Task Module）
 - 已完成：会话管理模块（Session Module，已支持录音 / 文本类型建模）
 - 已完成：Revision 模块（utterance 级 revise、打分、草稿保存）
@@ -77,6 +79,7 @@ LSL 的宗旨是：学习语言应该是 `listening -> speak -> listening`。先
 模块设计文档：
 
 - `backend/src/lsl/modules/asset/README.md`
+- `backend/src/lsl/modules/job/README.md`
 - `backend/src/lsl/modules/script/README.md`
 - `backend/src/lsl/modules/task/README.md`
 - `backend/src/lsl/modules/session/README.md`
@@ -97,7 +100,7 @@ LSL 的宗旨是：学习语言应该是 `listening -> speak -> listening`。先
   - 创建 Session（录音 / 文本）
   - 文件上传
   - CUE 脚本生成与编辑（高亮输入）
-  - 任务管理（上传后异步转写）
+  - Job 管理（上传后异步转写、脚本生成、后续 TTS）
   - 转写结果展示（Diff / 编辑 / 播放）
   - 听力 / TTS 链路
 
@@ -105,9 +108,9 @@ LSL 的宗旨是：学习语言应该是 `listening -> speak -> listening`。先
 
 [ Thin Backend ]
   - 文件服务（预签名上传）
-  - 任务状态管理
+  - Job 生命周期管理
   - Session 管理
-  - ASR / LLM / TTS 调度
+  - ASR / LLM / TTS 领域调度
   - 鉴权
 
         v
@@ -183,6 +186,7 @@ backend/
 |
 `- modules/
    |- asset/
+   |- job/
    |- task/
    |- session/
    |- revision/
@@ -220,6 +224,7 @@ backend/
 - `core/` 不能反向依赖 `modules/`。
 - 外部厂商适配代码应放在所属模块内部。
 - 能跨数据库兼容的场景，优先使用通用类型。
+- 建表语句要同时兼容 `SQLite3` 和 `PostgreSQL`；
 
 ### 命名规范
 
