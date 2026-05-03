@@ -320,9 +320,9 @@ tts/
 
 ```sql
 -- session 级 TTS 设置：保存合成参数和 speaker 映射
-CREATE TABLE IF NOT EXISTS public.session_tts_settings (
+CREATE TABLE IF NOT EXISTS public.tts_session_settings (
     session_id              VARCHAR(32) PRIMARY KEY,               -- 会话 ID（uuid hex）
-    format                  VARCHAR(16) NOT NULL DEFAULT 'mp3',   -- 输出格式
+    x_format                VARCHAR(16) NOT NULL DEFAULT 'mp3',   -- 输出格式
     emotion_scale           NUMERIC NOT NULL DEFAULT 4.0,         -- 情感强度
     speech_rate             NUMERIC NOT NULL DEFAULT 0.0,         -- 语速
     loudness_rate           NUMERIC NOT NULL DEFAULT 0.0,         -- 音量
@@ -332,7 +332,7 @@ CREATE TABLE IF NOT EXISTS public.session_tts_settings (
 );
 
 -- 当前 session 的整段 TTS 结果
-CREATE TABLE IF NOT EXISTS public.speech_syntheses (
+CREATE TABLE IF NOT EXISTS public.tts_syntheses (
     synthesis_id           VARCHAR(32) PRIMARY KEY,                -- 合成主键（uuid hex）
     session_id             VARCHAR(32) NOT NULL UNIQUE,            -- 一次 session 只保留当前结果
     x_provider             VARCHAR(32) NOT NULL,                   -- 实际使用的 provider
@@ -349,11 +349,11 @@ CREATE TABLE IF NOT EXISTS public.speech_syntheses (
     updated_at             TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP -- 更新时间
 );
 
-CREATE INDEX IF NOT EXISTS idx_speech_syntheses_session_created_at
-    ON public.speech_syntheses (session_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tts_syntheses_session_created_at
+    ON public.tts_syntheses (session_id, created_at DESC);
 
 -- item 级 TTS 快照：一个脚本 item 对应一条
-CREATE TABLE IF NOT EXISTS public.speech_synthesis_items (
+CREATE TABLE IF NOT EXISTS public.tts_synthesis_items (
     tts_item_id           VARCHAR(32) PRIMARY KEY,                 -- item 主键（uuid hex）
     synthesis_id          VARCHAR(32) NOT NULL,                    -- 关联 synthesis
     source_item_id        VARCHAR(32) NOT NULL,                    -- 对应脚本 item
@@ -374,11 +374,11 @@ CREATE TABLE IF NOT EXISTS public.speech_synthesis_items (
     updated_at            TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP -- 更新时间
 );
 
-CREATE INDEX IF NOT EXISTS idx_speech_synthesis_items_seq_span
-    ON public.speech_synthesis_items (synthesis_id, source_seq_start, source_seq_end);
+CREATE INDEX IF NOT EXISTS idx_tts_synthesis_items_seq_span
+    ON public.tts_synthesis_items (synthesis_id, source_seq_start, source_seq_end);
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_speech_synthesis_items_source_item
-    ON public.speech_synthesis_items (synthesis_id, source_item_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_tts_synthesis_items_source_item
+    ON public.tts_synthesis_items (synthesis_id, source_item_id);
 
 -- 统一更新时间函数：每次 UPDATE 自动刷新 updated_at
 CREATE OR REPLACE FUNCTION public.set_updated_at()
@@ -389,27 +389,27 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS trg_session_tts_settings_set_updated_at
-    ON public.session_tts_settings;
+DROP TRIGGER IF EXISTS trg_tts_session_settings_set_updated_at
+    ON public.tts_session_settings;
 
-DROP TRIGGER IF EXISTS trg_speech_syntheses_set_updated_at
-    ON public.speech_syntheses;
+DROP TRIGGER IF EXISTS trg_tts_syntheses_set_updated_at
+    ON public.tts_syntheses;
 
-DROP TRIGGER IF EXISTS trg_speech_synthesis_items_set_updated_at
-    ON public.speech_synthesis_items;
+DROP TRIGGER IF EXISTS trg_tts_synthesis_items_set_updated_at
+    ON public.tts_synthesis_items;
 
-CREATE TRIGGER trg_session_tts_settings_set_updated_at
-BEFORE UPDATE ON public.session_tts_settings
+CREATE TRIGGER trg_tts_session_settings_set_updated_at
+BEFORE UPDATE ON public.tts_session_settings
 FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();
 
-CREATE TRIGGER trg_speech_syntheses_set_updated_at
-BEFORE UPDATE ON public.speech_syntheses
+CREATE TRIGGER trg_tts_syntheses_set_updated_at
+BEFORE UPDATE ON public.tts_syntheses
 FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();
 
-CREATE TRIGGER trg_speech_synthesis_items_set_updated_at
-BEFORE UPDATE ON public.speech_synthesis_items
+CREATE TRIGGER trg_tts_synthesis_items_set_updated_at
+BEFORE UPDATE ON public.tts_synthesis_items
 FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();
 ```

@@ -118,6 +118,7 @@ export function Listening() {
   const activeIndexRef = useRef(-1);
 
   const audioUrl = session?.synthesizedAudioUrl || session?.audioUrl;
+  const shouldFitTimelineToAudioDuration = !session?.synthesizedAudioUrl;
 
   useEffect(() => {
     activeIndexRef.current = activeIndex;

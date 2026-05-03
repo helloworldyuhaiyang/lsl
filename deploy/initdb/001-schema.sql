@@ -1,5 +1,13 @@
+-- LSL database bootstrap schema.
+-- Naming rules:
+-- - Tables and indexes use the owning module as prefix, for example job_jobs.
+-- - Columns that may collide with SQL or programming-language keywords use x_ prefix.
+-- - JSON payload columns are stored as TEXT for SQLite/PostgreSQL portability.
+
+-- Create the default PostgreSQL schema used by the application.
 CREATE SCHEMA IF NOT EXISTS public;
 
+-- Shared trigger function for tables that maintain updated_at.
 CREATE OR REPLACE FUNCTION public.set_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -8,287 +16,430 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TABLE IF NOT EXISTS public.assets (
-    id                BIGSERIAL PRIMARY KEY,
-    object_key        TEXT NOT NULL UNIQUE,
-    category          VARCHAR(64) NOT NULL,
-    entity_id         VARCHAR(128) NOT NULL,
-    filename          VARCHAR(255),
-    content_type      VARCHAR(128),
-    file_size         BIGINT,
-    etag              VARCHAR(128),
-    storage_provider  VARCHAR(32) NOT NULL,
-    upload_status     SMALLINT NOT NULL DEFAULT 0,
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+-- ---------------------------------------------------------------------------
+-- Asset module
+-- Stores object-storage metadata for uploaded or generated files.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS public.asset_assets (
+    id                BIGSERIAL PRIMARY KEY,                      -- Internal auto-increment row id.
+    object_key        TEXT NOT NULL UNIQUE,                       -- Stable object-storage key.
+    category          VARCHAR(64) NOT NULL,                       -- Business category, for example audio or tts.
+    entity_id         VARCHAR(128) NOT NULL,                      -- Owning business entity id.
+    filename          VARCHAR(255),                               -- Original or generated filename.
+    content_type      VARCHAR(128),                               -- MIME type.
+    file_size         BIGINT,                                     -- File size in bytes.
+    etag              VARCHAR(128),                               -- Storage-provider ETag when available.
+    storage_provider  VARCHAR(32) NOT NULL,                       -- Storage backend, for example fake or oss.
+    upload_status     SMALLINT NOT NULL DEFAULT 0,                -- Upload lifecycle status.
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Creation timestamp.
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP  -- Last update timestamp.
 );
 
-CREATE INDEX IF NOT EXISTS idx_assets_category_entity_created_at
-    ON public.assets (category, entity_id, created_at DESC);
+-- Query recent assets by business owner.
+CREATE INDEX IF NOT EXISTS idx_asset_assets_category_entity_created_at
+    ON public.asset_assets (category, entity_id, created_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_assets_created_at
-    ON public.assets (created_at DESC);
+-- Asset list pagination.
+CREATE INDEX IF NOT EXISTS idx_asset_assets_created_at
+    ON public.asset_assets (created_at DESC);
 
-CREATE TABLE IF NOT EXISTS public.jobs (
-    job_id        VARCHAR(32) PRIMARY KEY,
-    job_type      VARCHAR(64) NOT NULL,
-    x_status      SMALLINT NOT NULL DEFAULT 0,
-    entity_type   VARCHAR(64),
-    entity_id     VARCHAR(128),
-    priority      INTEGER NOT NULL DEFAULT 0,
-    progress      INTEGER NOT NULL DEFAULT 0,
-    attempts      INTEGER NOT NULL DEFAULT 0,
-    max_attempts  INTEGER NOT NULL DEFAULT 3,
-    payload_json  TEXT NOT NULL DEFAULT '{}',
-    result_json   TEXT,
-    error_code    VARCHAR(64),
-    error_message TEXT,
-    locked_by     VARCHAR(128),
-    locked_until  TIMESTAMPTZ,
-    next_run_at   TIMESTAMPTZ,
-    started_at    TIMESTAMPTZ,
-    finished_at   TIMESTAMPTZ,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+-- ---------------------------------------------------------------------------
+-- Job module
+-- Generic asynchronous lifecycle table. Business results stay in owning modules.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS public.job_jobs (
+    job_id        VARCHAR(32) PRIMARY KEY,                         -- Job id, uuid hex.
+    job_type      VARCHAR(64) NOT NULL,                            -- Handler key, for example asr_recognition.
+    x_status      SMALLINT NOT NULL DEFAULT 0,                     -- 0 queued, 1 running, 2 completed, 3 failed, 4 canceled.
+    entity_type   VARCHAR(64),                                     -- Owning domain entity type.
+    entity_id     VARCHAR(128),                                    -- Owning domain entity id.
+    priority      INTEGER NOT NULL DEFAULT 0,                      -- Higher priority jobs are claimed first.
+    progress      INTEGER NOT NULL DEFAULT 0,                      -- Approximate progress from 0 to 100.
+    attempts      INTEGER NOT NULL DEFAULT 0,                      -- Number of claim/run attempts.
+    max_attempts  INTEGER NOT NULL DEFAULT 3,                      -- Maximum allowed attempts.
+    payload_json  TEXT NOT NULL DEFAULT '{}',                      -- Handler input payload JSON.
+    result_json   TEXT,                                           -- Lightweight handler result JSON.
+    error_code    VARCHAR(64),                                    -- Stable error code when failed/canceled.
+    error_message TEXT,                                           -- Human-readable error detail.
+    locked_by     VARCHAR(128),                                   -- Worker id that claimed the job.
+    locked_until  TIMESTAMPTZ,                                    -- Lock expiration timestamp.
+    next_run_at   TIMESTAMPTZ,                                    -- Next scheduled run time; NULL means runnable now.
+    started_at    TIMESTAMPTZ,                                    -- First started timestamp.
+    finished_at   TIMESTAMPTZ,                                    -- Terminal timestamp.
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Creation timestamp.
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP  -- Last update timestamp.
 );
 
-CREATE INDEX IF NOT EXISTS idx_jobs_status_next_run_at
-    ON public.jobs (x_status, next_run_at);
+-- Claim queued/running jobs by due time.
+CREATE INDEX IF NOT EXISTS idx_job_jobs_status_next_run_at
+    ON public.job_jobs (x_status, next_run_at);
 
-CREATE INDEX IF NOT EXISTS idx_jobs_type_status_next_run_at
-    ON public.jobs (job_type, x_status, next_run_at);
+-- Filter due jobs by handler type.
+CREATE INDEX IF NOT EXISTS idx_job_jobs_type_status_next_run_at
+    ON public.job_jobs (job_type, x_status, next_run_at);
 
-CREATE INDEX IF NOT EXISTS idx_jobs_entity
-    ON public.jobs (entity_type, entity_id);
+-- Lookup jobs by owning business entity.
+CREATE INDEX IF NOT EXISTS idx_job_jobs_entity
+    ON public.job_jobs (entity_type, entity_id);
 
-CREATE INDEX IF NOT EXISTS idx_jobs_created_at
-    ON public.jobs (created_at);
+-- Job list pagination.
+CREATE INDEX IF NOT EXISTS idx_job_jobs_created_at
+    ON public.job_jobs (created_at);
 
-CREATE TABLE IF NOT EXISTS public.tasks (
-    task_id                 VARCHAR(32) PRIMARY KEY,
-    object_key              TEXT NOT NULL UNIQUE,
-    audio_url               TEXT NOT NULL,
-    x_duration_ms           INTEGER,
-    x_status                SMALLINT NOT NULL DEFAULT 0,
-    x_language              VARCHAR(16),
-    x_provider              VARCHAR(32),
-    x_provider_request_id   VARCHAR(128),
-    x_provider_resource_id  VARCHAR(128),
-    x_tt_logid              VARCHAR(255),
-    x_provider_status_code  VARCHAR(32),
-    x_provider_message      TEXT,
-    error_code              VARCHAR(64),
-    error_message           TEXT,
-    poll_count              INTEGER NOT NULL DEFAULT 0,
-    last_polled_at          TIMESTAMPTZ,
-    next_poll_at            TIMESTAMPTZ,
-    created_at              TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at              TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+-- ---------------------------------------------------------------------------
+-- Transcript module
+-- Unified utterance stream produced by ASR, AI script generation, manual input,
+-- or imports.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS public.transcript_transcripts (
+    transcript_id    VARCHAR(32) PRIMARY KEY,                     -- Transcript id, uuid hex.
+    source_type      VARCHAR(32) NOT NULL,                        -- asr, ai_script, manual, or import.
+    source_entity_id VARCHAR(128),                                -- Source module entity id.
+    x_language       VARCHAR(16),                                 -- Language tag, for example en-US.
+    duration_ms      INTEGER,                                     -- Total duration in milliseconds.
+    full_text        TEXT,                                        -- Joined text for quick display/search.
+    raw_result_json  TEXT,                                        -- Provider/raw generation result JSON.
+    x_status         SMALLINT NOT NULL DEFAULT 0,                 -- 0 pending, 1 completed, 2 failed.
+    error_code       VARCHAR(64),                                 -- Stable failure code.
+    error_message    TEXT,                                        -- Failure detail.
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Creation timestamp.
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP  -- Last update timestamp.
 );
 
-CREATE INDEX IF NOT EXISTS idx_tasks_status_next_poll_at
-    ON public.tasks (x_status, next_poll_at);
+-- Find transcript by source module entity.
+CREATE INDEX IF NOT EXISTS idx_transcript_transcripts_source
+    ON public.transcript_transcripts (source_type, source_entity_id);
 
-CREATE INDEX IF NOT EXISTS idx_tasks_created_at
-    ON public.tasks (created_at DESC);
+-- Transcript list and pending/failed scans.
+CREATE INDEX IF NOT EXISTS idx_transcript_transcripts_status_created_at
+    ON public.transcript_transcripts (x_status, created_at);
 
-CREATE TABLE IF NOT EXISTS public.asr_results (
-    task_id           VARCHAR(32) PRIMARY KEY,
-    x_provider        VARCHAR(32),
-    duration_ms       INTEGER,
-    x_full_text       TEXT,
-    raw_result_json   TEXT,
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE IF NOT EXISTS public.transcript_utterances (
+    id               BIGSERIAL PRIMARY KEY,                       -- Internal auto-increment row id.
+    transcript_id    VARCHAR(32) NOT NULL,                        -- Owning transcript id.
+    seq              INTEGER NOT NULL,                            -- Ordered utterance sequence.
+    x_text           TEXT NOT NULL,                               -- Utterance text.
+    speaker          VARCHAR(64),                                 -- Speaker label from ASR/script/manual source.
+    start_time       INTEGER NOT NULL,                            -- Start time in milliseconds.
+    end_time         INTEGER NOT NULL,                            -- End time in milliseconds.
+    additions_json   TEXT NOT NULL DEFAULT '{}',                  -- Extra source-specific metadata JSON.
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP -- Creation timestamp.
 );
 
-CREATE TABLE IF NOT EXISTS public.asr_utterances (
-    id               BIGSERIAL PRIMARY KEY,
-    task_id          VARCHAR(32) NOT NULL,
-    seq              INTEGER NOT NULL,
-    x_text           TEXT NOT NULL,
-    speaker          VARCHAR(64),
-    start_time       INTEGER NOT NULL,
-    end_time         INTEGER NOT NULL,
-    additions_json   TEXT,
-    created_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+-- Load utterances in transcript order.
+CREATE INDEX IF NOT EXISTS idx_transcript_utterances_transcript_id
+    ON public.transcript_utterances (transcript_id, seq);
+
+-- One utterance per transcript sequence number.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_transcript_utterance_transcript_seq
+    ON public.transcript_utterances (transcript_id, seq);
+
+-- ---------------------------------------------------------------------------
+-- ASR module
+-- Tracks provider recognition process. Standard output is written to transcript.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS public.asr_recognitions (
+    recognition_id            VARCHAR(32) PRIMARY KEY,             -- Recognition id, uuid hex.
+    transcript_id             VARCHAR(32) NOT NULL,                -- Target transcript id.
+    job_id                    VARCHAR(32),                         -- Async job id.
+    object_key                TEXT NOT NULL,                       -- Uploaded audio object key.
+    audio_url                 TEXT NOT NULL,                       -- Provider-readable audio URL.
+    x_language                VARCHAR(16),                         -- Recognition language tag.
+    x_provider                VARCHAR(32) NOT NULL,                -- ASR provider name.
+    x_status                  SMALLINT NOT NULL DEFAULT 0,         -- 0 pending, 1 submitted, 2 processing, 3 completed, 4 failed.
+    x_provider_request_id     VARCHAR(128),                        -- Provider request id.
+    x_provider_resource_id    VARCHAR(128),                        -- Provider resource id if returned.
+    x_tt_logid                VARCHAR(255),                        -- Volc/ByteDance request log id.
+    x_provider_status_code    VARCHAR(32),                         -- Provider status code.
+    x_provider_message        TEXT,                                -- Provider status message.
+    error_code                VARCHAR(64),                         -- Stable failure code.
+    error_message             TEXT,                                -- Failure detail.
+    poll_count                INTEGER NOT NULL DEFAULT 0,          -- Number of provider query polls.
+    last_polled_at            TIMESTAMPTZ,                         -- Last provider query timestamp.
+    next_poll_at              TIMESTAMPTZ,                         -- Next provider query timestamp.
+    created_at                TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Creation timestamp.
+    updated_at                TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP  -- Last update timestamp.
 );
 
-CREATE INDEX IF NOT EXISTS idx_asr_utterances_task_id
-    ON public.asr_utterances (task_id, seq);
+-- Find recognition process by transcript.
+CREATE INDEX IF NOT EXISTS idx_asr_recognitions_transcript_id
+    ON public.asr_recognitions (transcript_id);
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_asr_utterance_task_seq
-    ON public.asr_utterances (task_id, seq);
+-- List recognitions by state.
+CREATE INDEX IF NOT EXISTS idx_asr_recognitions_status_created_at
+    ON public.asr_recognitions (x_status, created_at);
 
-CREATE TABLE IF NOT EXISTS public.sessions (
-    session_id        VARCHAR(32) PRIMARY KEY,
-    title             VARCHAR(200) NOT NULL,
-    f_desc            TEXT,
-    f_language        VARCHAR(16),
-    f_type            SMALLINT NOT NULL DEFAULT 1,
-    asset_object_key  TEXT UNIQUE,
-    current_task_id   VARCHAR(32) UNIQUE,
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+-- Lookup recognition by uploaded object.
+CREATE INDEX IF NOT EXISTS idx_asr_recognitions_object_key
+    ON public.asr_recognitions (object_key);
+
+-- ---------------------------------------------------------------------------
+-- Session module
+-- User-facing learning session. It references current transcript and asset.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS public.session_sessions (
+    session_id             VARCHAR(32) PRIMARY KEY,                -- Session id, uuid hex.
+    title                  VARCHAR(200) NOT NULL,                  -- Display title.
+    x_description          TEXT,                                   -- Optional description.
+    x_language             VARCHAR(16),                            -- Session language tag.
+    x_type                 SMALLINT NOT NULL DEFAULT 1,            -- 1 recording session, 2 text/script session.
+    asset_object_key       TEXT UNIQUE,                            -- Uploaded audio object key.
+    current_transcript_id  VARCHAR(32) UNIQUE,                     -- Current transcript id.
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Creation timestamp.
+    updated_at             TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP  -- Last update timestamp.
 );
 
-CREATE INDEX IF NOT EXISTS idx_sessions_created_at
-    ON public.sessions (created_at DESC);
+-- Session list pagination.
+CREATE INDEX IF NOT EXISTS idx_session_sessions_created_at
+    ON public.session_sessions (created_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_sessions_title_lower
-    ON public.sessions (lower(title));
+-- Case-insensitive title search.
+CREATE INDEX IF NOT EXISTS idx_session_sessions_title_lower
+    ON public.session_sessions (lower(title));
 
-CREATE TABLE IF NOT EXISTS public.utterances_revisions (
-    revision_id     VARCHAR(32) PRIMARY KEY,
-    session_id      VARCHAR(32) NOT NULL UNIQUE,
-    task_id         VARCHAR(32) NOT NULL,
-    user_prompt     TEXT,
-    x_status        SMALLINT NOT NULL DEFAULT 0,
-    error_code      VARCHAR(64),
-    error_message   TEXT,
-    item_count      INTEGER NOT NULL DEFAULT 0,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+-- ---------------------------------------------------------------------------
+-- Revision module
+-- Stores editable revised utterances generated from a transcript.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS public.revision_revisions (
+    revision_id     VARCHAR(32) PRIMARY KEY,                       -- Revision id, uuid hex.
+    session_id      VARCHAR(32) NOT NULL UNIQUE,                   -- One current revision per session.
+    transcript_id   VARCHAR(32) NOT NULL,                          -- Source transcript id.
+    job_id          VARCHAR(32),                                   -- Current revision_generation job id.
+    user_prompt     TEXT,                                          -- User revision prompt.
+    x_status        SMALLINT NOT NULL DEFAULT 0,                   -- 0 pending, 1 generating, 2 completed, 3 failed.
+    error_code      VARCHAR(64),                                   -- Stable failure code.
+    error_message   TEXT,                                          -- Failure detail.
+    item_count      INTEGER NOT NULL DEFAULT 0,                    -- Number of revision items.
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Creation timestamp.
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP  -- Last update timestamp.
 );
 
-CREATE INDEX IF NOT EXISTS idx_utterances_revisions_session_id
-    ON public.utterances_revisions (session_id);
+-- Load current revision by session.
+CREATE INDEX IF NOT EXISTS idx_revision_revisions_session_id
+    ON public.revision_revisions (session_id);
 
-CREATE TABLE IF NOT EXISTS public.utterances_revision_items (
-    item_id             VARCHAR(32) PRIMARY KEY,
-    revision_id         VARCHAR(32) NOT NULL,
-    task_id             VARCHAR(32) NOT NULL,
-    source_seq_start    INTEGER NOT NULL,
-    source_seq_end      INTEGER NOT NULL,
-    source_seq_count    INTEGER NOT NULL,
-    source_seqs         TEXT NOT NULL DEFAULT '[]',
-    speaker             VARCHAR(64),
-    start_time          INTEGER NOT NULL,
-    end_time            INTEGER NOT NULL,
-    original_text       TEXT NOT NULL,
-    suggested_text      TEXT NOT NULL,
-    draft_text          TEXT,
-    score               SMALLINT NOT NULL,
-    issue_tags          TEXT NOT NULL DEFAULT '',
-    explanations        TEXT NOT NULL DEFAULT '',
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE IF NOT EXISTS public.revision_items (
+    item_id             VARCHAR(32) PRIMARY KEY,                   -- Revision item id, uuid hex.
+    revision_id         VARCHAR(32) NOT NULL,                      -- Owning revision id.
+    transcript_id       VARCHAR(32) NOT NULL,                      -- Source transcript id.
+    source_seq_start    INTEGER NOT NULL,                          -- First source utterance seq.
+    source_seq_end      INTEGER NOT NULL,                          -- Last source utterance seq.
+    source_seq_count    INTEGER NOT NULL,                          -- Number of source utterances covered.
+    source_seqs         TEXT NOT NULL DEFAULT '[]',                -- Source utterance seq list JSON.
+    speaker             VARCHAR(64),                               -- Speaker label.
+    start_time          INTEGER NOT NULL,                          -- Start time in milliseconds.
+    end_time            INTEGER NOT NULL,                          -- End time in milliseconds.
+    original_text       TEXT NOT NULL,                             -- Original transcript text.
+    suggested_text      TEXT NOT NULL,                             -- AI-generated or initial suggested text.
+    draft_text          TEXT,                                      -- User-edited draft text.
+    score               SMALLINT NOT NULL,                         -- Quality/confidence score.
+    issue_tags          TEXT NOT NULL DEFAULT '',                  -- Comma-separated issue tags.
+    explanations        TEXT NOT NULL DEFAULT '',                  -- Explanation text.
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Creation timestamp.
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP  -- Last update timestamp.
 );
 
-CREATE INDEX IF NOT EXISTS idx_utterances_revision_items_revision_seq_span
-    ON public.utterances_revision_items (revision_id, source_seq_start, source_seq_end);
+-- Load revision items in source order.
+CREATE INDEX IF NOT EXISTS idx_revision_items_revision_seq_span
+    ON public.revision_items (revision_id, source_seq_start, source_seq_end);
 
-CREATE INDEX IF NOT EXISTS idx_utterances_revision_items_task_seq_span
-    ON public.utterances_revision_items (task_id, source_seq_start, source_seq_end);
+-- Find revision items by transcript span.
+CREATE INDEX IF NOT EXISTS idx_revision_items_transcript_seq_span
+    ON public.revision_items (transcript_id, source_seq_start, source_seq_end);
 
-CREATE TABLE IF NOT EXISTS public.session_tts_settings (
-    session_id              VARCHAR(32) PRIMARY KEY,
-    format                  VARCHAR(16) NOT NULL DEFAULT 'mp3',
-    emotion_scale           NUMERIC NOT NULL DEFAULT 4.0,
-    speech_rate             NUMERIC NOT NULL DEFAULT 0.0,
-    loudness_rate           NUMERIC NOT NULL DEFAULT 0.0,
-    speaker_mappings_json   TEXT NOT NULL DEFAULT '[]',
-    created_at              TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at              TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+-- ---------------------------------------------------------------------------
+-- Script module
+-- Tracks AI script generation process. Output is written to transcript/revision.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS public.script_generations (
+    generation_id      VARCHAR(32) PRIMARY KEY,                    -- Script generation id, uuid hex.
+    session_id         VARCHAR(32) NOT NULL,                       -- Created text session id.
+    transcript_id      VARCHAR(32),                                -- Completed transcript id.
+    job_id             VARCHAR(32),                                -- Async job id.
+    x_provider         VARCHAR(32) NOT NULL,                       -- Script generator provider.
+    title              VARCHAR(200) NOT NULL,                      -- Requested session title.
+    x_description      TEXT,                                       -- Requested session description.
+    x_language         VARCHAR(16),                                -- Requested language tag.
+    prompt             TEXT NOT NULL,                              -- User scenario prompt.
+    turn_count         INTEGER NOT NULL,                           -- Target conversation turn count.
+    speaker_count      INTEGER NOT NULL,                           -- Target speaker count.
+    difficulty         VARCHAR(32),                                -- Requested difficulty.
+    cue_style          VARCHAR(200),                               -- Requested cue style.
+    must_include_json  TEXT NOT NULL DEFAULT '[]',                 -- Required expressions JSON array.
+    preview_items_json TEXT NOT NULL DEFAULT '[]',                 -- Incremental generated utterance preview JSON array.
+    raw_result_json    TEXT,                                       -- Raw LLM/generator result JSON.
+    x_status           SMALLINT NOT NULL DEFAULT 0,                -- 0 pending, 1 generating, 2 completed, 3 failed.
+    error_code         VARCHAR(64),                                -- Stable failure code.
+    error_message      TEXT,                                       -- Failure detail.
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Creation timestamp.
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP  -- Last update timestamp.
 );
 
-CREATE TABLE IF NOT EXISTS public.speech_syntheses (
-    synthesis_id           VARCHAR(32) PRIMARY KEY,
-    session_id             VARCHAR(32) NOT NULL UNIQUE,
-    x_provider             VARCHAR(32) NOT NULL,
-    full_content_hash      VARCHAR(64) NOT NULL,
-    full_asset_object_key  TEXT,
-    full_duration_ms       INTEGER,
-    item_count             INTEGER NOT NULL DEFAULT 0,
-    completed_item_count   INTEGER NOT NULL DEFAULT 0,
-    failed_item_count      INTEGER NOT NULL DEFAULT 0,
-    x_status               SMALLINT NOT NULL DEFAULT 0,
-    error_code             VARCHAR(64),
-    error_message          TEXT,
-    created_at             TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at             TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+-- List script generations by session.
+CREATE INDEX IF NOT EXISTS idx_script_generations_session_id
+    ON public.script_generations (session_id);
+
+-- Lookup generation by produced transcript.
+CREATE INDEX IF NOT EXISTS idx_script_generations_transcript_id
+    ON public.script_generations (transcript_id);
+
+-- List script generations by lifecycle state.
+CREATE INDEX IF NOT EXISTS idx_script_generations_status_created_at
+    ON public.script_generations (x_status, created_at);
+
+-- ---------------------------------------------------------------------------
+-- TTS module
+-- Stores session-level TTS settings and full synthesis outputs.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS public.tts_session_settings (
+    session_id              VARCHAR(32) PRIMARY KEY,               -- Session id.
+    x_format                VARCHAR(16) NOT NULL DEFAULT 'mp3',    -- Output audio format.
+    emotion_scale           NUMERIC NOT NULL DEFAULT 4.0,          -- Provider emotion scale.
+    speech_rate             NUMERIC NOT NULL DEFAULT 0.0,          -- Provider speech rate.
+    loudness_rate           NUMERIC NOT NULL DEFAULT 0.0,          -- Provider loudness rate.
+    speaker_mappings_json   TEXT NOT NULL DEFAULT '[]',            -- Conversation speaker to provider voice JSON.
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Creation timestamp.
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP  -- Last update timestamp.
 );
 
-CREATE INDEX IF NOT EXISTS idx_speech_syntheses_session_created_at
-    ON public.speech_syntheses (session_id, created_at);
-
-CREATE TABLE IF NOT EXISTS public.speech_synthesis_items (
-    tts_item_id           VARCHAR(32) PRIMARY KEY,
-    synthesis_id          VARCHAR(32) NOT NULL,
-    source_item_id        VARCHAR(32) NOT NULL,
-    source_seq_start      INTEGER NOT NULL,
-    source_seq_end        INTEGER NOT NULL,
-    source_seqs           TEXT NOT NULL DEFAULT '[]',
-    conversation_speaker  VARCHAR(64),
-    provider_speaker_id   VARCHAR(128) NOT NULL,
-    content               TEXT NOT NULL,
-    plain_text            TEXT NOT NULL,
-    cue_texts             TEXT NOT NULL DEFAULT '[]',
-    content_hash          VARCHAR(64) NOT NULL,
-    duration_ms           INTEGER,
-    x_status              SMALLINT NOT NULL DEFAULT 0,
-    error_code            VARCHAR(64),
-    error_message         TEXT,
-    created_at            TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at            TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE IF NOT EXISTS public.tts_syntheses (
+    synthesis_id           VARCHAR(32) PRIMARY KEY,                -- Synthesis id, uuid hex.
+    session_id             VARCHAR(32) NOT NULL UNIQUE,            -- One current synthesis per session.
+    x_provider             VARCHAR(32) NOT NULL,                   -- TTS provider name.
+    full_content_hash      VARCHAR(64) NOT NULL,                   -- Hash of full synthesis inputs/settings.
+    full_asset_object_key  TEXT,                                   -- Generated full audio object key.
+    full_duration_ms       INTEGER,                                -- Full audio duration in milliseconds.
+    item_count             INTEGER NOT NULL DEFAULT 0,             -- Total item count.
+    completed_item_count   INTEGER NOT NULL DEFAULT 0,             -- Completed item count.
+    failed_item_count      INTEGER NOT NULL DEFAULT 0,             -- Failed item count.
+    x_status               SMALLINT NOT NULL DEFAULT 0,            -- 0 pending, 1 generating, 2 completed, 3 partial, 4 failed.
+    error_code             VARCHAR(64),                            -- Stable failure code.
+    error_message          TEXT,                                   -- Failure detail.
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Creation timestamp.
+    updated_at             TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP  -- Last update timestamp.
 );
 
-CREATE INDEX IF NOT EXISTS idx_speech_synthesis_items_seq_span
-    ON public.speech_synthesis_items (synthesis_id, source_seq_start, source_seq_end);
+-- Load current synthesis by session.
+CREATE INDEX IF NOT EXISTS idx_tts_syntheses_session_created_at
+    ON public.tts_syntheses (session_id, created_at);
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_speech_synthesis_items_source_item
-    ON public.speech_synthesis_items (synthesis_id, source_item_id);
+CREATE TABLE IF NOT EXISTS public.tts_synthesis_items (
+    tts_item_id           VARCHAR(32) PRIMARY KEY,                 -- TTS item id, uuid hex.
+    synthesis_id          VARCHAR(32) NOT NULL,                    -- Owning synthesis id.
+    source_item_id        VARCHAR(32) NOT NULL,                    -- Source revision item id.
+    source_seq_start      INTEGER NOT NULL,                        -- First source utterance seq.
+    source_seq_end        INTEGER NOT NULL,                        -- Last source utterance seq.
+    source_seqs           TEXT NOT NULL DEFAULT '[]',              -- Source seq list JSON.
+    conversation_speaker  VARCHAR(64),                             -- Original conversation speaker.
+    provider_speaker_id   VARCHAR(128) NOT NULL,                   -- Provider voice/speaker id.
+    content               TEXT NOT NULL,                           -- Full TTS input including cue.
+    plain_text            TEXT NOT NULL,                           -- Speech text after cue removal.
+    cue_texts             TEXT NOT NULL DEFAULT '[]',              -- Removed cue texts JSON.
+    content_hash          VARCHAR(64) NOT NULL,                    -- Hash of item synthesis input/settings.
+    duration_ms           INTEGER,                                 -- Item audio duration in milliseconds.
+    x_status              SMALLINT NOT NULL DEFAULT 0,             -- 0 pending, 1 generating, 2 completed, 3 partial, 4 failed.
+    error_code            VARCHAR(64),                             -- Stable failure code.
+    error_message         TEXT,                                    -- Failure detail.
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Creation timestamp.
+    updated_at            TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP  -- Last update timestamp.
+);
 
-DROP TRIGGER IF EXISTS trg_assets_set_updated_at ON public.assets;
-DROP TRIGGER IF EXISTS trg_jobs_set_updated_at ON public.jobs;
-DROP TRIGGER IF EXISTS trg_tasks_set_updated_at ON public.tasks;
-DROP TRIGGER IF EXISTS trg_sessions_set_updated_at ON public.sessions;
-DROP TRIGGER IF EXISTS trg_utterances_revisions_set_updated_at ON public.utterances_revisions;
-DROP TRIGGER IF EXISTS trg_utterances_revision_items_set_updated_at ON public.utterances_revision_items;
-DROP TRIGGER IF EXISTS trg_session_tts_settings_set_updated_at ON public.session_tts_settings;
-DROP TRIGGER IF EXISTS trg_speech_syntheses_set_updated_at ON public.speech_syntheses;
-DROP TRIGGER IF EXISTS trg_speech_synthesis_items_set_updated_at ON public.speech_synthesis_items;
+-- Load synthesis items in source order.
+CREATE INDEX IF NOT EXISTS idx_tts_synthesis_items_seq_span
+    ON public.tts_synthesis_items (synthesis_id, source_seq_start, source_seq_end);
 
-CREATE TRIGGER trg_assets_set_updated_at
-BEFORE UPDATE ON public.assets
+-- One synthesis item per source revision item.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_tts_synthesis_items_source_item
+    ON public.tts_synthesis_items (synthesis_id, source_item_id);
+
+-- ---------------------------------------------------------------------------
+-- updated_at triggers
+-- Recreate triggers idempotently so rerunning this file keeps definitions fresh.
+-- ---------------------------------------------------------------------------
+
+DROP TRIGGER IF EXISTS trg_asset_assets_set_updated_at ON public.asset_assets;
+DROP TRIGGER IF EXISTS trg_job_jobs_set_updated_at ON public.job_jobs;
+DROP TRIGGER IF EXISTS trg_transcript_transcripts_set_updated_at ON public.transcript_transcripts;
+DROP TRIGGER IF EXISTS trg_asr_recognitions_set_updated_at ON public.asr_recognitions;
+DROP TRIGGER IF EXISTS trg_session_sessions_set_updated_at ON public.session_sessions;
+DROP TRIGGER IF EXISTS trg_revision_revisions_set_updated_at ON public.revision_revisions;
+DROP TRIGGER IF EXISTS trg_revision_items_set_updated_at ON public.revision_items;
+DROP TRIGGER IF EXISTS trg_script_generations_set_updated_at ON public.script_generations;
+DROP TRIGGER IF EXISTS trg_tts_session_settings_set_updated_at ON public.tts_session_settings;
+DROP TRIGGER IF EXISTS trg_tts_syntheses_set_updated_at ON public.tts_syntheses;
+DROP TRIGGER IF EXISTS trg_tts_synthesis_items_set_updated_at ON public.tts_synthesis_items;
+
+-- Keep asset metadata update timestamps current.
+CREATE TRIGGER trg_asset_assets_set_updated_at
+BEFORE UPDATE ON public.asset_assets
 FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();
 
-CREATE TRIGGER trg_jobs_set_updated_at
-BEFORE UPDATE ON public.jobs
+-- Keep job lifecycle update timestamps current.
+CREATE TRIGGER trg_job_jobs_set_updated_at
+BEFORE UPDATE ON public.job_jobs
 FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();
 
-CREATE TRIGGER trg_tasks_set_updated_at
-BEFORE UPDATE ON public.tasks
+-- Keep transcript header update timestamps current.
+CREATE TRIGGER trg_transcript_transcripts_set_updated_at
+BEFORE UPDATE ON public.transcript_transcripts
 FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();
 
-CREATE TRIGGER trg_sessions_set_updated_at
-BEFORE UPDATE ON public.sessions
+-- Keep ASR recognition update timestamps current.
+CREATE TRIGGER trg_asr_recognitions_set_updated_at
+BEFORE UPDATE ON public.asr_recognitions
 FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();
 
-CREATE TRIGGER trg_utterances_revisions_set_updated_at
-BEFORE UPDATE ON public.utterances_revisions
+-- Keep session update timestamps current.
+CREATE TRIGGER trg_session_sessions_set_updated_at
+BEFORE UPDATE ON public.session_sessions
 FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();
 
-CREATE TRIGGER trg_utterances_revision_items_set_updated_at
-BEFORE UPDATE ON public.utterances_revision_items
+-- Keep revision header update timestamps current.
+CREATE TRIGGER trg_revision_revisions_set_updated_at
+BEFORE UPDATE ON public.revision_revisions
 FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();
 
-CREATE TRIGGER trg_session_tts_settings_set_updated_at
-BEFORE UPDATE ON public.session_tts_settings
+-- Keep revision item update timestamps current.
+CREATE TRIGGER trg_revision_items_set_updated_at
+BEFORE UPDATE ON public.revision_items
 FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();
 
-CREATE TRIGGER trg_speech_syntheses_set_updated_at
-BEFORE UPDATE ON public.speech_syntheses
+-- Keep script generation update timestamps current.
+CREATE TRIGGER trg_script_generations_set_updated_at
+BEFORE UPDATE ON public.script_generations
 FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();
 
-CREATE TRIGGER trg_speech_synthesis_items_set_updated_at
-BEFORE UPDATE ON public.speech_synthesis_items
+-- Keep TTS settings update timestamps current.
+CREATE TRIGGER trg_tts_session_settings_set_updated_at
+BEFORE UPDATE ON public.tts_session_settings
+FOR EACH ROW
+EXECUTE FUNCTION public.set_updated_at();
+
+-- Keep TTS synthesis header update timestamps current.
+CREATE TRIGGER trg_tts_syntheses_set_updated_at
+BEFORE UPDATE ON public.tts_syntheses
+FOR EACH ROW
+EXECUTE FUNCTION public.set_updated_at();
+
+-- Keep TTS synthesis item update timestamps current.
+CREATE TRIGGER trg_tts_synthesis_items_set_updated_at
+BEFORE UPDATE ON public.tts_synthesis_items
 FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();

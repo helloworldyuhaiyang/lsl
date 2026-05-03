@@ -54,7 +54,7 @@ class UpdateRevisionItemRequest(BaseModel):
 class RevisionItemData(BaseModel):
     item_id: str
     revision_id: str
-    task_id: str
+    transcript_id: str
     source_seq_start: int
     source_seq_end: int
     source_seq_count: int
@@ -75,7 +75,8 @@ class RevisionItemData(BaseModel):
 class RevisionData(BaseModel):
     revision_id: str
     session_id: str
-    task_id: str
+    transcript_id: str
+    job_id: str | None = None
     user_prompt: str | None = None
     status: int
     status_name: str
@@ -92,7 +93,8 @@ class RevisionData(BaseModel):
         *,
         revision_id: str,
         session_id: str,
-        task_id: str,
+        transcript_id: str,
+        job_id: str | None,
         user_prompt: str | None,
         status: int,
         error_code: str | None,
@@ -105,7 +107,8 @@ class RevisionData(BaseModel):
         return cls(
             revision_id=revision_id,
             session_id=session_id,
-            task_id=task_id,
+            transcript_id=transcript_id,
+            job_id=job_id,
             user_prompt=user_prompt,
             status=status,
             status_name=status_code_to_name(status),

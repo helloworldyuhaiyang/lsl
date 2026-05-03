@@ -106,6 +106,9 @@ class JobService:
         return self._run_claimed_job(self._to_data(row))
 
     def run_due_jobs(self, *, limit: int = 10, worker_id: str | None = None) -> list[JobData]:
+        return [self.run_claimed_job(job) for job in self.claim_due_jobs(limit=limit, worker_id=worker_id)]
+
+    def claim_due_jobs(self, *, limit: int = 10, worker_id: str | None = None) -> list[JobData]:
         if limit <= 0:
             raise ValueError("limit must be greater than 0")
         if limit > 100:
@@ -116,7 +119,10 @@ class JobService:
             limit=limit,
             lock_ttl_seconds=self._lock_ttl_seconds,
         )
-        return [self._run_claimed_job(self._to_data(row)) for row in rows]
+        return [self._to_data(row) for row in rows]
+
+    def run_claimed_job(self, job: JobData) -> JobData:
+        return self._run_claimed_job(job)
 
     def _run_claimed_job(self, job: JobData) -> JobData:
         handler = self._handlers.get(job.job_type)

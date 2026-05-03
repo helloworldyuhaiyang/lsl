@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from lsl.core.config import Settings
-from lsl.modules.task.asr import FakeAsrProvider, VolcAsrProvider
-from lsl.modules.task.types import AsrProvider, NoopAsrProvider
+from lsl.modules.asr.providers import FakeAsrProvider, VolcAsrProvider
+from lsl.modules.asr.types import AsrProvider, NoopAsrProvider
 
 
 def create_asr_provider(settings: Settings) -> AsrProvider:

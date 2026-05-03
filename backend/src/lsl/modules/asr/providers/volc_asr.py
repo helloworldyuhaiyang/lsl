@@ -6,7 +6,7 @@ from typing import Any
 import requests
 
 from lsl.core.config import Settings
-from lsl.modules.task.types import (
+from lsl.modules.asr.types import (
     AsrJobRef,
     AsrJobStatus,
     AsrQueryResult,
@@ -40,7 +40,7 @@ class VolcAsrProvider:
             "X-Api-App-Key": self._app_key,
             "X-Api-Access-Key": self._access_key,
             "X-Api-Resource-Id": self._resource_id,
-            "X-Api-Request-Id": req.task_id,
+            "X-Api-Request-Id": req.recognition_id,
             "X-Api-Sequence": "-1",
             "Content-Type": "application/json",
         }
@@ -66,7 +66,7 @@ class VolcAsrProvider:
             payload=payload,
             headers=headers,
             action="submit",
-            request_id=req.task_id,
+            request_id=req.recognition_id,
         )
         status_code = self._header(response.headers, "X-Api-Status-Code")
         message = self._header(response.headers, "X-Api-Message")
@@ -75,7 +75,7 @@ class VolcAsrProvider:
         if status_code != self._STATUS_SUCCEEDED:
             logger.error(
                 "Volc submit business failed: request_id=%s status_code=%s message=%s response_body=%s",
-                req.task_id,
+                req.recognition_id,
                 status_code,
                 message,
                 self._safe_response_text(response),
@@ -83,9 +83,9 @@ class VolcAsrProvider:
             raise RuntimeError(f"Volc submit failed: code={status_code}, message={message}")
 
         return AsrJobRef(
-            task_id=req.task_id,
+            recognition_id=req.recognition_id,
             provider=self.provider_name,
-            provider_request_id=req.task_id,
+            provider_request_id=req.recognition_id,
             provider_resource_id=self._resource_id,
             x_tt_logid=x_tt_logid,
         )

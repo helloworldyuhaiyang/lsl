@@ -29,6 +29,7 @@ def create_revision(
     revision_service: RevisionService = Depends(get_revision_service),
 ):
     try:
+        # Revision job flow 1/5: this endpoint schedules revise work and returns immediately.
         revision = revision_service.create_revision(
             session_id=payload.session_id,
             user_prompt=payload.user_prompt,
@@ -36,7 +37,7 @@ def create_revision(
         )
     except ValueError as exc:
         detail = str(exc)
-        status_code = 404 if detail in {"session not found", "task not found"} else 400
+        status_code = 404 if detail in {"session not found", "transcript not found"} else 400
         raise HTTPException(status_code=status_code, detail=detail) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc

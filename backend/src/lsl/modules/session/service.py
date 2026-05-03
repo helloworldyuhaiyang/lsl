@@ -11,11 +11,11 @@ from lsl.modules.session.schema import (
     CreateSessionRequest,
     SessionData,
     SessionSchema,
-    TaskSchema,
+    TranscriptSchema,
     UpdateSessionRequest,
 )
-from lsl.modules.task.schema import TaskData
-from lsl.modules.task.service import TaskService
+from lsl.modules.transcript.schema import TranscriptData
+from lsl.modules.transcript.service import TranscriptService
 
 
 class SessionService:
@@ -24,21 +24,21 @@ class SessionService:
         *,
         repository: SessionRepository,
         asset_service: AssetService,
-        task_service: TaskService,
+        transcript_service: TranscriptService,
     ) -> None:
         self._repository = repository
         self._asset_service = asset_service
-        self._task_service = task_service
+        self._transcript_service = transcript_service
 
     def create_session(self, payload: CreateSessionRequest) -> SessionData:
         session_id = uuid.uuid4().hex
         asset_object_key = self._normalize_object_key(payload.asset_object_key)
-        current_task_id = payload.current_task_id
+        current_transcript_id = payload.current_transcript_id
 
         self._validate_session_type(
             f_type=payload.f_type,
             asset_object_key=asset_object_key,
-            current_task_id=current_task_id,
+            current_transcript_id=current_transcript_id,
         )
 
         self._repository.create_session(
@@ -48,7 +48,7 @@ class SessionService:
             language=payload.language,
             f_type=payload.f_type,
             asset_object_key=asset_object_key,
-            current_task_id=current_task_id,
+            current_transcript_id=current_transcript_id,
         )
 
         return self.get_session(session_id)
@@ -66,17 +66,17 @@ class SessionService:
             except ValueError:
                 asset = None
 
-        task: TaskData | None = None
-        if session.current_task_id is not None:
+        transcript: TranscriptData | None = None
+        if session.current_transcript_id is not None:
             try:
-                task = self._task_service.get_task(
-                    task_id=session.current_task_id,
-                    auto_refresh=auto_refresh,
+                transcript = self._transcript_service.get_transcript(
+                    transcript_id=session.current_transcript_id,
+                    include_raw=False,
                 )
             except ValueError:
-                task = None
+                transcript = None
 
-        return self._to_session_data(session, asset=asset, task=task)
+        return self._to_session_data(session, asset=asset, transcript=transcript)
 
     def list_sessions(
         self,
@@ -102,18 +102,18 @@ class SessionService:
         )
 
         assets = self._load_assets_by_sessions(sessions)
-        tasks = self._load_tasks_by_sessions(sessions)
+        transcripts = self._load_transcripts_by_sessions(sessions)
 
         items: list[SessionData] = []
         for session in sessions:
-            task_id = session.current_task_id
+            transcript_id = session.current_transcript_id
             asset_object_key = self._normalize_object_key(session.asset_object_key)
             asset = assets.get(asset_object_key) if asset_object_key else None
-            task = tasks.get(task_id) if task_id else None
+            transcript = transcripts.get(transcript_id) if transcript_id else None
             session_data = self._to_session_data(
                 session,
                 asset=asset,
-                task=task,
+                transcript=transcript,
             )
             items.append(session_data)
 
@@ -137,17 +137,21 @@ class SessionService:
         final_asset_object_key = self._normalize_object_key(
             updates.get("asset_object_key", existing.asset_object_key)
         )
-        final_task_id_raw = updates.get("current_task_id")
-        if final_task_id_raw is None and "current_task_id" in updates:
-            final_task_id = None
+        final_transcript_id_raw = updates.get("current_transcript_id")
+        if final_transcript_id_raw is None and "current_transcript_id" in updates:
+            final_transcript_id = None
         else:
-            final_task_id = final_task_id_raw if final_task_id_raw is not None else existing.current_task_id
+            final_transcript_id = (
+                final_transcript_id_raw
+                if final_transcript_id_raw is not None
+                else existing.current_transcript_id
+            )
         final_f_type = int(updates["f_type"]) if "f_type" in updates else int(existing.f_type)
 
         self._validate_session_type(
             f_type=final_f_type,
             asset_object_key=final_asset_object_key,
-            current_task_id=final_task_id,
+            current_transcript_id=final_transcript_id,
         )
 
         self._repository.update_session(session_id=session_id, updates=updates)
@@ -158,13 +162,13 @@ class SessionService:
         session: SessionModel,
         *,
         asset: dict[str, Any] | None = None,
-        task: TaskData | None = None,
+        transcript: TranscriptData | None = None,
     ) -> SessionData:
         return SessionData.model_validate(
             {
                 "session": SessionSchema.model_validate(session),
                 "asset": AssetSchema.model_validate(asset) if asset is not None else None,
-                "task": TaskSchema.model_validate(task) if task is not None else None,
+                "transcript": TranscriptSchema.model_validate(transcript) if transcript is not None else None,
             }
         )
 
@@ -179,17 +183,17 @@ class SessionService:
             return {}
         return self._asset_service.list_assets_by_object_keys(object_keys=sorted(object_keys_set))
 
-    def _load_tasks_by_sessions(self, sessions: list[SessionModel]) -> dict[str, TaskData]:
-        task_ids = sorted(
+    def _load_transcripts_by_sessions(self, sessions: list[SessionModel]) -> dict[str, TranscriptData]:
+        transcript_ids = sorted(
             {
-                session.current_task_id
+                session.current_transcript_id
                 for session in sessions
-                if session.current_task_id is not None
+                if session.current_transcript_id is not None
             }
         )
-        if not task_ids:
+        if not transcript_ids:
             return {}
-        return self._task_service.list_tasks_by_ids(task_ids=task_ids, auto_refresh=False)
+        return self._transcript_service.list_transcripts_by_ids(transcript_ids=transcript_ids)
 
     @staticmethod
     def _normalize_object_key(value: str | None) -> str | None:
@@ -203,10 +207,10 @@ class SessionService:
         *,
         f_type: int,
         asset_object_key: str | None,
-        current_task_id: str | None,
+        current_transcript_id: str | None,
     ) -> None:
         if f_type not in (1, 2):
             raise ValueError("f_type must be one of 1(recording) or 2(text)")
 
-        if f_type == 1 and not asset_object_key and not current_task_id:
-            raise ValueError("recording session requires asset_object_key or current_task_id")
+        if f_type == 1 and not asset_object_key and not current_transcript_id:
+            raise ValueError("recording session requires asset_object_key or current_transcript_id")

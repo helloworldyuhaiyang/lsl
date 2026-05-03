@@ -1,39 +1,30 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from enum import Enum, IntEnum
 from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
 
-class TaskStatus(IntEnum):
-    UPLOADED = 0
-    TRANSCRIBING = 1
-    ANALYZING = 2
+class AsrRecognitionStatus(IntEnum):
+    PENDING = 0
+    SUBMITTED = 1
+    PROCESSING = 2
     COMPLETED = 3
     FAILED = 4
 
 
-TASK_STATUS_NAME_MAP: dict[int, str] = {
-    TaskStatus.UPLOADED: "uploaded",
-    TaskStatus.TRANSCRIBING: "transcribing",
-    TaskStatus.ANALYZING: "analyzing",
-    TaskStatus.COMPLETED: "completed",
-    TaskStatus.FAILED: "failed",
+ASR_RECOGNITION_STATUS_NAME_MAP: dict[int, str] = {
+    AsrRecognitionStatus.PENDING: "pending",
+    AsrRecognitionStatus.SUBMITTED: "submitted",
+    AsrRecognitionStatus.PROCESSING: "processing",
+    AsrRecognitionStatus.COMPLETED: "completed",
+    AsrRecognitionStatus.FAILED: "failed",
 }
 
 
-def status_code_to_name(status_code: int) -> str:
-    return TASK_STATUS_NAME_MAP.get(status_code, "unknown")
-
-
-@dataclass(frozen=True, slots=True)
-class TaskListFilters:
-    limit: int = 20
-    status: int | None = None
-    category: str | None = None
-    entity_id: str | None = None
+def asr_recognition_status_to_name(status_code: int) -> str:
+    return ASR_RECOGNITION_STATUS_NAME_MAP.get(status_code, "unknown")
 
 
 class AsrProvider(Protocol):
@@ -52,13 +43,13 @@ class AsrJobStatus(str, Enum):
 
 
 class AsrSubmitRequest(BaseModel):
-    task_id: str
+    recognition_id: str
     audio_url: str
     language: str | None = None
 
 
 class AsrJobRef(BaseModel):
-    task_id: str
+    recognition_id: str
     provider: str
     provider_request_id: str
     provider_resource_id: str | None = None

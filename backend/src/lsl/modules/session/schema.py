@@ -21,7 +21,7 @@ class CreateSessionRequest(BaseModel):
     language: str | None = Field(default=None, max_length=16)
     f_type: int = Field(default=1, ge=1, le=2)
     asset_object_key: str | None = Field(default=None, max_length=1024)
-    current_task_id: str | None = Field(default=None, max_length=64)
+    current_transcript_id: str | None = Field(default=None, max_length=64)
 
     @field_validator("title")
     @classmethod
@@ -47,9 +47,9 @@ class CreateSessionRequest(BaseModel):
         normalized = value.strip().lstrip("/")
         return normalized or None
 
-    @field_validator("current_task_id")
+    @field_validator("current_transcript_id")
     @classmethod
-    def normalize_current_task_id(cls, value: str | None) -> str | None:
+    def normalize_current_transcript_id(cls, value: str | None) -> str | None:
         if value is None:
             return None
         normalized = value.strip()
@@ -62,7 +62,7 @@ class UpdateSessionRequest(BaseModel):
     language: str | None = Field(default=None, max_length=16)
     f_type: int | None = Field(default=None, ge=1, le=2)
     asset_object_key: str | None = Field(default=None, max_length=1024)
-    current_task_id: str | None = Field(default=None, max_length=64)
+    current_transcript_id: str | None = Field(default=None, max_length=64)
 
     @field_validator("title")
     @classmethod
@@ -90,9 +90,9 @@ class UpdateSessionRequest(BaseModel):
         normalized = value.strip().lstrip("/")
         return normalized or None
 
-    @field_validator("current_task_id")
+    @field_validator("current_transcript_id")
     @classmethod
-    def normalize_current_task_id(cls, value: str | None) -> str | None:
+    def normalize_current_transcript_id(cls, value: str | None) -> str | None:
         if value is None:
             return None
         normalized = value.strip()
@@ -108,7 +108,7 @@ class SessionSchema(BaseModel):
     language: str | None = None
     f_type: int
     asset_object_key: str | None = None
-    current_task_id: str | None = None
+    current_transcript_id: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -128,18 +128,17 @@ class AssetSchema(BaseModel):
     asset_url: str
 
 
-class TaskSchema(BaseModel):
+class TranscriptSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    task_id: str
-    object_key: str
-    audio_url: str | None = None
+    transcript_id: str
+    source_type: str
+    source_entity_id: str | None = None
     duration_ms: int | None = None
     duration_sec: float | None = None
     status: int
     status_name: str
     language: str | None = None
-    provider: str | None = None
     error_code: str | None = None
     error_message: str | None = None
     created_at: datetime
@@ -149,7 +148,7 @@ class TaskSchema(BaseModel):
 class SessionData(BaseModel):
     session: SessionSchema
     asset: AssetSchema | None = None
-    task: TaskSchema | None = None
+    transcript: TranscriptSchema | None = None
 
 
 class SessionListResponseData(BaseModel):

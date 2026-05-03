@@ -1,6 +1,7 @@
 import { requestBlob, requestJson } from '@/lib/api/client'
 import type {
   CreateTtsSynthesisRequest,
+  CreateTtsSynthesisResponse,
   TtsSettingsResponse,
   TtsSpeakerListResponse,
   TtsSynthesisResponse,
@@ -65,7 +66,7 @@ export async function generateTtsItemAudio(params: {
 }
 
 export async function createTtsSynthesis(payload: CreateTtsSynthesisRequest): Promise<TtsSynthesisResponse> {
-  const response = await requestJson<ApiResponse<TtsSynthesisResponse>>('/tts', {
+  const response = await requestJson<ApiResponse<CreateTtsSynthesisResponse>>('/tts', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -75,7 +76,7 @@ export async function createTtsSynthesis(payload: CreateTtsSynthesisRequest): Pr
       force: payload.force ?? false,
     }),
   })
-  return response.data
+  return response.data.synthesis
 }
 
 export async function getTtsSynthesis(sessionId: string): Promise<TtsSynthesisResponse> {

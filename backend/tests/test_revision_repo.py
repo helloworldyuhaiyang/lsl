@@ -8,7 +8,7 @@ from lsl.modules.revision.types import GeneratedRevisionItem
 
 def _build_item(*, source_seqs: list[int]) -> GeneratedRevisionItem:
     return GeneratedRevisionItem(
-        task_id="00000000-0000-0000-0000-000000000001",
+        transcript_id="00000000-0000-0000-0000-000000000001",
         source_seq_start=source_seqs[0],
         source_seq_end=source_seqs[-1],
         source_seq_count=len(source_seqs),
@@ -31,7 +31,7 @@ def test_save_revision_rejects_overlapping_source_seqs() -> None:
     with pytest.raises(RuntimeError, match=r"Overlapping source_seqs in revision items: 1"):
         repository.save_revision(
             session_id="00000000-0000-0000-0000-000000000010",
-            task_id="00000000-0000-0000-0000-000000000020",
+            transcript_id="00000000-0000-0000-0000-000000000020",
             user_prompt=None,
             status=2,
             items=[

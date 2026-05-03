@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Sparkles, Loader2, Volume2, Wand2 } from 'lucide-react';
 import { RevisionCard } from '@/components/RevisionCard';
 import { SpeakerSelect } from '@/components/SpeakerSelect';
@@ -14,11 +14,14 @@ import type { RevisionItem, SpeakerMapping } from '@/types';
 import type { TtsSpeakerItem } from '@/types/api';
 import { NotFound } from './NotFound';
 import { getSession } from '@/lib/api/sessions';
+import { ApiRequestError } from '@/lib/api/client';
+import { getJob } from '@/lib/api/jobs';
+import { getScriptGenerationPreview } from '@/lib/api/scripts';
 import { createRevision, getRevision, updateRevisionItem } from '@/lib/api/revisions';
 import { createTtsSynthesis, generateTtsItemAudio, getTtsSettings, getTtsSpeakers, getTtsSynthesis, updateTtsSettings } from '@/lib/api/tts';
 import { applyTtsSettings, applyTtsSynthesis, mapRevision, mapSessionItem } from '@/lib/domain';
 import { getVoiceForSpeaker } from '@/lib/voice';
-import type { TtsSynthesisResponse } from '@/types/api';
+import type { ScriptGenerationPreviewItemResponse, TtsSynthesisResponse } from '@/types/api';
 
 const TTS_PARAM_RANGES = {
   emotionScale: { min: 1, max: 5, step: 0.1, defaultValue: 4 },
@@ -35,9 +38,12 @@ function clampTtsParam(value: number, range: { min: number; max: number; step: n
 export function Revise() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { getSessionById, dispatch } = useApp();
   const [loadedSession, setLoadedSession] = useState<ReturnType<typeof getSessionById> | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [isPreparingScript, setIsPreparingScript] = useState(false);
+  const [scriptPreviewItems, setScriptPreviewItems] = useState<ScriptGenerationPreviewItemResponse[]>([]);
 
   const session = useMemo(() => loadedSession || (id ? getSessionById(id) : undefined), [id, getSessionById, loadedSession]);
 
@@ -56,6 +62,8 @@ export function Revise() {
   const [playingOriginalItemId, setPlayingOriginalItemId] = useState<string | null>(null);
   const itemAudioRef = useRef<HTMLAudioElement | null>(null);
   const itemAudioUrlRef = useRef<string | null>(null);
+  const scriptGenerationId = searchParams.get('generation_id');
+  const scriptJobId = searchParams.get('job_id');
 
   useEffect(() => {
     if (session) {
@@ -64,11 +72,25 @@ export function Revise() {
       setRevision(rev);
       setUserPrompt(session.userPrompt || '');
       const speakers = [...new Set(rev.map(r => r.speaker))];
-      setSpeakerMappings(speakers.map((s, i) => ({
-        speaker: s,
-        voice: session.speakerMappings?.find(m => m.speaker === s)?.voice
-          || (voiceList.length > 0 ? voiceList[i % voiceList.length].speaker_id : ttsVoices[i % ttsVoices.length]),
-      })));
+      setSpeakerMappings(prev => {
+        const validVoiceIds = voiceList.length > 0 ? new Set(voiceList.map(voice => voice.speaker_id)) : null;
+        return speakers.map((speaker, index) => {
+          const currentVoice = prev.find(mapping => mapping.speaker === speaker)?.voice;
+          if (currentVoice && (!validVoiceIds || validVoiceIds.has(currentVoice))) {
+            return { speaker, voice: currentVoice };
+          }
+
+          const savedVoice = session.speakerMappings?.find(mapping => mapping.speaker === speaker)?.voice;
+          if (savedVoice && (!validVoiceIds || validVoiceIds.has(savedVoice))) {
+            return { speaker, voice: savedVoice };
+          }
+
+          const fallbackVoice = voiceList.length > 0
+            ? voiceList[index % voiceList.length].speaker_id
+            : ttsVoices[index % ttsVoices.length];
+          return { speaker, voice: fallbackVoice };
+        });
+      });
     }
   }, [session, dispatch, voiceList]);
 
@@ -76,35 +98,103 @@ export function Revise() {
     if (!id) return;
     const sessionId = id;
     let cancelled = false;
+    let refreshTimer: ReturnType<typeof window.setTimeout> | null = null;
 
-    async function loadRevision() {
+    async function loadRevision(): Promise<boolean> {
       setNotFound(false);
       setError(null);
       try {
         const item = await getSession(sessionId);
         let nextSession = mapSessionItem(item);
+        let hasRevision = false;
         try {
           const revisionData = await getRevision(sessionId);
           nextSession = { ...nextSession, revision: mapRevision(revisionData), userPrompt: revisionData.user_prompt ?? undefined };
-        } catch {
-          // The user can create revision data from this page.
+          hasRevision = true;
+        } catch (err) {
+          if (!(err instanceof ApiRequestError && err.status === 404)) {
+            setError(err instanceof Error ? err.message : 'Failed to load revision');
+          }
         }
-        try {
-          const settings = await getTtsSettings(sessionId);
-          nextSession = applyTtsSettings(nextSession, settings);
-          setFormat(settings.format);
-          setEmotionScale([clampTtsParam(settings.emotion_scale, TTS_PARAM_RANGES.emotionScale)]);
-          setSpeechRate([clampTtsParam(settings.speech_rate, TTS_PARAM_RANGES.speechRate)]);
-          setLoudnessRate([clampTtsParam(settings.loudness_rate, TTS_PARAM_RANGES.loudnessRate)]);
-        } catch {
-          // Settings are optional until created.
+
+        if (hasRevision) {
+          try {
+            const settings = await getTtsSettings(sessionId);
+            nextSession = applyTtsSettings(nextSession, settings);
+            setFormat(settings.format);
+            setEmotionScale([clampTtsParam(settings.emotion_scale, TTS_PARAM_RANGES.emotionScale)]);
+            setSpeechRate([clampTtsParam(settings.speech_rate, TTS_PARAM_RANGES.speechRate)]);
+            setLoudnessRate([clampTtsParam(settings.loudness_rate, TTS_PARAM_RANGES.loudnessRate)]);
+          } catch {
+            // Settings are optional until created.
+          }
         }
+
+        let shouldPoll = false;
+        let preparingScript = false;
+
+        if (!hasRevision && nextSession.type === 'text') {
+          preparingScript = nextSession.status === 'pending' || nextSession.status === 'processing';
+
+          if (scriptGenerationId) {
+            try {
+              const preview = await getScriptGenerationPreview(scriptGenerationId);
+              if (!cancelled) {
+                setScriptPreviewItems(preview.items);
+              }
+              if (preview.generation.status_name === 'generating' || preview.generation.status_name === 'pending') {
+                preparingScript = true;
+                shouldPoll = true;
+              } else if (preview.generation.status_name === 'failed') {
+                preparingScript = false;
+                setError(preview.generation.error_message || 'Script generation failed');
+              }
+            } catch (err) {
+              if (!(err instanceof ApiRequestError && err.status === 404)) {
+                setError(err instanceof Error ? err.message : 'Failed to load script preview');
+              }
+            }
+          }
+
+          if (scriptJobId) {
+            try {
+              const job = await getJob(scriptJobId);
+              if (job.status_name === 'failed' || job.status_name === 'canceled') {
+                preparingScript = false;
+                setError(job.error_message || 'Script generation failed');
+              } else if (job.status_name === 'queued' || job.status_name === 'running' || job.status_name === 'completed') {
+                preparingScript = true;
+                shouldPoll = true;
+              }
+            } catch (err) {
+              if (!(err instanceof ApiRequestError && err.status === 404)) {
+                setError(err instanceof Error ? err.message : 'Failed to load script job');
+              }
+            }
+          } else if (preparingScript) {
+            shouldPoll = true;
+          }
+        }
+
+        if (hasRevision && (scriptJobId || scriptGenerationId)) {
+          setSearchParams({}, { replace: true });
+        }
+
         if (!cancelled) {
+          if (hasRevision) {
+            setScriptPreviewItems([]);
+          }
+          setIsPreparingScript(!hasRevision && preparingScript);
           setLoadedSession(nextSession);
           dispatch({ type: 'UPDATE_SESSION', payload: nextSession });
         }
+        return shouldPoll;
       } catch {
-        if (!cancelled) setNotFound(true);
+        if (!cancelled) {
+          setIsPreparingScript(false);
+          setNotFound(true);
+        }
+        return false;
       }
     }
 
@@ -119,12 +209,20 @@ export function Revise() {
       }
     }
 
-    void loadRevision();
+    async function loadAndSchedule() {
+      const shouldKeepPolling = await loadRevision();
+      if (!cancelled && shouldKeepPolling) {
+        refreshTimer = window.setTimeout(loadAndSchedule, 2000);
+      }
+    }
+
+    void loadAndSchedule();
     void loadVoices();
     return () => {
       cancelled = true;
+      if (refreshTimer) window.clearTimeout(refreshTimer);
     };
-  }, [id, dispatch]);
+  }, [id, dispatch, scriptGenerationId, scriptJobId, setSearchParams]);
 
   useEffect(() => {
     return () => {
@@ -148,12 +246,36 @@ export function Revise() {
     if (!id) return;
     setIsRevising(true);
     setError(null);
+    // UI flow: hide the old revision immediately; polling below fills partial results.
+    setRevision([]);
+    if (session) {
+      dispatch({ type: 'UPDATE_SESSION', payload: { ...session, revision: [], userPrompt } });
+    }
     try {
-      const data = await createRevision({ sessionId: id, userPrompt, force: true });
-      const nextRevision = mapRevision(data);
+      let data = await createRevision({ sessionId: id, userPrompt, force: true });
+      let nextRevision = mapRevision(data);
       setRevision(nextRevision);
       if (session) {
         dispatch({ type: 'UPDATE_SESSION', payload: { ...session, revision: nextRevision, userPrompt } });
+      }
+
+      // The revision job writes items incrementally, so polling GET /revisions behaves like a stream.
+      for (let attempt = 0; attempt < 120 && isRevisionGenerating(data.status_name); attempt += 1) {
+        await wait(1500);
+        data = await getRevision(id);
+        nextRevision = mapRevision(data);
+        setRevision(nextRevision);
+        if (session) {
+          dispatch({ type: 'UPDATE_SESSION', payload: { ...session, revision: nextRevision, userPrompt } });
+        }
+      }
+
+      if (data.status_name === 'failed') {
+        throw new Error(data.error_message || 'Failed to revise session');
+      }
+
+      if (isRevisionGenerating(data.status_name)) {
+        throw new Error('Revision is still generating. Please check again later.');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to revise session');
@@ -363,10 +485,19 @@ export function Revise() {
   }, [id, format, emotionScale, speechRate, loudnessRate, speakerMappings, playAudio]);
 
   const handleMappingChange = useCallback((speaker: string, voice: string) => {
-    setSpeakerMappings(prev => prev.map(m => m.speaker === speaker ? { ...m, voice } : m));
+    setSpeakerMappings(prev => {
+      const exists = prev.some(mapping => mapping.speaker === speaker);
+      if (!exists) {
+        return [...prev, { speaker, voice }];
+      }
+      return prev.map(mapping => mapping.speaker === speaker ? { ...mapping, voice } : mapping);
+    });
   }, []);
 
   const speakers = useMemo(() => [...new Set(revision.map(r => r.speaker))], [revision]);
+  const isScriptGenerationRoute = revision.length === 0 && session?.type === 'text' && (isPreparingScript || !!scriptJobId || !!scriptGenerationId);
+  const isWaitingForScript = isScriptGenerationRoute && !error;
+  const shouldShowRevisionControls = !isScriptGenerationRoute;
 
   if (!session && !notFound) {
     return <div className="text-[13px] text-slate-500">Loading revision...</div>;
@@ -393,10 +524,49 @@ export function Revise() {
           <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider">Step 2</span>
         </div>
         <h1 className="text-[22px] font-bold text-slate-900 tracking-tight">Revise</h1>
-        <p className="text-[13px] text-slate-500 mt-0.5">{revision.length} utterances ready for revision</p>
+        <p className="text-[13px] text-slate-500 mt-0.5">
+          {isWaitingForScript
+            ? 'Generating script transcript...'
+            : isRevising
+              ? `${revision.length} revised spans generated...`
+              : `${revision.length} utterances ready for revision`}
+        </p>
       </div>
 
+      {isWaitingForScript && (
+        <div className="bg-white rounded-xl border border-slate-200 p-8 shadow-sm">
+          <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-50 text-indigo-500">
+            <Loader2 className="h-5 w-5 animate-spin" />
+          </div>
+          <div className="text-center">
+            <h3 className="text-[14px] font-bold text-slate-800">Generating script</h3>
+            <p className="mt-1 text-[12px] text-slate-500">
+              {scriptPreviewItems.length > 0 ? `${scriptPreviewItems.length} turns generated...` : 'Preparing the first revision...'}
+            </p>
+          </div>
+
+          {scriptPreviewItems.length > 0 && (
+            <div className="mt-6 space-y-3">
+              {scriptPreviewItems.map((item) => (
+                <div key={item.seq} className="rounded-lg border border-slate-100 bg-slate-50/70 px-4 py-3">
+                  <div className="mb-1.5 flex items-center gap-2">
+                    <span className="text-[11px] font-bold text-indigo-500">{item.speaker}</span>
+                    {item.cue && (
+                      <span className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                        [{item.cue}]
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[13px] leading-relaxed text-slate-700">{item.text}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* AI Revise */}
+      {shouldShowRevisionControls && (
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
         <div className="flex items-center gap-2 mb-3">
           <Wand2 className="w-4 h-4 text-indigo-500" />
@@ -420,8 +590,10 @@ export function Revise() {
           </Button>
         </div>
       </div>
+      )}
 
       {/* TTS Settings */}
+      {shouldShowRevisionControls && (
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -433,7 +605,7 @@ export function Revise() {
 
         <Button
           onClick={handleSynthesize}
-          disabled={isSynthesizing}
+          disabled={isSynthesizing || isRevising}
           className="w-full bg-indigo-500 hover:bg-indigo-600 text-white h-10 text-[12px] font-semibold mb-5 disabled:opacity-60"
         >
           {isSynthesizing ? (
@@ -467,6 +639,7 @@ export function Revise() {
 
         <SpeakerSelect speakers={speakers} mappings={speakerMappings} onMappingChange={handleMappingChange} voices={voiceList} />
       </div>
+      )}
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
@@ -475,6 +648,7 @@ export function Revise() {
       )}
 
       {/* Revision Cards */}
+      {shouldShowRevisionControls && (
       <div>
         {revision.length > 0 ? revision.map(item => (
           <RevisionCard
@@ -489,16 +663,28 @@ export function Revise() {
           />
         )) : (
           <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
-            <p className="text-[13px] text-slate-400">No revision data available.</p>
+            {isRevising ? (
+              <div className="flex flex-col items-center gap-3">
+                <Loader2 className="h-5 w-5 animate-spin text-indigo-500" />
+                <p className="text-[13px] text-slate-500">Revising transcript...</p>
+              </div>
+            ) : (
+              <p className="text-[13px] text-slate-400">No revision data available.</p>
+            )}
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function isRevisionGenerating(statusName: string): boolean {
+  return statusName === 'pending' || statusName === 'generating';
 }
 
 function isSynthesisRunning(synthesis: TtsSynthesisResponse): boolean {

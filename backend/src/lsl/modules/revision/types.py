@@ -24,7 +24,7 @@ def status_code_to_name(status: int) -> str:
 
 @dataclass(slots=True)
 class GeneratedRevisionItem:
-    task_id: str
+    transcript_id: str
     source_seq_start: int
     source_seq_end: int
     source_seq_count: int
@@ -50,7 +50,7 @@ class RevisionPromptUtterance:
 
 @dataclass(frozen=True, slots=True)
 class RevisionGenerateRequest:
-    task_id: str
+    transcript_id: str
     user_prompt: str | None
     utterances: list[RevisionPromptUtterance]
 

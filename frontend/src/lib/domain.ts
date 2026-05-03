@@ -2,7 +2,7 @@ import type {
   RevisionItemResponse,
   RevisionResponse,
   SessionItem,
-  TaskTranscriptData,
+  TranscriptData,
   TtsSettingsResponse,
   TtsSynthesisResponse,
 } from '@/types/api';
@@ -17,6 +17,16 @@ function normalizeStatus(statusName?: string | null): SessionStatus {
   return status ? 'processing' : 'completed';
 }
 
+function inferSessionStatus(item: SessionItem): SessionStatus {
+  if (item.transcript?.status_name) {
+    return normalizeStatus(item.transcript.status_name);
+  }
+  if (item.session.current_transcript_id) {
+    return 'processing';
+  }
+  return 'pending';
+}
+
 function normalizeSeconds(value: number): number {
   return value > 300 ? value / 1000 : value;
 }
@@ -27,15 +37,15 @@ export function mapSessionItem(item: SessionItem): Session {
     id: entity.session_id,
     title: entity.title,
     description: entity.description ?? item.asset?.filename ?? undefined,
-    duration: item.task?.duration_sec ?? undefined,
-    status: normalizeStatus(item.task?.status_name),
+    duration: item.transcript?.duration_sec ?? undefined,
+    status: inferSessionStatus(item),
     type: entity.f_type === 2 ? 'text' : 'audio',
     createdAt: entity.created_at,
-    audioUrl: item.asset?.asset_url ?? item.task?.audio_url ?? undefined,
+    audioUrl: item.asset?.asset_url ?? undefined,
   };
 }
 
-export function mapTranscript(data: TaskTranscriptData): TranscriptItem[] {
+export function mapTranscript(data: TranscriptData): TranscriptItem[] {
   return data.utterances.map((utterance) => ({
     id: String(utterance.seq),
     speaker: utterance.speaker || `user-${(utterance.seq % 2) + 1}`,

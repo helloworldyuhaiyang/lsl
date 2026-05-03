@@ -10,15 +10,15 @@ from lsl.core.sql_types import UUIDHexString
 
 
 class SessionModel(Base):
-    __tablename__ = "sessions"
+    __tablename__ = "session_sessions"
 
     session_id: Mapped[str] = mapped_column(UUIDHexString(), primary_key=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
-    description: Mapped[str | None] = mapped_column("f_desc", Text, nullable=True)
-    language: Mapped[str | None] = mapped_column("f_language", String(16), nullable=True)
-    f_type: Mapped[int] = mapped_column("f_type", SmallInteger, nullable=False, server_default=text("1"))
+    description: Mapped[str | None] = mapped_column("x_description", Text, nullable=True)
+    language: Mapped[str | None] = mapped_column("x_language", String(16), nullable=True)
+    f_type: Mapped[int] = mapped_column("x_type", SmallInteger, nullable=False, server_default=text("1"))
     asset_object_key: Mapped[str | None] = mapped_column(Text, nullable=True)
-    current_task_id: Mapped[str | None] = mapped_column(UUIDHexString(), nullable=True)
+    current_transcript_id: Mapped[str | None] = mapped_column(UUIDHexString(), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

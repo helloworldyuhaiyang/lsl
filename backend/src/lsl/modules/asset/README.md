@@ -85,7 +85,7 @@ DB_POOL_TIMEOUT=30
 
 ```sql
 -- 资产主表：保存 object_key 与文件元数据，不保存完整访问域名
-CREATE TABLE IF NOT EXISTS public.assets (
+CREATE TABLE IF NOT EXISTS public.asset_assets (
     id                BIGSERIAL PRIMARY KEY,                      -- 内部自增主键
     object_key        TEXT NOT NULL UNIQUE,                       -- 对象存储路径（业务唯一键）
     category          VARCHAR(64) NOT NULL,                       -- 业务分类（conversation/listening 等）
@@ -101,12 +101,12 @@ CREATE TABLE IF NOT EXISTS public.assets (
 );
 
 -- 按业务分类/实体查询最近上传文件
-CREATE INDEX IF NOT EXISTS idx_assets_category_entity_created_at
-    ON public.assets (category, entity_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_asset_assets_category_entity_created_at
+    ON public.asset_assets (category, entity_id, created_at DESC);
 
 -- 按创建时间倒序分页
-CREATE INDEX IF NOT EXISTS idx_assets_created_at
-    ON public.assets (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_asset_assets_created_at
+    ON public.asset_assets (created_at DESC);
 
 -- 统一更新时间函数：每次 UPDATE 自动刷新 updated_at
 CREATE OR REPLACE FUNCTION public.set_updated_at()
@@ -118,11 +118,11 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- 幂等创建触发器前先删除旧触发器
-DROP TRIGGER IF EXISTS trg_assets_set_updated_at ON public.assets;
+DROP TRIGGER IF EXISTS trg_asset_assets_set_updated_at ON public.asset_assets;
 
 -- 更新前触发：自动维护 updated_at 字段
-CREATE TRIGGER trg_assets_set_updated_at
-BEFORE UPDATE ON public.assets
+CREATE TRIGGER trg_asset_assets_set_updated_at
+BEFORE UPDATE ON public.asset_assets
 FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();
 ```

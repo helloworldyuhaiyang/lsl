@@ -10,12 +10,12 @@ from lsl.core.sql_types import JSONString, UUIDHexString
 
 
 class JobModel(Base):
-    __tablename__ = "jobs"
+    __tablename__ = "job_jobs"
     __table_args__ = (
-        Index("idx_jobs_status_next_run_at", "x_status", "next_run_at"),
-        Index("idx_jobs_type_status_next_run_at", "job_type", "x_status", "next_run_at"),
-        Index("idx_jobs_entity", "entity_type", "entity_id"),
-        Index("idx_jobs_created_at", "created_at"),
+        Index("idx_job_jobs_status_next_run_at", "x_status", "next_run_at"),
+        Index("idx_job_jobs_type_status_next_run_at", "job_type", "x_status", "next_run_at"),
+        Index("idx_job_jobs_entity", "entity_type", "entity_id"),
+        Index("idx_job_jobs_created_at", "created_at"),
     )
 
     job_id: Mapped[str] = mapped_column(UUIDHexString(), primary_key=True)

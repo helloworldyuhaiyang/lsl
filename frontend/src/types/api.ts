@@ -44,30 +44,62 @@ export interface AssetListResponse {
   items: AssetListItem[]
 }
 
-export interface TaskItem {
-  task_id: string
-  object_key: string
-  audio_url?: string | null
+export interface JobItem {
+  job_id: string
+  job_type: string
+  status: number
+  status_name: string
+  entity_type?: string | null
+  entity_id?: string | null
+  progress: number
+  attempts: number
+  error_code?: string | null
+  error_message?: string | null
+  created_at?: string | null
+  updated_at?: string | null
+}
+
+export interface TranscriptItemResponse {
+  transcript_id: string
+  source_type: string
+  source_entity_id?: string | null
   duration_ms?: number | null
   duration_sec?: number | null
   status: number
   status_name: string
   language?: string | null
-  provider?: string | null
   error_code?: string | null
   error_message?: string | null
   created_at: string
   updated_at: string
 }
 
-export interface CreateTaskRequest {
+export interface CreateAsrRecognitionRequest {
   objectKey: string
   audioUrl: string
   language?: string
 }
 
-export interface TaskListResponse {
-  items: TaskItem[]
+export interface AsrRecognitionResponse {
+  recognition_id: string
+  transcript_id: string
+  job_id?: string | null
+  object_key: string
+  audio_url?: string | null
+  language?: string | null
+  provider?: string | null
+  status: number
+  status_name: string
+  error_code?: string | null
+  error_message?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateAsrRecognitionResponse {
+  recognition: AsrRecognitionResponse
+  transcript: TranscriptItemResponse
+  job: JobItem
 }
 
 export interface SessionEntity {
@@ -77,7 +109,7 @@ export interface SessionEntity {
   language?: string | null
   f_type: number
   asset_object_key?: string | null
-  current_task_id?: string | null
+  current_transcript_id?: string | null
   created_at: string
   updated_at: string
 }
@@ -85,7 +117,7 @@ export interface SessionEntity {
 export interface SessionItem {
   session: SessionEntity
   asset?: AssetListItem | null
-  task?: TaskItem | null
+  transcript?: TranscriptItemResponse | null
 }
 
 export interface SessionListResponse {
@@ -98,7 +130,7 @@ export interface CreateSessionRequest {
   language?: string
   fType?: 1 | 2
   assetObjectKey?: string
-  currentTaskId?: string
+  currentTranscriptId?: string
 }
 
 export interface GenerateScriptSessionRequest {
@@ -115,7 +147,37 @@ export interface GenerateScriptSessionRequest {
 
 export interface GenerateScriptSessionResponse {
   session: SessionItem
-  revision: RevisionResponse
+  generation: ScriptGenerationResponse
+  job: JobItem
+  revision?: RevisionResponse | null
+}
+
+export interface ScriptGenerationResponse {
+  generation_id: string
+  session_id: string
+  transcript_id?: string | null
+  job_id?: string | null
+  provider: string
+  title: string
+  prompt: string
+  status: number
+  status_name: string
+  error_code?: string | null
+  error_message?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ScriptGenerationPreviewItemResponse {
+  seq: number
+  speaker: string
+  cue: string
+  text: string
+}
+
+export interface ScriptGenerationPreviewResponse {
+  generation: ScriptGenerationResponse
+  items: ScriptGenerationPreviewItemResponse[]
 }
 
 export interface CreateRevisionRequest {
@@ -131,7 +193,7 @@ export interface UpdateRevisionItemRequest {
 export interface RevisionItemResponse {
   item_id: string
   revision_id: string
-  task_id: string
+  transcript_id: string
   source_seq_start: number
   source_seq_end: number
   source_seq_count: number
@@ -152,7 +214,8 @@ export interface RevisionItemResponse {
 export interface RevisionResponse {
   revision_id: string
   session_id: string
-  task_id: string
+  transcript_id: string
+  job_id?: string | null
   user_prompt?: string | null
   status: number
   status_name: string
@@ -164,7 +227,7 @@ export interface RevisionResponse {
   items: RevisionItemResponse[]
 }
 
-export interface TaskTranscriptUtterance {
+export interface TranscriptUtteranceResponse {
   seq: number
   text: string
   speaker?: string | null
@@ -173,11 +236,16 @@ export interface TaskTranscriptUtterance {
   additions: Record<string, unknown>
 }
 
-export interface TaskTranscriptData {
-  task_id: string
+export interface TranscriptData {
+  transcript_id: string
+  source_type: string
+  source_entity_id?: string | null
+  status: number
+  status_name: string
   duration_ms?: number | null
+  duration_sec?: number | null
   full_text?: string | null
-  utterances: TaskTranscriptUtterance[]
+  utterances: TranscriptUtteranceResponse[]
   raw_result?: Record<string, unknown> | null
 }
 
@@ -269,4 +337,9 @@ export interface TtsSynthesisResponse {
   created_at: string
   updated_at: string
   items: TtsSynthesisItemResponse[]
+}
+
+export interface CreateTtsSynthesisResponse {
+  synthesis: TtsSynthesisResponse
+  job?: JobItem | null
 }

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import logging
-import uuid
-from concurrent.futures import ThreadPoolExecutor
-from threading import Lock
 
+from lsl.modules.job.service import JobService
+from lsl.modules.job.types import JobData, JobRunResult, JobStatus
 from lsl.modules.revision.model import UtterancesRevisionItemModel, UtterancesRevisionModel
 from lsl.modules.revision.repo import RevisionRepository
 from lsl.modules.revision.schema import RevisionData, RevisionItemData, UpdateRevisionItemRequest
@@ -17,12 +16,10 @@ from lsl.modules.revision.types import (
     RevisionSuggestion,
 )
 from lsl.modules.session.service import SessionService
-from lsl.modules.task.schema import TaskTranscriptUtterance
-from lsl.modules.task.service import TaskService
+from lsl.modules.transcript.schema import TranscriptUtteranceData
+from lsl.modules.transcript.service import TranscriptService
 
 logger = logging.getLogger(__name__)
-
-_REVISION_BACKGROUND_MAX_WORKERS = 2
 
 
 class RevisionService:
@@ -32,21 +29,17 @@ class RevisionService:
         repository: RevisionRepository,
         generator: RevisionGenerator,
         session_service: SessionService,
-        task_service: TaskService,
+        transcript_service: TranscriptService,
+        job_service: JobService | None = None,
     ) -> None:
         self._repository = repository
         self._generator = generator
         self._session_service = session_service
-        self._task_service = task_service
-        self._background_executor = ThreadPoolExecutor(
-            max_workers=_REVISION_BACKGROUND_MAX_WORKERS,
-            thread_name_prefix="revision-job",
-        )
-        self._job_tokens: dict[str, str] = {}
-        self._job_tokens_lock = Lock()
+        self._transcript_service = transcript_service
+        self._job_service = job_service
 
     def shutdown(self) -> None:
-        self._background_executor.shutdown(wait=False, cancel_futures=False)
+        return None
 
     def get_revision(self, *, session_id: str) -> RevisionData:
         model = self._repository.get_revision_by_session_id(session_id)
@@ -62,15 +55,15 @@ class RevisionService:
         force: bool = False,
     ) -> RevisionData:
         session_data = self._session_service.get_session(session_id)
-        task_id = session_data.session.current_task_id
-        if task_id is None:
-            raise ValueError("session current_task_id is missing")
+        transcript_id = session_data.session.current_transcript_id
+        if transcript_id is None:
+            raise ValueError("session current_transcript_id is missing")
 
         existing = self._repository.get_revision_by_session_id(session_id)
         if (
             existing is not None
             and not force
-            and str(existing.task_id) == task_id
+            and str(existing.transcript_id) == transcript_id
             and (existing.user_prompt or None) == user_prompt
         ):
             if int(existing.status) == int(RevisionStatus.COMPLETED) and len(existing.items) > 0:
@@ -78,42 +71,45 @@ class RevisionService:
             if int(existing.status) == int(RevisionStatus.GENERATING):
                 return self._to_revision_data(existing)
 
-        transcript = self._task_service.get_transcript(task_id=task_id, include_raw=False)
-        initial_items = self._build_initial_revision_items(task_id=task_id, utterances=transcript.utterances)
+        if self._job_service is None:
+            raise RuntimeError("Job service is not initialized")
+
+        # Revision job flow 2/5: store an empty generating revision first.
+        # This hides old cards while the job progressively fills revision_items.
         model = self._repository.save_revision(
             session_id=session_id,
-            task_id=task_id,
+            transcript_id=transcript_id,
             user_prompt=user_prompt,
             status=int(RevisionStatus.GENERATING),
-            items=initial_items,
+            items=[],
             preserve_existing_drafts=False,
             error_code=None,
             error_message=None,
         )
+        revision = self._to_revision_data(model)
 
-        job_token = self._register_job(session_id)
-        try:
-            self._background_executor.submit(
-                self._run_revision_job,
-                session_id,
-                task_id,
-                user_prompt,
-                transcript.utterances,
-                job_token,
-            )
-        except Exception as exc:
-            self._clear_job(session_id=session_id, job_token=job_token)
-            self._repository.save_revision(
-                session_id=session_id,
-                task_id=task_id,
-                user_prompt=user_prompt,
-                status=int(RevisionStatus.FAILED),
-                items=initial_items,
-                preserve_existing_drafts=False,
-                error_code="revision_job_schedule_failed",
-                error_message=str(exc),
-            )
-            raise RuntimeError(f"Failed to schedule revision job: {exc}") from exc
+        # Revision job flow 3/5: create a generic job. The job runner later
+        # dispatches it to RevisionJobHandler by job_type.
+        job = self._job_service.create_job(
+            job_type=RevisionJobHandler.job_type,
+            entity_type="revision",
+            entity_id=revision.revision_id,
+            payload={
+                "session_id": session_id,
+                "transcript_id": transcript_id,
+                "revision_id": revision.revision_id,
+            },
+        )
+
+        # The revision row points to the active job so stale jobs can be ignored.
+        model = self._repository.set_job_id(session_id=session_id, job_id=job.job_id)
+        logger.info(
+            "Revision generation job created session_id=%s transcript_id=%s revision_id=%s job_id=%s",
+            session_id,
+            transcript_id,
+            revision.revision_id,
+            job.job_id,
+        )
 
         return self._to_revision_data(model)
 
@@ -121,20 +117,20 @@ class RevisionService:
         self,
         *,
         session_id: str,
-        task_id: str,
+        transcript_id: str,
         user_prompt: str | None,
         items: list[GeneratedRevisionItem],
     ) -> RevisionData:
         session_data = self._session_service.get_session(session_id, auto_refresh=False)
-        current_task_id = session_data.session.current_task_id
-        if current_task_id is None:
-            raise ValueError("session current_task_id is missing")
-        if str(current_task_id) != str(task_id):
-            raise ValueError("session current_task_id does not match task_id")
+        current_transcript_id = session_data.session.current_transcript_id
+        if current_transcript_id is None:
+            raise ValueError("session current_transcript_id is missing")
+        if str(current_transcript_id) != str(transcript_id):
+            raise ValueError("session current_transcript_id does not match transcript_id")
 
         model = self._repository.save_revision(
             session_id=session_id,
-            task_id=task_id,
+            transcript_id=transcript_id,
             user_prompt=user_prompt,
             status=int(RevisionStatus.COMPLETED),
             items=items,
@@ -142,6 +138,7 @@ class RevisionService:
             error_code=None,
             error_message=None,
         )
+        model = self._repository.set_job_id(session_id=session_id, job_id=None)
         return self._to_revision_data(model)
 
     def update_revision_item(self, *, item_id: str, payload: UpdateRevisionItemRequest) -> RevisionItemData:
@@ -154,32 +151,50 @@ class RevisionService:
             raise ValueError("revision item not found")
         return self._to_revision_item_data(item)
 
-    def _run_revision_job(
+    def run_generation_job(
         self,
+        *,
         session_id: str,
-        task_id: str,
-        user_prompt: str | None,
-        utterances: list[TaskTranscriptUtterance],
-        job_token: str,
-    ) -> None:
-        current_items = self._build_initial_revision_items(task_id=task_id, utterances=utterances)
+        transcript_id: str,
+        job_id: str,
+    ) -> JobRunResult:
+        # Revision job flow 5/5: a claimed revision_generation job runs here.
+        revision = self._repository.get_revision_by_session_id(session_id)
+        if revision is None:
+            return JobRunResult(status=JobStatus.FAILED, error_code="REVISION_NOT_FOUND", error_message="revision not found")
+        # If another POST /revisions replaced job_id, this job must not write stale output.
+        if str(revision.job_id or "") != job_id:
+            logger.info(
+                "Revision generation job canceled because it is superseded session_id=%s transcript_id=%s job_id=%s active_job_id=%s",
+                session_id,
+                transcript_id,
+                job_id,
+                revision.job_id,
+            )
+            return JobRunResult(status=JobStatus.CANCELED, error_message="revision job superseded")
+        user_prompt = revision.user_prompt
+        transcript = self._transcript_service.get_transcript(transcript_id=transcript_id, include_raw=False)
+        utterances = transcript.utterances
+        current_items = self._generated_items_from_model(revision)
         prompt_utterances = self._build_prompt_utterances(utterances)
         utterance_by_seq = {int(item.seq): item for item in utterances}
         req = RevisionGenerateRequest(
-            task_id=task_id,
+            transcript_id=transcript_id,
             user_prompt=user_prompt,
             utterances=prompt_utterances,
         )
 
         try:
+            # The generator yields segment batches; every batch is saved so GET /revisions
+            # can show partial results while the job is still generating.
             for segment_suggestions in self._generator.generate_progressively(req):
-                if not self._is_active_job(session_id=session_id, job_token=job_token):
-                    logger.info("Revision job superseded session_id=%s task_id=%s", session_id, task_id)
-                    return
+                if not self._is_active_revision_job(session_id=session_id, job_id=job_id):
+                    logger.info("Revision job superseded session_id=%s transcript_id=%s job_id=%s", session_id, transcript_id, job_id)
+                    return JobRunResult(status=JobStatus.CANCELED, error_message="revision job superseded")
 
                 generated_segment_items = [
                     self._build_generated_revision_item(
-                        task_id=task_id,
+                        transcript_id=transcript_id,
                         utterance_by_seq=utterance_by_seq,
                         suggestion=suggestion,
                     )
@@ -192,45 +207,49 @@ class RevisionService:
 
                 self._repository.save_revision(
                     session_id=session_id,
-                    task_id=task_id,
+                    transcript_id=transcript_id,
                     user_prompt=user_prompt,
                     status=int(RevisionStatus.GENERATING),
                     items=current_items,
+                    preserve_existing_drafts=False,
                     error_code=None,
                     error_message=None,
                 )
 
-            if not self._is_active_job(session_id=session_id, job_token=job_token):
-                logger.info("Revision job completion skipped after superseded session_id=%s task_id=%s", session_id, task_id)
-                return
+            # Returning COMPLETED lets JobService mark job_jobs.status as completed.
+            if not self._is_active_revision_job(session_id=session_id, job_id=job_id):
+                logger.info("Revision job completion skipped after superseded session_id=%s transcript_id=%s job_id=%s", session_id, transcript_id, job_id)
+                return JobRunResult(status=JobStatus.CANCELED, error_message="revision job superseded")
 
             self._repository.save_revision(
                 session_id=session_id,
-                task_id=task_id,
+                transcript_id=transcript_id,
                 user_prompt=user_prompt,
                 status=int(RevisionStatus.COMPLETED),
                 items=current_items,
+                preserve_existing_drafts=False,
                 error_code=None,
                 error_message=None,
             )
+            return JobRunResult(status=JobStatus.COMPLETED, progress=100)
         except Exception as exc:
-            logger.exception("Revision background job failed session_id=%s task_id=%s", session_id, task_id)
-            if self._is_active_job(session_id=session_id, job_token=job_token):
+            logger.exception("Revision generation job failed session_id=%s transcript_id=%s job_id=%s", session_id, transcript_id, job_id)
+            if self._is_active_revision_job(session_id=session_id, job_id=job_id):
                 self._repository.save_revision(
                     session_id=session_id,
-                    task_id=task_id,
+                    transcript_id=transcript_id,
                     user_prompt=user_prompt,
                     status=int(RevisionStatus.FAILED),
                     items=current_items,
+                    preserve_existing_drafts=False,
                     error_code="revision_generation_failed",
                     error_message=str(exc),
                 )
-        finally:
-            self._clear_job(session_id=session_id, job_token=job_token)
+            return JobRunResult(status=JobStatus.FAILED, error_code="REVISION_GENERATION_FAILED", error_message=str(exc))
 
     def _build_prompt_utterances(
         self,
-        utterances: list[TaskTranscriptUtterance],
+        utterances: list[TranscriptUtteranceData],
     ) -> list[RevisionPromptUtterance]:
         return [
             RevisionPromptUtterance(
@@ -242,36 +261,11 @@ class RevisionService:
             for item in utterances
         ]
 
-    def _build_initial_revision_items(
-        self,
-        *,
-        task_id: str,
-        utterances: list[TaskTranscriptUtterance],
-    ) -> list[GeneratedRevisionItem]:
-        return [
-            GeneratedRevisionItem(
-                task_id=task_id,
-                source_seq_start=int(item.seq),
-                source_seq_end=int(item.seq),
-                source_seq_count=1,
-                source_seqs=[int(item.seq)],
-                speaker=item.speaker,
-                start_time=int(item.start_time),
-                end_time=int(item.end_time),
-                original_text=item.text,
-                suggested_text=item.text,
-                score=0,
-                issue_tags="",
-                explanations="",
-            )
-            for item in utterances
-        ]
-
     @staticmethod
     def _build_generated_revision_item(
         *,
-        task_id: str,
-        utterance_by_seq: dict[int, TaskTranscriptUtterance],
+        transcript_id: str,
+        utterance_by_seq: dict[int, TranscriptUtteranceData],
         suggestion: RevisionSuggestion,
     ) -> GeneratedRevisionItem:
         source_seqs = [int(seq) for seq in suggestion.source_seqs]
@@ -286,7 +280,7 @@ class RevisionService:
         ordered_utterances.sort(key=lambda item: int(item.seq))
         speaker = ordered_utterances[0].speaker
         return GeneratedRevisionItem(
-            task_id=task_id,
+            transcript_id=transcript_id,
             source_seq_start=source_seqs[0],
             source_seq_end=source_seqs[-1],
             source_seq_count=len(source_seqs),
@@ -348,20 +342,31 @@ class RevisionService:
                 filtered[key] = value
         return filtered
 
-    def _register_job(self, session_id: str) -> str:
-        job_token = uuid.uuid4().hex
-        with self._job_tokens_lock:
-            self._job_tokens[session_id] = job_token
-        return job_token
+    def _is_active_revision_job(self, *, session_id: str, job_id: str) -> bool:
+        model = self._repository.get_revision_by_session_id(session_id)
+        return model is not None and str(model.job_id or "") == job_id
 
-    def _is_active_job(self, *, session_id: str, job_token: str) -> bool:
-        with self._job_tokens_lock:
-            return self._job_tokens.get(session_id) == job_token
-
-    def _clear_job(self, *, session_id: str, job_token: str) -> None:
-        with self._job_tokens_lock:
-            if self._job_tokens.get(session_id) == job_token:
-                self._job_tokens.pop(session_id, None)
+    @staticmethod
+    def _generated_items_from_model(model: UtterancesRevisionModel) -> list[GeneratedRevisionItem]:
+        return [
+            GeneratedRevisionItem(
+                transcript_id=str(item.transcript_id),
+                source_seq_start=int(item.source_seq_start),
+                source_seq_end=int(item.source_seq_end),
+                source_seq_count=int(item.source_seq_count),
+                source_seqs=[int(seq) for seq in (item.source_seqs or [])],
+                speaker=item.speaker,
+                start_time=int(item.start_time),
+                end_time=int(item.end_time),
+                original_text=item.original_text,
+                suggested_text=item.suggested_text,
+                draft_text=item.draft_text,
+                score=int(item.score),
+                issue_tags=item.issue_tags,
+                explanations=item.explanations,
+            )
+            for item in model.items
+        ]
 
     def _to_revision_data(self, model: UtterancesRevisionModel) -> RevisionData:
         items = [
@@ -377,7 +382,8 @@ class RevisionService:
         return RevisionData.build(
             revision_id=str(model.revision_id),
             session_id=str(model.session_id),
-            task_id=str(model.task_id),
+            transcript_id=str(model.transcript_id),
+            job_id=str(model.job_id) if model.job_id is not None else None,
             user_prompt=model.user_prompt,
             status=int(model.status),
             error_code=model.error_code,
@@ -393,7 +399,7 @@ class RevisionService:
         return RevisionItemData(
             item_id=str(model.item_id),
             revision_id=str(model.revision_id),
-            task_id=str(model.task_id),
+            transcript_id=str(model.transcript_id),
             source_seq_start=int(model.source_seq_start),
             source_seq_end=int(model.source_seq_end),
             source_seq_count=int(model.source_seq_count),
@@ -409,4 +415,27 @@ class RevisionService:
             explanations=model.explanations,
             created_at=model.created_at,
             updated_at=model.updated_at,
+        )
+
+
+class RevisionJobHandler:
+    job_type = "revision_generation"
+
+    def __init__(self, *, revision_service: RevisionService) -> None:
+        self._revision_service = revision_service
+
+    def run(self, job: JobData) -> JobRunResult:
+        # JobService calls this handler for jobs whose job_type is revision_generation.
+        session_id = str(job.payload.get("session_id") or "").strip()
+        transcript_id = str(job.payload.get("transcript_id") or "").strip()
+        if not session_id or not transcript_id:
+            return JobRunResult(
+                status=JobStatus.FAILED,
+                error_code="MISSING_REVISION_JOB_PAYLOAD",
+                error_message="session_id and transcript_id are required",
+            )
+        return self._revision_service.run_generation_job(
+            session_id=session_id,
+            transcript_id=transcript_id,
+            job_id=job.job_id,
         )

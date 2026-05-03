@@ -24,7 +24,7 @@ def _build_settings() -> Settings:
 def test_generate_normalizes_llm_response(monkeypatch) -> None:
     generator = LLMRevisionGenerator(_build_settings())
     req = RevisionGenerateRequest(
-        task_id="task-1",
+        transcript_id="task-1",
         user_prompt="请改得更自然一点",
         utterances=[
             RevisionPromptUtterance(
@@ -43,14 +43,14 @@ def test_generate_normalizes_llm_response(monkeypatch) -> None:
     monkeypatch.setattr(
         generator,
         "_plan_segments",
-        lambda *, task_id, utterances, user_prompt: [
+        lambda *, transcript_id, utterances, user_prompt: [
             RevisionSegment(segment_index=1, start_seq=1, end_seq=2, title="课堂反馈", summary="两句连续表达")
         ],
     )
     monkeypatch.setattr(
         generator,
         "_request_chat_completion",
-        lambda *, task_id, request_name, messages: """
+        lambda *, transcript_id, request_name, messages: """
 ```json
 {
   "items": [
@@ -109,7 +109,7 @@ def test_get_client_ignores_proxy_env(monkeypatch) -> None:
 def test_generate_includes_context_around_target_segment(monkeypatch) -> None:
     generator = LLMRevisionGenerator(_build_settings())
     req = RevisionGenerateRequest(
-        task_id="task-2",
+        transcript_id="task-2",
         user_prompt=None,
         utterances=[
             RevisionPromptUtterance(utterance_seq=0, speaker="student", text="hello"),
@@ -123,12 +123,12 @@ def test_generate_includes_context_around_target_segment(monkeypatch) -> None:
     monkeypatch.setattr(
         generator,
         "_plan_segments",
-        lambda *, task_id, utterances, user_prompt: [
+        lambda *, transcript_id, utterances, user_prompt: [
             RevisionSegment(segment_index=1, start_seq=1, end_seq=2, title="学习反馈", summary="用户表达看法")
         ],
     )
 
-    def fake_request_chat_completion(*, task_id, request_name, messages):
+    def fake_request_chat_completion(*, transcript_id, request_name, messages):
         if request_name.startswith("segment_revision"):
             user_message = next(item for item in messages if item["role"] == "user")
             content = user_message["content"]
@@ -167,7 +167,7 @@ def test_append_debug_dump_writes_request_and_response(tmp_path) -> None:
         )
     )
     messages = generator._build_segment_plan_messages(
-        task_id="task-debug",
+        transcript_id="task-debug",
         utterances=[
             RevisionPromptUtterance(
                 utterance_seq=0,
@@ -179,7 +179,7 @@ def test_append_debug_dump_writes_request_and_response(tmp_path) -> None:
     )
 
     generator._append_debug_dump(
-        task_id="task-debug",
+        transcript_id="task-debug",
         request_name="segment_plan",
         messages=messages,
         started_at=datetime(2026, 3, 8, 10, 0, tzinfo=timezone.utc),
@@ -192,7 +192,7 @@ def test_append_debug_dump_writes_request_and_response(tmp_path) -> None:
 
     dump_text = debug_file.read_text(encoding="utf-8")
     assert "request_name: segment_plan" in dump_text
-    assert "task_id: task-debug" in dump_text
+    assert "transcript_id: task-debug" in dump_text
     assert '"role": "system"' in dump_text
     assert '"role": "user"' in dump_text
     assert '{"segments":[]}' in dump_text

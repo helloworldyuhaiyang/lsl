@@ -14,4 +14,4 @@ class SessionListFilters:
 @dataclass(frozen=True, slots=True)
 class SessionLinks:
     asset_object_key: str | None = None
-    current_task_id: str | None = None
+    current_transcript_id: str | None = None

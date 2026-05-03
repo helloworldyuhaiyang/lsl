@@ -46,7 +46,7 @@ class RevisionRepository:
         self,
         *,
         session_id: str,
-        task_id: str,
+        transcript_id: str,
         user_prompt: str | None,
         status: int,
         items: list[GeneratedRevisionItem],
@@ -55,7 +55,7 @@ class RevisionRepository:
         error_message: str | None = None,
     ) -> UtterancesRevisionModel:
         normalized_session_id = self._require_uuid(session_id, field_name="session_id")
-        normalized_task_id = self._require_uuid(task_id, field_name="task_id")
+        normalized_transcript_id = self._require_uuid(transcript_id, field_name="transcript_id")
         overlapping_source_seqs = self._find_overlapping_source_seqs(items)
         if overlapping_source_seqs:
             joined = ", ".join(str(seq) for seq in overlapping_source_seqs)
@@ -76,11 +76,11 @@ class RevisionRepository:
                     model = UtterancesRevisionModel(
                         revision_id=uuid.uuid4().hex,
                         session_id=normalized_session_id,
-                        task_id=normalized_task_id,
+                        transcript_id=normalized_transcript_id,
                     )
                     db.add(model)
 
-                model.task_id = normalized_task_id
+                model.transcript_id = normalized_transcript_id
                 model.user_prompt = user_prompt
                 model.status = int(status)
                 model.error_code = error_code
@@ -114,7 +114,7 @@ class RevisionRepository:
                     if model_item is None:
                         model_item = UtterancesRevisionItemModel(
                             item_id=uuid.uuid4().hex,
-                            task_id=self._require_uuid(item.task_id, field_name="task_id"),
+                            transcript_id=self._require_uuid(item.transcript_id, field_name="transcript_id"),
                             source_seq_start=int(item.source_seq_start),
                             source_seq_end=int(item.source_seq_end),
                             source_seq_count=int(item.source_seq_count),
@@ -132,7 +132,7 @@ class RevisionRepository:
                         model.items.append(model_item)
                         continue
 
-                    model_item.task_id = self._require_uuid(item.task_id, field_name="task_id")
+                    model_item.transcript_id = self._require_uuid(item.transcript_id, field_name="transcript_id")
                     model_item.source_seq_start = int(item.source_seq_start)
                     model_item.source_seq_end = int(item.source_seq_end)
                     model_item.source_seq_count = int(item.source_seq_count)
@@ -157,6 +157,28 @@ class RevisionRepository:
                 return model
         except SQLAlchemyError as exc:  # pragma: no cover
             raise RuntimeError(f"Failed to save revision: {exc}") from exc
+
+    def set_job_id(self, *, session_id: str, job_id: str | None) -> UtterancesRevisionModel:
+        normalized_session_id = self._require_uuid(session_id, field_name="session_id")
+        normalized_job_id = self._require_uuid(job_id, field_name="job_id") if job_id is not None else None
+        try:
+            with self._session_scope() as db:
+                stmt = (
+                    select(UtterancesRevisionModel)
+                    .options(selectinload(UtterancesRevisionModel.items))
+                    .where(UtterancesRevisionModel.session_id == normalized_session_id)
+                    .limit(1)
+                )
+                model = db.execute(stmt).scalar_one_or_none()
+                if model is None:
+                    raise RuntimeError("Revision not found")
+                model.job_id = normalized_job_id
+                db.commit()
+                db.refresh(model)
+                _ = list(model.items)
+                return model
+        except SQLAlchemyError as exc:  # pragma: no cover
+            raise RuntimeError(f"Failed to set revision job id: {exc}") from exc
 
     def update_revision_item(
         self,

@@ -1,5 +1,9 @@
 import { requestJson } from '@/lib/api/client'
-import type { GenerateScriptSessionRequest, GenerateScriptSessionResponse } from '@/types/api'
+import type {
+  GenerateScriptSessionRequest,
+  GenerateScriptSessionResponse,
+  ScriptGenerationPreviewResponse,
+} from '@/types/api'
 
 interface ApiResponse<T> {
   code: number
@@ -26,5 +30,10 @@ export async function generateScriptSession(payload: GenerateScriptSessionReques
     }),
   })
 
+  return response.data
+}
+
+export async function getScriptGenerationPreview(generationId: string): Promise<ScriptGenerationPreviewResponse> {
+  const response = await requestJson<ApiResponse<ScriptGenerationPreviewResponse>>(`/scripts/generations/${generationId}/preview`)
   return response.data
 }

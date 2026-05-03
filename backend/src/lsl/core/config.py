@@ -24,6 +24,18 @@ def _get_env_float(name: str, default: float) -> float:
         raise ValueError(f"{name} must be a number, got: {raw!r}") from exc
 
 
+def _get_env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be a boolean, got: {raw!r}")
+
+
 def _get_env_str(name: str, default: str) -> str:
     raw = os.getenv(name)
     if raw is None:
@@ -44,6 +56,10 @@ class Settings:
     DB_POOL_MIN_SIZE: int = 1
     DB_POOL_MAX_SIZE: int = 10
     DB_POOL_TIMEOUT: float = 30.0
+    JOB_RUNNER_ENABLED: bool = True
+    JOB_RUNNER_INTERVAL_SECONDS: float = 2.0
+    JOB_RUNNER_BATCH_SIZE: int = 10
+    JOB_RUNNER_MAX_WORKERS: int = 4
 
     # OSS
     OSS_REGION: str = "cn-hangzhou"
@@ -104,6 +120,13 @@ class Settings:
         db_pool_min_size = _get_env_int("DB_POOL_MIN_SIZE", cls.DB_POOL_MIN_SIZE)
         db_pool_max_size = _get_env_int("DB_POOL_MAX_SIZE", cls.DB_POOL_MAX_SIZE)
         db_pool_timeout = _get_env_float("DB_POOL_TIMEOUT", cls.DB_POOL_TIMEOUT)
+        job_runner_enabled = _get_env_bool("JOB_RUNNER_ENABLED", cls.JOB_RUNNER_ENABLED)
+        job_runner_interval_seconds = _get_env_float(
+            "JOB_RUNNER_INTERVAL_SECONDS",
+            cls.JOB_RUNNER_INTERVAL_SECONDS,
+        )
+        job_runner_batch_size = _get_env_int("JOB_RUNNER_BATCH_SIZE", cls.JOB_RUNNER_BATCH_SIZE)
+        job_runner_max_workers = _get_env_int("JOB_RUNNER_MAX_WORKERS", cls.JOB_RUNNER_MAX_WORKERS)
         volc_http_timeout = _get_env_float("VOLC_HTTP_TIMEOUT", cls.VOLC_HTTP_TIMEOUT)
         revision_llm_http_timeout = _get_env_float(
             "REVISION_LLM_HTTP_TIMEOUT",
@@ -125,6 +148,12 @@ class Settings:
             raise ValueError("DB_POOL_MAX_SIZE must be greater than or equal to DB_POOL_MIN_SIZE")
         if db_pool_timeout <= 0:
             raise ValueError("DB_POOL_TIMEOUT must be greater than 0")
+        if job_runner_interval_seconds <= 0:
+            raise ValueError("JOB_RUNNER_INTERVAL_SECONDS must be greater than 0")
+        if job_runner_batch_size <= 0:
+            raise ValueError("JOB_RUNNER_BATCH_SIZE must be greater than 0")
+        if job_runner_max_workers <= 0:
+            raise ValueError("JOB_RUNNER_MAX_WORKERS must be greater than 0")
         if volc_http_timeout <= 0:
             raise ValueError("VOLC_HTTP_TIMEOUT must be greater than 0")
         if revision_llm_http_timeout <= 0:
@@ -162,6 +191,10 @@ class Settings:
             DB_POOL_MIN_SIZE=db_pool_min_size,
             DB_POOL_MAX_SIZE=db_pool_max_size,
             DB_POOL_TIMEOUT=db_pool_timeout,
+            JOB_RUNNER_ENABLED=job_runner_enabled,
+            JOB_RUNNER_INTERVAL_SECONDS=job_runner_interval_seconds,
+            JOB_RUNNER_BATCH_SIZE=job_runner_batch_size,
+            JOB_RUNNER_MAX_WORKERS=job_runner_max_workers,
             OSS_REGION=region,
             OSS_BUCKET=bucket,
             OSS_ACCESS_KEY_ID=os.getenv("OSS_ACCESS_KEY_ID", cls.OSS_ACCESS_KEY_ID).strip(),

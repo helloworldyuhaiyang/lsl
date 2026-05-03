@@ -19,10 +19,12 @@ import type { Difficulty } from '@/types';
 import { cn } from '@/lib/utils';
 import { Link } from 'react-router-dom';
 import { createSession } from '@/lib/api/sessions';
-import { createTask } from '@/lib/api/tasks';
+import { createAsrRecognition } from '@/lib/api/asr';
 import { completeUploadedAsset, prepareUploadUrl, uploadToPresignedUrl } from '@/lib/api/upload';
 import { generateScriptSession } from '@/lib/api/scripts';
-import { mapRevision, mapSessionItem } from '@/lib/domain';
+import { mapSessionItem } from '@/lib/domain';
+
+const DEFAULT_CUE_STYLE = '自然口语、便于 TTS 演绎';
 
 export function CreateSession() {
   const navigate = useNavigate();
@@ -38,7 +40,7 @@ export function CreateSession() {
   const [turnCount, setTurnCount] = useState('8');
   const [speakerCount, setSpeakerCount] = useState('2');
   const [difficulty, setDifficulty] = useState<Difficulty>('Beginner');
-  const [cueStyle, setCueStyle] = useState('');
+  const [cueStyle, setCueStyle] = useState(DEFAULT_CUE_STYLE);
   const [mustInclude, setMustInclude] = useState('');
 
   const clearErrors = useCallback(() => setErrors({}), []);
@@ -81,7 +83,7 @@ export function CreateSession() {
           contentType: upload.contentType,
         });
         await completeUploadedAsset({ uploadInfo, upload, file: selectedFile, etag });
-        const task = await createTask({
+        const recognition = await createAsrRecognition({
           objectKey: uploadInfo.object_key,
           audioUrl: uploadInfo.asset_url,
           language: 'en',
@@ -92,7 +94,7 @@ export function CreateSession() {
           language: 'en',
           fType: 1,
           assetObjectKey: uploadInfo.object_key,
-          currentTaskId: task.task_id,
+          currentTranscriptId: recognition.transcript.transcript_id,
         });
         const session = mapSessionItem(item);
         dispatch({ type: 'ADD_SESSION', payload: session });
@@ -111,11 +113,14 @@ export function CreateSession() {
         });
         const session = {
           ...mapSessionItem(result.session),
-          revision: mapRevision(result.revision),
           userPrompt: scenarioPrompt,
         };
         dispatch({ type: 'ADD_SESSION', payload: session });
-        navigate(`/session/${session.id}/revise`);
+        const params = new URLSearchParams({
+          generation_id: result.generation.generation_id,
+          job_id: result.job.job_id,
+        });
+        navigate(`/session/${session.id}/revise?${params.toString()}`);
       }
       void refreshSessions();
     } catch (error) {

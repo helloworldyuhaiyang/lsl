@@ -1,24 +1,24 @@
 # LSL - Session Module
 
-Session 模块负责会话级数据管理（标题、描述）以及与 `assets/tasks` 的关联。
+Session 模块负责会话级数据管理（标题、描述）以及与 `asset/transcript` 的关联。
 
 设计原则：
-- `sessions` 不冗余 `tasks/assets` 业务字段。
-- 模块交互通过 Service 依赖：`SessionService -> AssetService/TaskService`。
-- SessionRepository 只访问 `sessions` 表，不直接读 `assets/tasks`。
+- `session_sessions` 不冗余 `transcript/asset` 业务字段。
+- 模块交互通过 Service 依赖：`SessionService -> AssetService/TranscriptService`。
+- SessionRepository 只访问 `session_sessions` 表，不直接读 `asset/transcript` 表。
 - Repository 使用 SQLAlchemy 2.0 ORM，Service 直接消费模型对象。
 
 ## 当前接口
 
 - `POST /sessions` 创建会话
 - `GET /sessions` 查询会话列表
-- `GET /sessions/{session_id}` 查询会话详情（默认会自动尝试 refresh 关联 task）
+- `GET /sessions/{session_id}` 查询会话详情
 - `PATCH /sessions/{session_id}` 更新会话与关联关系
 
 ## ID 规范
 
 - 对外 `session_id` 格式约定为 `s_{uuid}`，例如 `s_8f85f0be-6f53-4ca4-b6fe-b5d3f0a64047`。
-- 引用 task 时，对外 `current_task_id` 也应使用 `t_{uuid}`。
+- 引用 transcript 时，对外使用 `current_transcript_id`。
 - 当前数据库内部实际存的是 32 位无横线十六进制字符串；对外前缀格式如果要真正落地，还需要继续调整 API 和跨模块校验。
 
 ## 模块结构
@@ -36,34 +36,34 @@ session/
 ## 建表 SQL
 
 ```sql
--- 会话主表：管理会话标题/描述与资产、任务关联
-CREATE TABLE IF NOT EXISTS public.sessions (
+-- 会话主表：管理会话标题/描述与资产、transcript 关联
+CREATE TABLE IF NOT EXISTS public.session_sessions (
     session_id        VARCHAR(32) PRIMARY KEY,                    -- 会话主键（uuid hex）
     title             VARCHAR(200) NOT NULL,                      -- 会话标题
-    f_desc            TEXT,                                       -- 会话描述
-    f_language        VARCHAR(16),                                -- 会话语言（可选）
-    f_type            SMALLINT NOT NULL DEFAULT 1,                -- 会话类型：1录音/2文本
+    x_description     TEXT,                                       -- 会话描述
+    x_language        VARCHAR(16),                                -- 会话语言（可选）
+    x_type            SMALLINT NOT NULL DEFAULT 1,                -- 会话类型：1录音/2文本
     asset_object_key  TEXT UNIQUE,                                -- 关联资产 object_key（可空）
-    current_task_id   VARCHAR(32) UNIQUE,                         -- 关联任务 ID（可空，uuid hex）
+    current_transcript_id VARCHAR(32) UNIQUE,                      -- 关联 transcript ID（可空，uuid hex）
     created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, -- 创建时间
     updated_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP -- 更新时间
 );
 
 -- 列表页常用索引：按创建时间倒序分页
-CREATE INDEX IF NOT EXISTS idx_sessions_created_at
-    ON public.sessions (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_session_sessions_created_at
+    ON public.session_sessions (created_at DESC);
 
 -- 标题模糊搜索索引（lower）
-CREATE INDEX IF NOT EXISTS idx_sessions_title_lower
-    ON public.sessions (lower(title));
+CREATE INDEX IF NOT EXISTS idx_session_sessions_title_lower
+    ON public.session_sessions (lower(title));
 
 -- 更新前触发：自动维护 updated_at（依赖 public.set_updated_at 函数）
-CREATE TRIGGER trg_sessions_set_updated_at
-BEFORE UPDATE ON public.sessions
+CREATE TRIGGER trg_session_sessions_set_updated_at
+BEFORE UPDATE ON public.session_sessions
 FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();
 ```
 
 `f_type` 语义：
-- `1`：录音 Session（需要音频：`asset_object_key` 或 `current_task_id`）
+- `1`：录音 Session（需要音频：`asset_object_key` 或 `current_transcript_id`）
 - `2`：文本 Session（不需要上传文件）

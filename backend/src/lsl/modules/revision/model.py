@@ -10,9 +10,9 @@ from lsl.core.sql_types import JSONString, UUIDHexString
 
 
 class UtterancesRevisionModel(Base):
-    __tablename__ = "utterances_revisions"
+    __tablename__ = "revision_revisions"
     __table_args__ = (
-        Index("idx_utterances_revisions_session_id", "session_id"),
+        Index("idx_revision_revisions_session_id", "session_id"),
     )
 
     revision_id: Mapped[str] = mapped_column(UUIDHexString(), primary_key=True)
@@ -20,10 +20,12 @@ class UtterancesRevisionModel(Base):
         UUIDHexString(),
         nullable=False,
     )
-    task_id: Mapped[str] = mapped_column(
+    transcript_id: Mapped[str] = mapped_column(
         UUIDHexString(),
         nullable=False,
     )
+    # Active generic job for the current revise run; newer runs replace this value.
+    job_id: Mapped[str | None] = mapped_column(UUIDHexString(), nullable=True)
     user_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[int] = mapped_column("x_status", SmallInteger, nullable=False, server_default=text("0"))
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -57,17 +59,17 @@ class UtterancesRevisionModel(Base):
 
 
 class UtterancesRevisionItemModel(Base):
-    __tablename__ = "utterances_revision_items"
+    __tablename__ = "revision_items"
     __table_args__ = (
         Index(
-            "idx_utterances_revision_items_revision_seq_span",
+            "idx_revision_items_revision_seq_span",
             "revision_id",
             "source_seq_start",
             "source_seq_end",
         ),
         Index(
-            "idx_utterances_revision_items_task_seq_span",
-            "task_id",
+            "idx_revision_items_transcript_seq_span",
+            "transcript_id",
             "source_seq_start",
             "source_seq_end",
         ),
@@ -78,7 +80,7 @@ class UtterancesRevisionItemModel(Base):
         UUIDHexString(),
         nullable=False,
     )
-    task_id: Mapped[str] = mapped_column(
+    transcript_id: Mapped[str] = mapped_column(
         UUIDHexString(),
         nullable=False,
     )

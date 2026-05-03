@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from typing import Generic, TypeVar
+from datetime import datetime
+from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, Field, field_validator
 
+from lsl.modules.job.types import JobData
 from lsl.modules.revision.schema import RevisionData
 from lsl.modules.session.schema import SessionData
 
@@ -87,6 +89,48 @@ class GenerateScriptSessionRequest(BaseModel):
         return result
 
 
+class ScriptGenerationData(BaseModel):
+    generation_id: str
+    session_id: str
+    transcript_id: str | None = None
+    job_id: str | None = None
+    provider: str
+    title: str
+    description: str | None = None
+    language: str | None = None
+    prompt: str
+    turn_count: int
+    speaker_count: int
+    difficulty: str | None = None
+    cue_style: str | None = None
+    must_include: list[str]
+    raw_result: dict[str, Any] | None = None
+    status: int
+    status_name: str
+    error_code: str | None = None
+    error_message: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    @classmethod
+    def from_row(cls, row: dict[str, Any]) -> "ScriptGenerationData":
+        return cls(**row)
+
+
+class ScriptGenerationPreviewItemData(BaseModel):
+    seq: int
+    speaker: str
+    cue: str
+    text: str
+
+
+class ScriptGenerationPreviewData(BaseModel):
+    generation: ScriptGenerationData
+    items: list[ScriptGenerationPreviewItemData]
+
+
 class GenerateScriptSessionData(BaseModel):
     session: SessionData
-    revision: RevisionData
+    generation: ScriptGenerationData
+    job: JobData
+    revision: RevisionData | None = None

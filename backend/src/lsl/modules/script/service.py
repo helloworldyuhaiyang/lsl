@@ -1,35 +1,64 @@
 from __future__ import annotations
 
+import logging
 import re
+import time
+import uuid
 
+from lsl.modules.job.service import JobService
+from lsl.modules.job.types import JobData, JobRunResult, JobStatus
 from lsl.modules.revision.service import RevisionService
 from lsl.modules.revision.types import GeneratedRevisionItem
-from lsl.modules.script.schema import GenerateScriptSessionData, GenerateScriptSessionRequest
+from lsl.modules.script.repo import ScriptRepository
+from lsl.modules.script.schema import (
+    GenerateScriptSessionData,
+    GenerateScriptSessionRequest,
+    ScriptGenerationData,
+    ScriptGenerationPreviewData,
+    ScriptGenerationPreviewItemData,
+)
 from lsl.modules.script.types import GeneratedScriptTurn, ScriptGenerateRequest, ScriptGenerator
-from lsl.modules.session.schema import CreateSessionRequest
+from lsl.modules.session.schema import CreateSessionRequest, UpdateSessionRequest
 from lsl.modules.session.service import SessionService
-from lsl.modules.task.schema import TaskTranscriptUtterance
-from lsl.modules.task.service import TaskService
+from lsl.modules.transcript.service import TranscriptService
+from lsl.modules.transcript.types import TranscriptUtterance
 
 _WORD_PATTERN = re.compile(r"[A-Za-z0-9']+")
+logger = logging.getLogger(__name__)
 
 
 class ScriptService:
     def __init__(
         self,
         *,
+        repository: ScriptRepository,
         generator: ScriptGenerator,
         session_service: SessionService,
-        task_service: TaskService,
+        transcript_service: TranscriptService,
         revision_service: RevisionService,
+        job_service: JobService,
     ) -> None:
+        self._repository = repository
         self._generator = generator
         self._session_service = session_service
-        self._task_service = task_service
+        self._transcript_service = transcript_service
         self._revision_service = revision_service
+        self._job_service = job_service
 
     def generate_session(self, payload: GenerateScriptSessionRequest) -> GenerateScriptSessionData:
-        req = ScriptGenerateRequest(
+        session = self._session_service.create_session(
+            CreateSessionRequest(
+                title=payload.title,
+                description=payload.description,
+                language=payload.language,
+                f_type=2,
+            )
+        )
+        generation_id = uuid.uuid4().hex
+        row = self._repository.create_generation(
+            generation_id=generation_id,
+            session_id=session.session.session_id,
+            provider=self._generator.provider_name,
             title=payload.title,
             description=payload.description,
             language=payload.language,
@@ -40,57 +69,222 @@ class ScriptService:
             cue_style=payload.cue_style,
             must_include=payload.must_include,
         )
-        generated_script = self._generator.generate(req)
-        transcript_utterances = self._build_transcript_utterances(generated_script.utterances)
-        task = self._task_service.create_text_task(
-            utterances=transcript_utterances,
-            language=payload.language,
-            full_text="\n".join(item.text for item in transcript_utterances),
-            raw_result={
+        job = self._job_service.create_job(
+            job_type=ScriptJobHandler.job_type,
+            entity_type="script_generation",
+            entity_id=generation_id,
+            payload={"generation_id": generation_id},
+        )
+        self._repository.set_job_id(generation_id=generation_id, job_id=job.job_id)
+        logger.info(
+            "Script generation session created generation_id=%s session_id=%s job_id=%s turn_count=%s speaker_count=%s provider=%s",
+            generation_id,
+            session.session.session_id,
+            job.job_id,
+            payload.turn_count,
+            payload.speaker_count,
+            self._generator.provider_name,
+        )
+        generation = self.get_generation(generation_id=generation_id)
+        session = self._session_service.get_session(session.session.session_id, auto_refresh=False)
+        return GenerateScriptSessionData(session=session, generation=generation, job=job, revision=None)
+
+    def get_generation(self, *, generation_id: str) -> ScriptGenerationData:
+        row = self._repository.get_generation_by_id(generation_id)
+        if row is None:
+            raise ValueError("script generation not found")
+        return ScriptGenerationData.from_row(row)
+
+    def get_generation_preview(self, *, generation_id: str) -> ScriptGenerationPreviewData:
+        row = self._repository.get_generation_by_id(generation_id)
+        if row is None:
+            raise ValueError("script generation not found")
+        items = self._repository.get_generation_preview_items(generation_id=generation_id)
+        if items is None:
+            raise ValueError("script generation not found")
+        return ScriptGenerationPreviewData(
+            generation=ScriptGenerationData.from_row(row),
+            items=[ScriptGenerationPreviewItemData(**item) for item in items],
+        )
+
+    def run_generation_job(self, *, generation_id: str) -> JobRunResult:
+        started_at = time.monotonic()
+        row = self._repository.get_generation_by_id(generation_id)
+        if row is None:
+            logger.warning("Script generation job missing generation_id=%s", generation_id)
+            return JobRunResult(status=JobStatus.FAILED, error_code="GENERATION_NOT_FOUND", error_message="script generation not found")
+        generation = ScriptGenerationData.from_row(row)
+        if generation.transcript_id and generation.status_name == "completed":
+            logger.info(
+                "Script generation job already completed generation_id=%s transcript_id=%s",
+                generation_id,
+                generation.transcript_id,
+            )
+            return JobRunResult(status=JobStatus.COMPLETED, progress=100)
+
+        logger.info(
+            "Script generation job started generation_id=%s session_id=%s provider=%s turn_count=%s speaker_count=%s status=%s",
+            generation.generation_id,
+            generation.session_id,
+            self._generator.provider_name,
+            generation.turn_count,
+            generation.speaker_count,
+            generation.status_name,
+        )
+        self._repository.mark_generating(generation_id=generation_id)
+        logger.info(
+            "Script generation marked generating generation_id=%s elapsed_ms=%s",
+            generation_id,
+            int((time.monotonic() - started_at) * 1000),
+        )
+        req = ScriptGenerateRequest(
+            title=generation.title,
+            description=generation.description,
+            language=generation.language,
+            prompt=generation.prompt,
+            turn_count=generation.turn_count,
+            speaker_count=generation.speaker_count,
+            difficulty=generation.difficulty,
+            cue_style=generation.cue_style,
+            must_include=generation.must_include,
+        )
+        try:
+            generated_turns: list[GeneratedScriptTurn] = []
+            first_preview_logged = False
+            for turn in self._generator.generate_progressively(req):
+                if len(generated_turns) >= generation.turn_count:
+                    break
+                normalized_turn = GeneratedScriptTurn(
+                    speaker=turn.speaker.strip() or f"user-{(len(generated_turns) % generation.speaker_count) + 1}",
+                    cue=turn.cue.strip(),
+                    text=turn.text.strip(),
+                )
+                if not normalized_turn.text:
+                    continue
+                generated_turns.append(normalized_turn)
+                self._repository.save_preview_item(
+                    generation_id=generation_id,
+                    seq=len(generated_turns) - 1,
+                    speaker=normalized_turn.speaker,
+                    cue=normalized_turn.cue,
+                    text=normalized_turn.text,
+                )
+                if not first_preview_logged:
+                    first_preview_logged = True
+                    logger.info(
+                        "Script generation first preview saved generation_id=%s seq=%s elapsed_ms=%s text_len=%s cue_len=%s",
+                        generation_id,
+                        len(generated_turns) - 1,
+                        int((time.monotonic() - started_at) * 1000),
+                        len(normalized_turn.text),
+                        len(normalized_turn.cue),
+                    )
+                else:
+                    logger.info(
+                        "Script generation preview saved generation_id=%s seq=%s elapsed_ms=%s text_len=%s cue_len=%s",
+                        generation_id,
+                        len(generated_turns) - 1,
+                        int((time.monotonic() - started_at) * 1000),
+                        len(normalized_turn.text),
+                        len(normalized_turn.cue),
+                    )
+
+            logger.info(
+                "Script generation generator finished generation_id=%s turn_count=%s elapsed_ms=%s",
+                generation_id,
+                len(generated_turns),
+                int((time.monotonic() - started_at) * 1000),
+            )
+
+            if len(generated_turns) < 2:
+                raise RuntimeError("Script generator returned too few valid utterances")
+
+            # 构建转写
+            transcript_utterances = self._build_transcript_utterances(generated_turns)
+            # 构建 raw_result 用于存储生成器返回的原始结果
+            raw_result = {
                 "provider": self._generator.provider_name,
-                "prompt": payload.prompt,
+                "prompt": generation.prompt,
                 "utterances": [
                     {
                         "speaker": item.speaker,
                         "cue": item.cue,
                         "text": item.text,
                     }
-                    for item in generated_script.utterances
+                    for item in generated_turns
                 ],
-            },
-        )
-        session = self._session_service.create_session(
-            CreateSessionRequest(
-                title=payload.title,
-                description=payload.description,
-                language=payload.language,
-                f_type=2,
-                current_task_id=task.task_id,
+            }
+            transcript = self._transcript_service.create_completed_transcript(
+                source_type="ai_script",
+                source_entity_id=generation.generation_id,
+                language=generation.language,
+                utterances=transcript_utterances,
+                full_text="\n".join(item.text for item in transcript_utterances),
+                raw_result=raw_result,
             )
-        )
-        revision = self._revision_service.create_generated_revision(
-            session_id=session.session.session_id,
-            task_id=task.task_id,
-            user_prompt=payload.prompt,
-            items=self._build_revision_items(
-                task_id=task.task_id,
-                transcript_utterances=transcript_utterances,
-                generated_turns=generated_script.utterances,
-            ),
-        )
-        session_data = self._session_service.get_session(session.session.session_id, auto_refresh=False)
-        return GenerateScriptSessionData(session=session_data, revision=revision)
+            logger.info(
+                "Script generation transcript created generation_id=%s transcript_id=%s elapsed_ms=%s",
+                generation_id,
+                transcript.transcript_id,
+                int((time.monotonic() - started_at) * 1000),
+            )
+            self._session_service.update_session(
+                session_id=generation.session_id,
+                payload=UpdateSessionRequest(
+                    title=generation.title,
+                    description=generation.description,
+                    language=generation.language,
+                    f_type=2,
+                    current_transcript_id=transcript.transcript_id,
+                ),
+            )
+            self._repository.mark_completed(
+                generation_id=generation_id,
+                transcript_id=transcript.transcript_id,
+                raw_result_json=raw_result,
+            )
+            self._revision_service.create_generated_revision(
+                session_id=generation.session_id,
+                transcript_id=transcript.transcript_id,
+                user_prompt=generation.prompt,
+                items=self._build_revision_items(
+                    transcript_id=transcript.transcript_id,
+                    transcript_utterances=transcript_utterances,
+                    generated_turns=generated_turns,
+                ),
+            )
+            logger.info(
+                "Script generation job completed generation_id=%s transcript_id=%s turns=%s elapsed_ms=%s",
+                generation_id,
+                transcript.transcript_id,
+                len(generated_turns),
+                int((time.monotonic() - started_at) * 1000),
+            )
+        except Exception as exc:
+            logger.exception(
+                "Script generation job failed generation_id=%s elapsed_ms=%s",
+                generation_id,
+                int((time.monotonic() - started_at) * 1000),
+            )
+            self._repository.mark_failed(
+                generation_id=generation_id,
+                error_code="SCRIPT_GENERATION_FAILED",
+                error_message=str(exc),
+            )
+            return JobRunResult(status=JobStatus.FAILED, error_code="SCRIPT_GENERATION_FAILED", error_message=str(exc))
+
+        return JobRunResult(status=JobStatus.COMPLETED, progress=100)
 
     @staticmethod
     def _build_transcript_utterances(
         generated_turns: list[GeneratedScriptTurn],
-    ) -> list[TaskTranscriptUtterance]:
-        utterances: list[TaskTranscriptUtterance] = []
+    ) -> list[TranscriptUtterance]:
+        utterances: list[TranscriptUtterance] = []
         current_start_ms = 0
         for index, item in enumerate(generated_turns):
             duration_ms = ScriptService._estimate_duration_ms(item.text)
             utterances.append(
-                TaskTranscriptUtterance(
+                TranscriptUtterance(
                     seq=index,
                     text=item.text.strip(),
                     speaker=item.speaker.strip() or f"user-{(index % 2) + 1}",
@@ -105,8 +299,8 @@ class ScriptService:
     @staticmethod
     def _build_revision_items(
         *,
-        task_id: str,
-        transcript_utterances: list[TaskTranscriptUtterance],
+        transcript_id: str,
+        transcript_utterances: list[TranscriptUtterance],
         generated_turns: list[GeneratedScriptTurn],
     ) -> list[GeneratedRevisionItem]:
         if len(transcript_utterances) != len(generated_turns):
@@ -120,7 +314,7 @@ class ScriptService:
             )
             items.append(
                 GeneratedRevisionItem(
-                    task_id=task_id,
+                    transcript_id=transcript_id,
                     source_seq_start=int(transcript_item.seq),
                     source_seq_end=int(transcript_item.seq),
                     source_seq_count=1,
@@ -150,3 +344,20 @@ class ScriptService:
         if word_count <= 0:
             return 1400
         return max(1400, min(6000, word_count * 420))
+
+
+class ScriptJobHandler:
+    job_type = "ai_script_generation"
+
+    def __init__(self, *, script_service: ScriptService) -> None:
+        self._script_service = script_service
+
+    def run(self, job: JobData) -> JobRunResult:
+        generation_id = str(job.payload.get("generation_id") or job.entity_id or "").strip()
+        if not generation_id:
+            return JobRunResult(
+                status=JobStatus.FAILED,
+                error_code="MISSING_GENERATION_ID",
+                error_message="generation_id is required",
+            )
+        return self._script_service.run_generation_job(generation_id=generation_id)

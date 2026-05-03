@@ -13,6 +13,8 @@ from threading import Lock
 
 from lsl.core.config import Settings
 from lsl.modules.asset.service import AssetService
+from lsl.modules.job.service import JobService
+from lsl.modules.job.types import JobData, JobRunResult, JobStatus
 from lsl.modules.revision.schema import RevisionData, RevisionItemData
 from lsl.modules.revision.service import RevisionService
 from lsl.modules.session.service import SessionService
@@ -21,6 +23,7 @@ from lsl.modules.tts.model import SessionTtsSettingsModel, SpeechSynthesisModel
 from lsl.modules.tts.repo import TtsRepository
 from lsl.modules.tts.schema import (
     GenerateTtsItemRequest,
+    CreateTtsSynthesisData,
     TtsSettingsData,
     TtsSpeakerData,
     TtsSynthesisData,
@@ -55,6 +58,7 @@ class TtsService:
         session_service: SessionService,
         revision_service: RevisionService,
         asset_service: AssetService,
+        job_service: JobService,
         settings: Settings,
     ) -> None:
         self._repository = repository
@@ -63,6 +67,7 @@ class TtsService:
         self._session_service = session_service
         self._revision_service = revision_service
         self._asset_service = asset_service
+        self._job_service = job_service
         self._settings = settings
         self._background_executor = ThreadPoolExecutor(
             max_workers=_TTS_BACKGROUND_MAX_WORKERS,
@@ -220,7 +225,7 @@ class TtsService:
             raise ValueError("tts synthesis not found")
         return self._to_synthesis_data(model)
 
-    def create_synthesis(self, *, session_id: str, force: bool = False) -> TtsSynthesisData:
+    def create_synthesis(self, *, session_id: str, force: bool = False) -> CreateTtsSynthesisData:
         self._session_service.get_session(session_id, auto_refresh=False)
         revision = self._revision_service.get_revision(session_id=session_id)
         settings_value = self._settings_value_from_model(
@@ -241,9 +246,9 @@ class TtsService:
         existing = self._repository.get_synthesis_by_session_id(session_id)
         if existing is not None and not force and existing.full_content_hash == full_content_hash:
             if int(existing.status) == int(TtsSynthesisStatus.COMPLETED) and existing.full_asset_object_key:
-                return self._to_synthesis_data(existing)
+                return CreateTtsSynthesisData(synthesis=self._to_synthesis_data(existing), job=None)
             if int(existing.status) == int(TtsSynthesisStatus.GENERATING):
-                return self._to_synthesis_data(existing)
+                return CreateTtsSynthesisData(synthesis=self._to_synthesis_data(existing), job=None)
 
         pending_items = [
             StoredSynthesisItem(
@@ -274,33 +279,47 @@ class TtsService:
             error_message=None,
         )
 
-        job_token = self._register_job(session_id)
-        try:
-            self._background_executor.submit(
-                self._run_synthesis_job,
-                session_id,
-                full_content_hash,
-                items,
-                settings_value,
-                force,
-                job_token,
-            )
-        except Exception as exc:
-            self._clear_job(session_id=session_id, job_token=job_token)
-            self._repository.save_synthesis(
-                session_id=session_id,
-                provider=self._provider.provider_name,
-                full_content_hash=full_content_hash,
-                status=int(TtsSynthesisStatus.FAILED),
-                items=pending_items,
-                full_asset_object_key=None,
-                full_duration_ms=None,
-                error_code="tts_job_schedule_failed",
-                error_message=str(exc),
-            )
-            raise RuntimeError(f"Failed to schedule tts job: {exc}") from exc
+        job = self._job_service.create_job(
+            job_type=TtsJobHandler.job_type,
+            entity_type="tts_synthesis",
+            entity_id=str(model.synthesis_id),
+            payload={"session_id": session_id, "force": force},
+        )
+        return CreateTtsSynthesisData(synthesis=self._to_synthesis_data(model), job=job)
 
-        return self._to_synthesis_data(model)
+    def run_synthesis_job(self, *, session_id: str, force: bool = False) -> JobRunResult:
+        revision = self._revision_service.get_revision(session_id=session_id)
+        settings_value = self._settings_value_from_model(
+            session_id=session_id,
+            model=self._repository.get_settings_by_session_id(session_id),
+        )
+        items = self._build_synthesis_items(
+            revision=revision,
+            settings_value=settings_value,
+            speakers=self._provider.get_speakers(),
+        )
+        full_content_hash = self._build_full_content_hash(
+            provider=self._provider.provider_name,
+            settings_value=settings_value,
+            items=items,
+        )
+        job_token = self._register_job(session_id)
+        self._run_synthesis_job(
+            session_id,
+            full_content_hash,
+            items,
+            settings_value,
+            force,
+            job_token,
+        )
+        model = self._repository.get_synthesis_by_session_id(session_id)
+        if model is None:
+            return JobRunResult(status=JobStatus.FAILED, error_code="TTS_SYNTHESIS_NOT_FOUND", error_message="tts synthesis not found")
+        if int(model.status) == int(TtsSynthesisStatus.COMPLETED):
+            return JobRunResult(status=JobStatus.COMPLETED, progress=100)
+        if int(model.status) == int(TtsSynthesisStatus.PARTIAL):
+            return JobRunResult(status=JobStatus.COMPLETED, progress=100, result={"status": "partial"})
+        return JobRunResult(status=JobStatus.FAILED, error_code=model.error_code, error_message=model.error_message)
 
     def _run_synthesis_job(
         self,
@@ -899,3 +918,21 @@ class TtsService:
             error_code=error_code,
             error_message=error_message,
         )
+
+
+class TtsJobHandler:
+    job_type = "tts_synthesis"
+
+    def __init__(self, *, tts_service: TtsService) -> None:
+        self._tts_service = tts_service
+
+    def run(self, job: JobData) -> JobRunResult:
+        session_id = str(job.payload.get("session_id") or "").strip()
+        if not session_id:
+            return JobRunResult(
+                status=JobStatus.FAILED,
+                error_code="MISSING_SESSION_ID",
+                error_message="session_id is required",
+            )
+        force = bool(job.payload.get("force", False))
+        return self._tts_service.run_synthesis_job(session_id=session_id, force=force)

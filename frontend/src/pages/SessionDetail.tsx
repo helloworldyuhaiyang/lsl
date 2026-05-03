@@ -9,10 +9,9 @@ import { useApp } from '@/context/AppContext';
 import { NotFound } from './NotFound';
 import type { RevisionItem, TranscriptItem } from '@/types';
 import { getSession } from '@/lib/api/sessions';
-import { getTaskTranscript } from '@/lib/api/tasks';
-import { getRevision } from '@/lib/api/revisions';
+import { getTranscript } from '@/lib/api/transcripts';
 import { getTtsSynthesis } from '@/lib/api/tts';
-import { applyTtsSynthesis, mapRevision, mapSessionItem, mapTranscript } from '@/lib/domain';
+import { applyTtsSynthesis, mapSessionItem, mapTranscript } from '@/lib/domain';
 
 export function SessionDetail() {
   const { id } = useParams<{ id: string }>();
@@ -32,27 +31,21 @@ export function SessionDetail() {
     if (!id) return;
     const sessionId = id;
     let cancelled = false;
+    let refreshTimer: ReturnType<typeof window.setTimeout> | null = null;
 
-    async function loadSession() {
+    async function loadSession(): Promise<boolean> {
       setNotFound(false);
       try {
         const item = await getSession(sessionId);
         let nextSession = mapSessionItem(item);
 
-        if (item.session.current_task_id) {
+        if (item.session.current_transcript_id) {
           try {
-            const transcript = await getTaskTranscript(item.session.current_task_id);
+            const transcript = await getTranscript(item.session.current_transcript_id);
             nextSession = { ...nextSession, transcript: mapTranscript(transcript) };
           } catch {
-            // Transcript may not be ready while the task is still processing.
+            // Transcript may not be ready while the source job is still processing.
           }
-        }
-
-        try {
-          const revision = await getRevision(sessionId);
-          nextSession = { ...nextSession, revision: mapRevision(revision), userPrompt: revision.user_prompt ?? undefined };
-        } catch {
-          // Revision is optional until the user starts step 2.
         }
 
         try {
@@ -66,14 +59,24 @@ export function SessionDetail() {
           setLoadedSession(nextSession);
           dispatch({ type: 'UPDATE_SESSION', payload: nextSession });
         }
+        return nextSession.status === 'pending' || nextSession.status === 'processing';
       } catch {
         if (!cancelled) setNotFound(true);
+        return false;
       }
     }
 
-    void loadSession();
+    async function loadAndSchedule() {
+      const shouldKeepPolling = await loadSession();
+      if (!cancelled && shouldKeepPolling) {
+        refreshTimer = window.setTimeout(loadAndSchedule, 3000);
+      }
+    }
+
+    void loadAndSchedule();
     return () => {
       cancelled = true;
+      if (refreshTimer) window.clearTimeout(refreshTimer);
     };
   }, [id, dispatch]);
 
@@ -85,6 +88,8 @@ export function SessionDetail() {
 
   const transcript = session.transcript || session.revision;
   const totalDuration = transcript && transcript.length > 0 ? transcript[transcript.length - 1].endTime : 0;
+  const canOpenRevise = session.status === 'completed' || !!session.revision;
+  const shouldShowAudioPlayer = session.type === 'audio' || !!session.synthesizedAudioUrl;
 
   const isRevision = (item: RevisionItem | TranscriptItem): item is RevisionItem => 'cue' in item;
 
@@ -130,12 +135,18 @@ export function SessionDetail() {
               )}
             </div>
           </div>
-          <Link
-            to={`/session/${session.id}/revise`}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-[12px] font-semibold rounded-lg transition-colors shadow-sm shadow-indigo-200"
-          >
-            Go to Revise <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
+          {canOpenRevise ? (
+            <Link
+              to={`/session/${session.id}/revise`}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-[12px] font-semibold rounded-lg transition-colors shadow-sm shadow-indigo-200"
+            >
+              Go to Revise <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-100 text-slate-400 text-[12px] font-semibold rounded-lg">
+              Go to Revise <ArrowRight className="w-3.5 h-3.5" />
+            </span>
+          )}
         </div>
       </div>
 
@@ -144,7 +155,7 @@ export function SessionDetail() {
         <div className="flex items-center">
           {[
             { label: 'Session', path: `/session/${session.id}`, active: true },
-            { label: 'Revise', path: `/session/${session.id}/revise`, active: !!session.revision },
+            { label: 'Revise', path: `/session/${session.id}/revise`, active: canOpenRevise },
             { label: 'Listening', path: `/session/${session.id}/listening`, active: !!session.synthesizedAudioUrl },
           ].map((step, i, arr) => (
             <div key={step.label} className="flex items-center flex-1">
@@ -169,15 +180,24 @@ export function SessionDetail() {
         </div>
       </div>
 
-      {/* Audio Player */}
-      <AudioPlayer
-        audioUrl={session.audioUrl}
-        items={transcript}
-        seekTo={seekRequest}
-        onActiveIndexChange={(index) => setActiveTranscriptIndex(index === -1 ? null : index)}
-      />
+      {shouldShowAudioPlayer && (
+        <AudioPlayer
+          audioUrl={session.audioUrl}
+          items={transcript}
+          seekTo={seekRequest}
+          onActiveIndexChange={(index) => setActiveTranscriptIndex(index === -1 ? null : index)}
+        />
+      )}
 
       {/* Transcript */}
+      {(!transcript || transcript.length === 0) && session.status !== 'failed' && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
+          <p className="text-[13px] text-slate-500">
+            {session.type === 'text' ? 'Generating script transcript...' : 'Transcription is still processing...'}
+          </p>
+        </div>
+      )}
+
       {transcript && transcript.length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">

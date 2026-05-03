@@ -26,7 +26,7 @@ export async function createSession(payload: CreateSessionRequest): Promise<Sess
       language: payload.language,
       f_type: payload.fType,
       asset_object_key: payload.assetObjectKey,
-      current_task_id: payload.currentTaskId,
+      current_transcript_id: payload.currentTranscriptId,
     }),
   })
 

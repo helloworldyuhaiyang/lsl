@@ -9,7 +9,7 @@ from lsl.core.db import Base
 
 
 class AssetModel(Base):
-    __tablename__ = "assets"
+    __tablename__ = "asset_assets"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     object_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)

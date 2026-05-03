@@ -21,7 +21,10 @@ deploy/
 ├── backend.requirements.txt
 ├── docker-compose.yml
 ├── initdb/
-│   └── 001-schema.sql
+│   ├── 001-schema.sql
+│   ├── 002-rename-x-columns.postgres.sql
+│   ├── 003-add-script-generation-preview.postgres.sql
+│   └── 004-add-revision-job-id.postgres.sql
 ├── nginx/
 │   └── default.conf
 └── web.Dockerfile
@@ -100,6 +103,14 @@ http://<your-server-ip>:<HTTP_PORT>/api/...
 ```bash
 cd deploy
 docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" < initdb/001-schema.sql
+```
+
+已有小表结构需要增量更新时，执行对应的 PostgreSQL migration：
+
+```bash
+cd deploy
+docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" < initdb/003-add-script-generation-preview.postgres.sql
+docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" < initdb/004-add-revision-job-id.postgres.sql
 ```
 ## 5. 常用操作
 

@@ -7,6 +7,7 @@ from fastapi.responses import StreamingResponse
 
 from lsl.modules.tts.schema import (
     ApiResponse,
+    CreateTtsSynthesisData,
     CreateTtsSynthesisRequest,
     GenerateTtsItemRequest,
     TtsSettingsData,
@@ -89,7 +90,7 @@ def generate_tts_item(
     return StreamingResponse(iter([audio_bytes]), media_type=content_type)
 
 
-@router.post("", response_model=ApiResponse[TtsSynthesisData])
+@router.post("", response_model=ApiResponse[CreateTtsSynthesisData])
 def create_tts_synthesis(
     payload: CreateTtsSynthesisRequest,
     tts_service: TtsService = Depends(get_tts_service),

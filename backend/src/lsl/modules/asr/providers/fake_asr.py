@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from lsl.modules.task.types import (
+from lsl.modules.asr.types import (
     AsrJobRef,
     AsrJobStatus,
     AsrQueryResult,
@@ -28,11 +28,11 @@ class FakeAsrProvider:
 
     def submit(self, req: AsrSubmitRequest) -> AsrJobRef:
         return AsrJobRef(
-            task_id=req.task_id,
+            recognition_id=req.recognition_id,
             provider=self.provider_name,
-            provider_request_id=req.task_id,
+            provider_request_id=req.recognition_id,
             provider_resource_id="fake.bigasr.auc",
-            x_tt_logid=f"fake-{req.task_id}",
+            x_tt_logid=f"fake-{req.recognition_id}",
         )
 
     def query(self, ref: AsrJobRef) -> AsrQueryResult:

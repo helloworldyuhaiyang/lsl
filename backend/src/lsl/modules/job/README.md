@@ -13,7 +13,7 @@ Job 模块负责通用异步任务生命周期，不承载具体业务结果。
 
 - ASR 任务完成后写 transcript 相关表
 - AI script 生成完成后写 script / transcript 相关表
-- TTS 合成完成后写 speech synthesis / asset 相关表
+- TTS 合成完成后写 tts synthesis / asset 相关表
 
 ## 状态码
 
@@ -43,6 +43,22 @@ job_runner
 -> JobService marks job status
 ```
 
+服务启动后，`main.py` 会在 FastAPI lifespan 中启动一个后台 scheduler：
+
+- scheduler 用协程定时 claim due jobs。
+- 已 claim 的 job 交给固定大小线程池执行，避免阻塞主事件循环。
+- 同一轮最多 claim `JOB_RUNNER_BATCH_SIZE` 个 job，同时最多执行 `JOB_RUNNER_MAX_WORKERS` 个 job。
+- `POST /jobs/run-due` 保留为本地调试入口。
+
+## Runner 配置
+
+```env
+JOB_RUNNER_ENABLED=true
+JOB_RUNNER_INTERVAL_SECONDS=2
+JOB_RUNNER_BATCH_SIZE=10
+JOB_RUNNER_MAX_WORKERS=4
+```
+
 ## 当前接口
 
 - `POST /jobs` 创建 job
@@ -54,7 +70,7 @@ job_runner
 ## 建表 SQL
 
 ```sql
-CREATE TABLE IF NOT EXISTS public.jobs (
+CREATE TABLE IF NOT EXISTS public.job_jobs (
     job_id        VARCHAR(32) PRIMARY KEY,
     job_type      VARCHAR(64) NOT NULL,
     x_status      SMALLINT NOT NULL DEFAULT 0,
@@ -77,15 +93,15 @@ CREATE TABLE IF NOT EXISTS public.jobs (
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_jobs_status_next_run_at
-    ON public.jobs (x_status, next_run_at);
+CREATE INDEX IF NOT EXISTS idx_job_jobs_status_next_run_at
+    ON public.job_jobs (x_status, next_run_at);
 
-CREATE INDEX IF NOT EXISTS idx_jobs_type_status_next_run_at
-    ON public.jobs (job_type, x_status, next_run_at);
+CREATE INDEX IF NOT EXISTS idx_job_jobs_type_status_next_run_at
+    ON public.job_jobs (job_type, x_status, next_run_at);
 
-CREATE INDEX IF NOT EXISTS idx_jobs_entity
-    ON public.jobs (entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_job_jobs_entity
+    ON public.job_jobs (entity_type, entity_id);
 
-CREATE INDEX IF NOT EXISTS idx_jobs_created_at
-    ON public.jobs (created_at);
+CREATE INDEX IF NOT EXISTS idx_job_jobs_created_at
+    ON public.job_jobs (created_at);
 ```

@@ -68,7 +68,8 @@ LSL 的宗旨是：学习语言应该是 `listening -> speak -> listening`。先
 
 - 已完成：对象存储上传模块（Asset Module）
 - 已完成：通用异步 Job 模块（生命周期、状态查询、handler 分发）
-- 已完成：ASR 任务模块（Task Module）
+- 已完成：Transcript 模块（统一 utterance stream）
+- 已完成：ASR 模块（通过 Job 产出 transcript）
 - 已完成：会话管理模块（Session Module，已支持录音 / 文本类型建模）
 - 已完成：Revision 模块（utterance 级 revise、打分、草稿保存）
 - 已完成：AI CUE 脚本生成（生成文本 Session + synthetic transcript + completed revision）
@@ -80,8 +81,9 @@ LSL 的宗旨是：学习语言应该是 `listening -> speak -> listening`。先
 
 - `backend/src/lsl/modules/asset/README.md`
 - `backend/src/lsl/modules/job/README.md`
+- `backend/src/lsl/modules/transcript/README.md`
+- `backend/src/lsl/modules/asr/README.md`
 - `backend/src/lsl/modules/script/README.md`
-- `backend/src/lsl/modules/task/README.md`
 - `backend/src/lsl/modules/session/README.md`
 - `backend/src/lsl/modules/revision/README.md`
 - `backend/src/lsl/modules/tts/README.md`
@@ -143,6 +145,10 @@ uv pip install fastapi uvicorn pydantic sqlalchemy python-dotenv requests httpx 
 ```env
 # 基本配置
 DATABASE_URL=sqlite:///./data/lsl.sqlite3
+JOB_RUNNER_ENABLED=true
+JOB_RUNNER_INTERVAL_SECONDS=2
+JOB_RUNNER_BATCH_SIZE=10
+JOB_RUNNER_MAX_WORKERS=4
 
 # 文件存储
 STORAGE_PROVIDER=oss
@@ -187,7 +193,8 @@ backend/
 `- modules/
    |- asset/
    |- job/
-   |- task/
+   |- transcript/
+   |- asr/
    |- session/
    |- revision/
    |- script/
@@ -232,6 +239,8 @@ backend/
 - Service 类统一命名为 `XxxService`
 - Repository 类统一命名为 `XxxRepository`
 - ORM 类统一命名为 `XxxModel`
+- 数据库表名和索引名统一带所属模块前缀，例如 `job_jobs`、`asset_assets`、`session_sessions`、`revision_items`、`tts_syntheses`
+- 可能和 SQL 或编程语言关键字冲突的数据库物理列名统一加 `x_` 前缀，例如 `x_status`、`x_type`、`x_language`、`x_description`、`x_format`。对外 API 字段名不需要加这个前缀
 - Schema 命名按语义区分，例如 `CreateXxxRequest`、`UpdateXxxRequest`、`XxxData`、`XxxResponseData`
 
 ### 接口与错误处理
@@ -246,7 +255,7 @@ backend/
 - 所有环境变量统一从 `core/config.py` 读取
 - 日志初始化统一放在 `core/logger.py`
 - 业务代码获取 logger 统一使用 `logging.getLogger(__name__)`
-- 日志可以记录 provider 状态、`task_id`、`session_id`，但不能输出密钥或 token
+- 日志可以记录 provider 状态、`transcript_id`、`recognition_id`、`session_id`，但不能输出密钥或 token
 
 ### 数据访问规范
 

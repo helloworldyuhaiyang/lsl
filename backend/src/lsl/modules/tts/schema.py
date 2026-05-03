@@ -5,6 +5,7 @@ from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, Field, field_validator
 
+from lsl.modules.job.types import JobData
 from lsl.modules.tts.types import status_code_to_name
 
 
@@ -208,3 +209,8 @@ class TtsSynthesisData(BaseModel):
             updated_at=updated_at,
             items=items,
         )
+
+
+class CreateTtsSynthesisData(BaseModel):
+    synthesis: TtsSynthesisData
+    job: JobData | None = None

@@ -161,13 +161,15 @@ class LLMRevisionGenerator:
         if not req.utterances:
             return
 
+        # 先让大模型总结分段
         segments = self._plan_segments(
-            task_id=req.task_id,
+            transcript_id=req.transcript_id,
             utterances=req.utterances,
             user_prompt=req.user_prompt,
         )
+        # 再让大模型按段并发 revise
         for segment_suggestions in self._generate_segmented_revisions(
-            task_id=req.task_id,
+            transcript_id=req.transcript_id,
             utterances=req.utterances,
             user_prompt=req.user_prompt,
             segments=segments,
@@ -177,15 +179,15 @@ class LLMRevisionGenerator:
     def _plan_segments(
         self,
         *,
-        task_id: str,
+        transcript_id: str,
         utterances: list[RevisionPromptUtterance],
         user_prompt: str | None,
     ) -> list[RevisionSegment]:
         content = self._request_chat_completion(
-            task_id=task_id,
+            transcript_id=transcript_id,
             request_name="segment_plan",
             messages=self._build_segment_plan_messages(
-                task_id=task_id,
+                transcript_id=transcript_id,
                 utterances=utterances,
                 user_prompt=user_prompt,
             ),
@@ -196,7 +198,7 @@ class LLMRevisionGenerator:
     def _generate_segmented_revisions(
         self,
         *,
-        task_id: str,
+        transcript_id: str,
         utterances: list[RevisionPromptUtterance],
         user_prompt: str | None,
         segments: list[RevisionSegment],
@@ -211,7 +213,7 @@ class LLMRevisionGenerator:
             futures = {
                 executor.submit(
                     self._generate_single_segment_revision,
-                    task_id=task_id,
+                    transcript_id=transcript_id,
                     utterances=utterances,
                     user_prompt=user_prompt,
                     segment=segment,
@@ -231,7 +233,7 @@ class LLMRevisionGenerator:
     def _generate_single_segment_revision(
         self,
         *,
-        task_id: str,
+        transcript_id: str,
         utterances: list[RevisionPromptUtterance],
         user_prompt: str | None,
         segment: RevisionSegment,
@@ -248,23 +250,23 @@ class LLMRevisionGenerator:
 
         request_name = f"segment_revision[{segment.segment_index}][{segment.start_seq}-{segment.end_seq}]"
         content = self._request_chat_completion(
-            task_id=task_id,
+            transcript_id=transcript_id,
             request_name=request_name,
             messages=self._build_segment_revision_messages(
-                task_id=task_id,
+                transcript_id=transcript_id,
                 segment=segment,
                 user_prompt=user_prompt,
                 context_before=context_before,
                 target_utterances=target_utterances,
                 context_after=context_after,
-            ),
+            )
         )
         return self._parse_revision_response(content=content, utterances=target_utterances)
 
     def _request_chat_completion(
         self,
         *,
-        task_id: str,
+        transcript_id: str,
         request_name: str,
         messages: list[ChatCompletionMessageParam],
     ) -> str:
@@ -272,8 +274,8 @@ class LLMRevisionGenerator:
         started_at = datetime.now(timezone.utc)
         started_perf = perf_counter()
         logger.info(
-            "LLM request started task_id=%s request_name=%s model=%s started_at=%s",
-            task_id,
+            "LLM request started transcript_id=%s request_name=%s model=%s started_at=%s",
+            transcript_id,
             request_name,
             self._model,
             started_at.isoformat(),
@@ -289,6 +291,10 @@ class LLMRevisionGenerator:
                 messages=messages,
                 timeout=self._timeout,
                 reasoning_effort="minimal",
+                # 火山的扩展参数放这里，disabled 对应关闭深度思考
+                extra_body={
+                    "thinking": {"type": "disabled"},
+                },
             )
             if not response.choices:
                 raise RuntimeError("LLM returned no choices")
@@ -308,7 +314,7 @@ class LLMRevisionGenerator:
             finished_at = datetime.now(timezone.utc)
             duration_ms = int((perf_counter() - started_perf) * 1000)
             self._append_debug_dump(
-                task_id=task_id,
+                transcript_id=transcript_id,
                 request_name=request_name,
                 messages=messages,
                 started_at=started_at,
@@ -320,8 +326,8 @@ class LLMRevisionGenerator:
             )
             if error_message is None:
                 logger.info(
-                    "LLM request finished task_id=%s request_name=%s model=%s finished_at=%s duration_ms=%s",
-                    task_id,
+                    "LLM request finished transcript_id=%s request_name=%s model=%s finished_at=%s duration_ms=%s",
+                    transcript_id,
                     request_name,
                     self._model,
                     finished_at.isoformat(),
@@ -329,8 +335,8 @@ class LLMRevisionGenerator:
                 )
             else:
                 logger.error(
-                    "LLM request failed task_id=%s request_name=%s model=%s finished_at=%s duration_ms=%s error=%s",
-                    task_id,
+                    "LLM request failed transcript_id=%s request_name=%s model=%s finished_at=%s duration_ms=%s error=%s",
+                    transcript_id,
                     request_name,
                     self._model,
                     finished_at.isoformat(),
@@ -341,12 +347,12 @@ class LLMRevisionGenerator:
     def _build_segment_plan_messages(
         self,
         *,
-        task_id: str,
+        transcript_id: str,
         utterances: list[RevisionPromptUtterance],
         user_prompt: str | None,
     ) -> list[ChatCompletionMessageParam]:
         payload = {
-            "task_id": task_id,
+            "transcript_id": transcript_id,
             "user_prompt": (user_prompt or "").strip(),
             "utterances": [
                 {
@@ -375,7 +381,7 @@ class LLMRevisionGenerator:
     def _build_segment_revision_messages(
         self,
         *,
-        task_id: str,
+        transcript_id: str,
         segment: RevisionSegment,
         user_prompt: str | None,
         context_before: list[RevisionPromptUtterance],
@@ -383,7 +389,7 @@ class LLMRevisionGenerator:
         context_after: list[RevisionPromptUtterance],
     ) -> list[ChatCompletionMessageParam]:
         payload = {
-            "task_id": task_id,
+            "transcript_id": transcript_id,
             "user_prompt": (user_prompt or "").strip(),
             "segment": {
                 "segment_index": int(segment.segment_index),
@@ -612,7 +618,7 @@ class LLMRevisionGenerator:
     def _append_debug_dump(
         self,
         *,
-        task_id: str,
+        transcript_id: str,
         request_name: str,
         messages: list[ChatCompletionMessageParam],
         started_at: datetime,
@@ -630,7 +636,7 @@ class LLMRevisionGenerator:
         dump_lines = [
             "===== LLM Revision Request =====",
             f"request_name: {request_name}",
-            f"task_id: {task_id}",
+            f"transcript_id: {transcript_id}",
             f"model: {self._model}",
             f"started_at: {started_at.isoformat()}",
             f"finished_at: {finished_at.isoformat()}",

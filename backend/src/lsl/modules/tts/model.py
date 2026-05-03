@@ -10,10 +10,10 @@ from lsl.core.sql_types import JSONString, UUIDHexString
 
 
 class SessionTtsSettingsModel(Base):
-    __tablename__ = "session_tts_settings"
+    __tablename__ = "tts_session_settings"
 
     session_id: Mapped[str] = mapped_column(UUIDHexString(), primary_key=True)
-    format: Mapped[str] = mapped_column(String(16), nullable=False, server_default=text("'mp3'"))
+    format: Mapped[str] = mapped_column("x_format", String(16), nullable=False, server_default=text("'mp3'"))
     emotion_scale: Mapped[float] = mapped_column(Numeric(), nullable=False, server_default=text("4.0"))
     speech_rate: Mapped[float] = mapped_column(Numeric(), nullable=False, server_default=text("0.0"))
     loudness_rate: Mapped[float] = mapped_column(Numeric(), nullable=False, server_default=text("0.0"))
@@ -39,9 +39,9 @@ class SessionTtsSettingsModel(Base):
 
 
 class SpeechSynthesisModel(Base):
-    __tablename__ = "speech_syntheses"
+    __tablename__ = "tts_syntheses"
     __table_args__ = (
-        Index("idx_speech_syntheses_session_created_at", "session_id", "created_at"),
+        Index("idx_tts_syntheses_session_created_at", "session_id", "created_at"),
     )
 
     synthesis_id: Mapped[str] = mapped_column(UUIDHexString(), primary_key=True)
@@ -83,10 +83,10 @@ class SpeechSynthesisModel(Base):
 
 
 class SpeechSynthesisItemModel(Base):
-    __tablename__ = "speech_synthesis_items"
+    __tablename__ = "tts_synthesis_items"
     __table_args__ = (
         Index(
-            "idx_speech_synthesis_items_seq_span",
+            "idx_tts_synthesis_items_seq_span",
             "synthesis_id",
             "source_seq_start",
             "source_seq_end",

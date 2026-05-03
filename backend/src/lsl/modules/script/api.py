@@ -8,6 +8,8 @@ from lsl.modules.script.schema import (
     ApiResponse,
     GenerateScriptSessionData,
     GenerateScriptSessionRequest,
+    ScriptGenerationData,
+    ScriptGenerationPreviewData,
 )
 from lsl.modules.script.service import ScriptService
 
@@ -30,6 +32,34 @@ def generate_script_session(
         data = script_service.generate_session(payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return ApiResponse(data=data)
+
+
+@router.get("/generations/{generation_id}/preview", response_model=ApiResponse[ScriptGenerationPreviewData])
+def get_script_generation_preview(
+    generation_id: str,
+    script_service: ScriptService = Depends(get_script_service),
+):
+    try:
+        data = script_service.get_generation_preview(generation_id=generation_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return ApiResponse(data=data)
+
+
+@router.get("/generations/{generation_id}", response_model=ApiResponse[ScriptGenerationData])
+def get_script_generation(
+    generation_id: str,
+    script_service: ScriptService = Depends(get_script_service),
+):
+    try:
+        data = script_service.get_generation(generation_id=generation_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return ApiResponse(data=data)

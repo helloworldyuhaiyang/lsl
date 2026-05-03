@@ -33,10 +33,14 @@ class SessionRepository:
         language: str | None,
         f_type: int,
         asset_object_key: str | None,
-        current_task_id: str | None,
+        current_transcript_id: str | None,
     ) -> None:
         normalized_session_id = self._require_uuid(session_id, field_name="session_id")
-        normalized_task_id = self._require_uuid(current_task_id, field_name="current_task_id") if current_task_id else None
+        normalized_transcript_id = (
+            self._require_uuid(current_transcript_id, field_name="current_transcript_id")
+            if current_transcript_id
+            else None
+        )
 
         model = SessionModel(
             session_id=normalized_session_id,
@@ -45,7 +49,7 @@ class SessionRepository:
             language=language,
             f_type=f_type,
             asset_object_key=asset_object_key,
-            current_task_id=normalized_task_id,
+            current_transcript_id=normalized_transcript_id,
         )
 
         try:
@@ -110,15 +114,15 @@ class SessionRepository:
                     return
 
                 for key, value in updates.items():
-                    if key == "current_task_id":
+                    if key == "current_transcript_id":
                         if value is None:
                             setattr(model, key, None)
                         elif isinstance(value, uuid.UUID):
                             setattr(model, key, value.hex)
                         elif isinstance(value, str):
-                            setattr(model, key, self._require_uuid(value, field_name="current_task_id"))
+                            setattr(model, key, self._require_uuid(value, field_name="current_transcript_id"))
                         else:
-                            raise RuntimeError("Invalid current_task_id")
+                            raise RuntimeError("Invalid current_transcript_id")
                     else:
                         setattr(model, key, value)
 
@@ -136,19 +140,19 @@ class SessionRepository:
         except SQLAlchemyError as exc:  # pragma: no cover
             raise RuntimeError(f"Failed to query session by asset_object_key: {exc}") from exc
 
-    def get_session_id_by_current_task_id(self, task_id: str) -> str | None:
-        normalized_task_id = self._parse_uuid_str(task_id)
-        if normalized_task_id is None:
+    def get_session_id_by_current_transcript_id(self, transcript_id: str) -> str | None:
+        normalized_transcript_id = self._parse_uuid_str(transcript_id)
+        if normalized_transcript_id is None:
             return None
 
-        stmt = select(SessionModel.session_id).where(SessionModel.current_task_id == normalized_task_id).limit(1)
+        stmt = select(SessionModel.session_id).where(SessionModel.current_transcript_id == normalized_transcript_id).limit(1)
 
         try:
             with self._session_scope() as db:
                 value = db.execute(stmt).scalar_one_or_none()
                 return str(value) if value is not None else None
         except SQLAlchemyError as exc:  # pragma: no cover
-            raise RuntimeError(f"Failed to query session by current_task_id: {exc}") from exc
+            raise RuntimeError(f"Failed to query session by current_transcript_id: {exc}") from exc
 
     @staticmethod
     def _parse_uuid_str(value: str) -> str | None:
