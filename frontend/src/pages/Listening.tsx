@@ -12,7 +12,13 @@ import { cn } from '@/lib/utils';
 import { getSession } from '@/lib/api/sessions';
 import { getRevision } from '@/lib/api/revisions';
 import { getTtsSettings, getTtsSpeakers, getTtsSynthesis } from '@/lib/api/tts';
-import { applyTtsSynthesis, mapRevision, mapSessionItem } from '@/lib/domain';
+import {
+  applyTtsSynthesis,
+  applyTtsTimelineToRevision,
+  fitRevisionTimelineToAudioDuration,
+  mapRevision,
+  mapSessionItem,
+} from '@/lib/domain';
 import { getVoiceForSpeaker } from '@/lib/voice';
 import {
   DropdownMenu,
@@ -138,17 +144,21 @@ export function Listening() {
       try {
         const item = await getSession(sessionId);
         let nextSession = mapSessionItem(item);
+        let nextRevision: RevisionItem[] = [];
         let nextSpeakerMappings: SpeakerMapping[] = [];
         let nextVoiceList: TtsSpeakerItem[] = [];
         try {
           const revisionData = await getRevision(sessionId);
-          nextSession = { ...nextSession, revision: mapRevision(revisionData), userPrompt: revisionData.user_prompt ?? undefined };
+          nextRevision = mapRevision(revisionData);
+          nextSession = { ...nextSession, revision: nextRevision, userPrompt: revisionData.user_prompt ?? undefined };
         } catch {
           // Revision must exist before listening practice has subtitles.
         }
         try {
           const synthesis = await getTtsSynthesis(sessionId);
+          nextRevision = applyTtsTimelineToRevision(nextRevision, synthesis);
           nextSession = applyTtsSynthesis(nextSession, synthesis);
+          nextSession = { ...nextSession, revision: nextRevision };
         } catch {
           // Audio synthesis is optional; the page can still show timed subtitles.
         }
@@ -307,7 +317,13 @@ export function Listening() {
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
     const onLoadedMetadata = () => {
-      setDuration(Number.isFinite(audio.duration) ? audio.duration : revision.length > 0 ? revision[revision.length - 1].endTime : 0);
+      const nextDuration = Number.isFinite(audio.duration)
+        ? audio.duration
+        : revision.length > 0 ? revision[revision.length - 1].endTime : 0;
+      setDuration(nextDuration);
+      if (shouldFitTimelineToAudioDuration && Number.isFinite(audio.duration)) {
+        setRevision((current) => fitRevisionTimelineToAudioDuration(current, audio.duration));
+      }
     };
 
     audio.addEventListener('timeupdate', onTimeUpdate);
@@ -315,6 +331,9 @@ export function Listening() {
     audio.addEventListener('play', onPlay);
     audio.addEventListener('pause', onPause);
     audio.addEventListener('loadedmetadata', onLoadedMetadata);
+    if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) {
+      onLoadedMetadata();
+    }
 
     return () => {
       audio.removeEventListener('timeupdate', onTimeUpdate);
@@ -323,7 +342,7 @@ export function Listening() {
       audio.removeEventListener('pause', onPause);
       audio.removeEventListener('loadedmetadata', onLoadedMetadata);
     };
-  }, [revision, playbackMode]);
+  }, [revision, playbackMode, shouldFitTimelineToAudioDuration]);
 
   if (!session && !notFound) {
     return <div className="text-[13px] text-slate-500">Loading listening practice...</div>;

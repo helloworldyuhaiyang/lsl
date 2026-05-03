@@ -12,6 +12,7 @@ from typing import Any
 import requests
 
 from lsl.core.config import Settings
+from lsl.modules.tts.audio_duration import estimate_audio_duration_ms
 from lsl.modules.tts.types import TtsSpeaker, TtsSynthesizeRequest, TtsSynthesizeResult
 
 logger = logging.getLogger(__name__)
@@ -410,10 +411,24 @@ class VolcTtsProvider:
                     f"x_tt_logid={log_id} resource_id={self._resource_id} events={event_summaries}"
                 )
 
+            actual_duration_ms = estimate_audio_duration_ms(
+                audio_bytes=bytes(audio_data),
+                format_name=req.format,
+            )
+            duration_ms = actual_duration_ms or max_subtitle_end_time_ms
+            if actual_duration_ms and max_subtitle_end_time_ms and abs(actual_duration_ms - max_subtitle_end_time_ms) > 250:
+                logger.info(
+                    "Volc TTS duration adjusted session_id=%s speaker=%s subtitle_duration_ms=%s audio_duration_ms=%s",
+                    req.session_id,
+                    req.provider_speaker_id,
+                    max_subtitle_end_time_ms,
+                    actual_duration_ms,
+                )
+
             return TtsSynthesizeResult(
                 audio_bytes=bytes(audio_data),
                 content_type=self._content_type_for_format(req.format),
-                duration_ms=max_subtitle_end_time_ms,
+                duration_ms=duration_ms,
                 provider_speaker_id=req.provider_speaker_id,
             )
         finally:

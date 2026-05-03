@@ -91,3 +91,51 @@ export function applyTtsSynthesis(session: Session, synthesis?: TtsSynthesisResp
     duration: synthesis.full_duration_ms ? synthesis.full_duration_ms / 1000 : session.duration,
   };
 }
+
+export function applyTtsTimelineToRevision(
+  revision: RevisionItem[],
+  synthesis?: TtsSynthesisResponse | null,
+): RevisionItem[] {
+  if (!synthesis?.full_asset_url) return revision;
+
+  const timelineByItemId = new Map(
+    synthesis.items
+      .filter((item) => item.start_time_ms != null && item.end_time_ms != null && item.end_time_ms > item.start_time_ms)
+      .map((item) => [
+        item.item_id,
+        {
+          startTime: item.start_time_ms! / 1000,
+          endTime: item.end_time_ms! / 1000,
+        },
+      ])
+  );
+
+  if (timelineByItemId.size === 0) return revision;
+
+  return revision.map((item) => {
+    const timeline = timelineByItemId.get(item.id);
+    return timeline ? { ...item, ...timeline } : item;
+  });
+}
+
+export function fitRevisionTimelineToAudioDuration(
+  revision: RevisionItem[],
+  audioDurationSeconds: number,
+): RevisionItem[] {
+  if (revision.length === 0 || !Number.isFinite(audioDurationSeconds) || audioDurationSeconds <= 0) {
+    return revision;
+  }
+
+  const timelineDuration = revision[revision.length - 1].endTime;
+  const drift = audioDurationSeconds - timelineDuration;
+  if (timelineDuration <= 0 || Math.abs(drift) < 0.25) {
+    return revision;
+  }
+
+  const perItemDrift = drift / revision.length;
+  return revision.map((item, index) => ({
+    ...item,
+    startTime: Math.max(0, item.startTime + perItemDrift * index),
+    endTime: Math.max(0, item.endTime + perItemDrift * (index + 1)),
+  }));
+}
