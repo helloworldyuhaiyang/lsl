@@ -26,6 +26,8 @@ from lsl.modules.session import SessionRepository, SessionService
 from lsl.modules.session.api import router as session_router
 from lsl.modules.transcript import TranscriptRepository, TranscriptService
 from lsl.modules.transcript.api import router as transcript_router
+from lsl.modules.translation import TranslationJobHandler, TranslationRepository, TranslationService, create_translation_generator
+from lsl.modules.translation.api import router as translation_router
 from lsl.modules.tts import TtsCache, TtsJobHandler, TtsRepository, TtsService, create_tts_provider
 from lsl.modules.tts.api import router as tts_router
 
@@ -166,6 +168,11 @@ async def lifespan(app: FastAPI):
         if db_resources.session_factory is not None
         else None
     )
+    translation_repository = (
+        TranslationRepository(db_resources.session_factory)
+        if db_resources.session_factory is not None
+        else None
+    )
 
     asset_service = AssetService(
         settings=settings,
@@ -182,16 +189,6 @@ async def lifespan(app: FastAPI):
         if transcript_repository is not None
         else None
     )
-    asr_service = (
-        AsrService(
-            repository=asr_repository,
-            transcript_service=transcript_service,
-            job_service=job_service,
-            provider=create_asr_provider(settings),
-        )
-        if asr_repository is not None and transcript_service is not None and job_service is not None
-        else None
-    )
     session_service = (
         SessionService(
             repository=session_repository,
@@ -201,6 +198,32 @@ async def lifespan(app: FastAPI):
         if session_repository is not None and transcript_service is not None
         else None
     )
+    translation_service = (
+        TranslationService(
+            repository=translation_repository,
+            generator=create_translation_generator(settings),
+            transcript_service=transcript_service,
+            revision_repository=revision_repository,
+            job_service=job_service,
+            default_target_language=settings.TRANSLATION_DEFAULT_TARGET_LANGUAGE,
+        )
+        if translation_repository is not None
+        and transcript_service is not None
+        and revision_repository is not None
+        and job_service is not None
+        else None
+    )
+    asr_service = (
+        AsrService(
+            repository=asr_repository,
+            transcript_service=transcript_service,
+            job_service=job_service,
+            provider=create_asr_provider(settings),
+            translation_service=translation_service,
+        )
+        if asr_repository is not None and transcript_service is not None and job_service is not None
+        else None
+    )
     revision_service = (
         RevisionService(
             repository=revision_repository,
@@ -208,6 +231,7 @@ async def lifespan(app: FastAPI):
             session_service=session_service,
             transcript_service=transcript_service,
             job_service=job_service,
+            translation_service=translation_service,
         )
         if revision_repository is not None and session_service is not None and transcript_service is not None
         else None
@@ -256,6 +280,8 @@ async def lifespan(app: FastAPI):
             job_service.register_handler(RevisionJobHandler(revision_service=revision_service))
         if tts_service is not None:
             job_service.register_handler(TtsJobHandler(tts_service=tts_service))
+        if translation_service is not None:
+            job_service.register_handler(TranslationJobHandler(translation_service=translation_service))
 
     job_scheduler_task: asyncio.Task | None = None
     if job_service is not None and settings.JOB_RUNNER_ENABLED:
@@ -271,6 +297,7 @@ async def lifespan(app: FastAPI):
     app.state.asr_service = asr_service
     app.state.session_service = session_service
     app.state.revision_service = revision_service
+    app.state.translation_service = translation_service
     app.state.tts_service = tts_service
     app.state.script_service = script_service
 
@@ -298,6 +325,7 @@ app.include_router(asr_router)
 app.include_router(session_router)
 app.include_router(script_router)
 app.include_router(revision_router)
+app.include_router(translation_router)
 app.include_router(tts_router)
 
 

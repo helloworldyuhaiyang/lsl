@@ -296,6 +296,68 @@ CREATE INDEX IF NOT EXISTS idx_script_generations_status_created_at
     ON public.script_generations (x_status, created_at);
 
 -- ---------------------------------------------------------------------------
+-- Translation module
+-- Stores learner-facing translations for transcript and revision text.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS public.translation_translations (
+    translation_id    VARCHAR(32) PRIMARY KEY,                    -- Translation id, uuid hex.
+    session_id        VARCHAR(32),                                -- Optional owning session id.
+    source_type       VARCHAR(32) NOT NULL,                       -- transcript or revision.
+    source_entity_id  VARCHAR(128) NOT NULL,                      -- Source transcript_id or revision_id.
+    source_language   VARCHAR(16),                                -- Source language tag.
+    target_language   VARCHAR(16) NOT NULL,                       -- Target language tag, for example zh-CN.
+    job_id            VARCHAR(32),                                -- Current translation_generation job id.
+    x_provider        VARCHAR(32) NOT NULL,                       -- Translation provider name.
+    x_model           VARCHAR(128),                               -- Provider model when applicable.
+    x_status          SMALLINT NOT NULL DEFAULT 0,                -- 0 pending, 1 generating, 2 completed, 3 failed, 4 partial.
+    item_count        INTEGER NOT NULL DEFAULT 0,                 -- Total translation item count.
+    completed_count   INTEGER NOT NULL DEFAULT 0,                 -- Completed item count.
+    stale_count       INTEGER NOT NULL DEFAULT 0,                 -- Items whose source text changed.
+    error_code        VARCHAR(64),                                -- Stable failure code.
+    error_message     TEXT,                                       -- Failure detail.
+    raw_result_json   TEXT,                                       -- Lightweight provider result JSON.
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Creation timestamp.
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP  -- Last update timestamp.
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_translation_source_target
+    ON public.translation_translations (source_type, source_entity_id, target_language);
+
+CREATE INDEX IF NOT EXISTS idx_translation_translations_session
+    ON public.translation_translations (session_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_translation_translations_status_created_at
+    ON public.translation_translations (x_status, created_at);
+
+CREATE TABLE IF NOT EXISTS public.translation_items (
+    item_id           VARCHAR(32) PRIMARY KEY,                    -- Translation item id, uuid hex.
+    translation_id    VARCHAR(32) NOT NULL,                       -- Owning translation id.
+    source_item_key   VARCHAR(128) NOT NULL,                      -- Source item id or transcript seq.
+    source_seq        INTEGER,                                    -- Sort key within the source.
+    speaker           VARCHAR(64),                                -- Speaker label.
+    start_time        INTEGER,                                    -- Source start time in milliseconds.
+    end_time          INTEGER,                                    -- Source end time in milliseconds.
+    source_text       TEXT NOT NULL,                              -- Source text used for this translation.
+    source_text_hash  VARCHAR(64) NOT NULL,                       -- Hash for stale detection.
+    translated_text   TEXT,                                       -- Translated text.
+    x_status          SMALLINT NOT NULL DEFAULT 0,                -- 0 pending, 1 generating, 2 completed, 3 failed, 4 stale.
+    error_code        VARCHAR(64),                                -- Stable failure code.
+    error_message     TEXT,                                       -- Failure detail.
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Creation timestamp.
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP  -- Last update timestamp.
+);
+
+CREATE INDEX IF NOT EXISTS idx_translation_items_translation_seq
+    ON public.translation_items (translation_id, source_seq);
+
+CREATE INDEX IF NOT EXISTS idx_translation_items_status
+    ON public.translation_items (translation_id, x_status);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_translation_items_source_item
+    ON public.translation_items (translation_id, source_item_key);
+
+-- ---------------------------------------------------------------------------
 -- TTS module
 -- Stores session-level TTS settings and full synthesis outputs.
 -- ---------------------------------------------------------------------------
@@ -374,6 +436,8 @@ DROP TRIGGER IF EXISTS trg_session_sessions_set_updated_at ON public.session_ses
 DROP TRIGGER IF EXISTS trg_revision_revisions_set_updated_at ON public.revision_revisions;
 DROP TRIGGER IF EXISTS trg_revision_items_set_updated_at ON public.revision_items;
 DROP TRIGGER IF EXISTS trg_script_generations_set_updated_at ON public.script_generations;
+DROP TRIGGER IF EXISTS trg_translation_translations_set_updated_at ON public.translation_translations;
+DROP TRIGGER IF EXISTS trg_translation_items_set_updated_at ON public.translation_items;
 DROP TRIGGER IF EXISTS trg_tts_session_settings_set_updated_at ON public.tts_session_settings;
 DROP TRIGGER IF EXISTS trg_tts_syntheses_set_updated_at ON public.tts_syntheses;
 DROP TRIGGER IF EXISTS trg_tts_synthesis_items_set_updated_at ON public.tts_synthesis_items;
@@ -423,6 +487,18 @@ EXECUTE FUNCTION public.set_updated_at();
 -- Keep script generation update timestamps current.
 CREATE TRIGGER trg_script_generations_set_updated_at
 BEFORE UPDATE ON public.script_generations
+FOR EACH ROW
+EXECUTE FUNCTION public.set_updated_at();
+
+-- Keep translation header update timestamps current.
+CREATE TRIGGER trg_translation_translations_set_updated_at
+BEFORE UPDATE ON public.translation_translations
+FOR EACH ROW
+EXECUTE FUNCTION public.set_updated_at();
+
+-- Keep translation item update timestamps current.
+CREATE TRIGGER trg_translation_items_set_updated_at
+BEFORE UPDATE ON public.translation_items
 FOR EACH ROW
 EXECUTE FUNCTION public.set_updated_at();
 

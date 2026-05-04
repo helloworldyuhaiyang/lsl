@@ -22,6 +22,8 @@ import { createTtsSynthesis, generateTtsItemAudio, getTtsSettings, getTtsSpeaker
 import { applyTtsSettings, applyTtsSynthesis, mapRevision, mapSessionItem } from '@/lib/domain';
 import { getVoiceForSpeaker } from '@/lib/voice';
 import type { ScriptGenerationPreviewItemResponse, TtsSynthesisResponse } from '@/types/api';
+import { useTranslation } from '@/hooks/useTranslation';
+import { TranslationButton } from '@/components/translation/TranslationButton';
 
 const TTS_PARAM_RANGES = {
   emotionScale: { min: 1, max: 5, step: 0.1, defaultValue: 4 },
@@ -48,6 +50,7 @@ export function Revise() {
   const session = useMemo(() => loadedSession || (id ? getSessionById(id) : undefined), [id, getSessionById, loadedSession]);
 
   const [revision, setRevision] = useState<RevisionItem[]>([]);
+  const [revisionId, setRevisionId] = useState<string | null>(null);
   const [userPrompt, setUserPrompt] = useState('');
   const [isRevising, setIsRevising] = useState(false);
   const [isSynthesizing, setIsSynthesizing] = useState(false);
@@ -60,10 +63,17 @@ export function Revise() {
   const [error, setError] = useState<string | null>(null);
   const [synthesizingItemId, setSynthesizingItemId] = useState<string | null>(null);
   const [playingOriginalItemId, setPlayingOriginalItemId] = useState<string | null>(null);
+  const [showAllTranslations, setShowAllTranslations] = useState(false);
   const itemAudioRef = useRef<HTMLAudioElement | null>(null);
   const itemAudioUrlRef = useRef<string | null>(null);
   const scriptGenerationId = searchParams.get('generation_id');
   const scriptJobId = searchParams.get('job_id');
+  const revisionTranslation = useTranslation({
+    sourceType: 'revision',
+    sourceEntityId: revisionId,
+    sessionId: id,
+    enabled: !!revisionId && revision.length > 0,
+  });
 
   useEffect(() => {
     if (session) {
@@ -107,13 +117,37 @@ export function Revise() {
         const item = await getSession(sessionId);
         let nextSession = mapSessionItem(item);
         let hasRevision = false;
+        let shouldPoll = false;
+        let preparingScript = false;
+        let revisionGenerating = false;
         try {
           const revisionData = await getRevision(sessionId);
+          setRevisionId(revisionData.revision_id);
           nextSession = { ...nextSession, revision: mapRevision(revisionData), userPrompt: revisionData.user_prompt ?? undefined };
           hasRevision = true;
+          revisionGenerating = isRevisionGenerating(revisionData.status_name);
+          shouldPoll = shouldPoll || revisionGenerating;
         } catch (err) {
           if (!(err instanceof ApiRequestError && err.status === 404)) {
             setError(err instanceof Error ? err.message : 'Failed to load revision');
+          }
+        }
+
+        if (!hasRevision && nextSession.type === 'audio' && nextSession.status === 'completed') {
+          revisionGenerating = true;
+          try {
+            const revisionData = await createRevision({ sessionId, userPrompt: '', force: false });
+            setRevisionId(revisionData.revision_id);
+            nextSession = { ...nextSession, revision: mapRevision(revisionData), userPrompt: revisionData.user_prompt ?? undefined };
+            hasRevision = true;
+            revisionGenerating = isRevisionGenerating(revisionData.status_name);
+            shouldPoll = shouldPoll || revisionGenerating;
+            if (revisionData.status_name === 'failed') {
+              setError(revisionData.error_message || 'Failed to revise session');
+            }
+          } catch (err) {
+            revisionGenerating = false;
+            setError(err instanceof Error ? err.message : 'Failed to start revision');
           }
         }
 
@@ -129,9 +163,6 @@ export function Revise() {
             // Settings are optional until created.
           }
         }
-
-        let shouldPoll = false;
-        let preparingScript = false;
 
         if (!hasRevision && nextSession.type === 'text') {
           preparingScript = nextSession.status === 'pending' || nextSession.status === 'processing';
@@ -185,6 +216,7 @@ export function Revise() {
             setScriptPreviewItems([]);
           }
           setIsPreparingScript(!hasRevision && preparingScript);
+          setIsRevising(revisionGenerating);
           setLoadedSession(nextSession);
           dispatch({ type: 'UPDATE_SESSION', payload: nextSession });
         }
@@ -237,10 +269,12 @@ export function Revise() {
 
   const handleUpdateRevision = useCallback((itemId: string, fullText: string) => {
     setRevision(prev => prev.map(item => item.id === itemId ? { ...item, fullText } : item));
-    void updateRevisionItem(itemId, { draftText: fullText }).catch((err) => {
-      setError(err instanceof Error ? err.message : 'Failed to save revision item');
-    });
-  }, []);
+    void updateRevisionItem(itemId, { draftText: fullText })
+      .then(() => revisionTranslation.reload())
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : 'Failed to save revision item');
+      });
+  }, [revisionTranslation]);
 
   const handleReviseByAI = useCallback(async () => {
     if (!id) return;
@@ -253,6 +287,7 @@ export function Revise() {
     }
     try {
       let data = await createRevision({ sessionId: id, userPrompt, force: true });
+      setRevisionId(data.revision_id);
       let nextRevision = mapRevision(data);
       setRevision(nextRevision);
       if (session) {
@@ -263,6 +298,7 @@ export function Revise() {
       for (let attempt = 0; attempt < 120 && isRevisionGenerating(data.status_name); attempt += 1) {
         await wait(1500);
         data = await getRevision(id);
+        setRevisionId(data.revision_id);
         nextRevision = mapRevision(data);
         setRevision(nextRevision);
         if (session) {
@@ -522,6 +558,22 @@ export function Revise() {
       <div>
         <div className="flex items-center gap-2 mb-1">
           <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider">Step 2</span>
+          {shouldShowRevisionControls && (
+            <TranslationButton
+              active={showAllTranslations}
+              isTranslating={revisionTranslation.isTranslating}
+              failed={revisionTranslation.translation?.status_name === 'failed' || revisionTranslation.hasStuckItems}
+              needsUpdate={revisionTranslation.needsUpdate}
+              onClick={() => {
+                if (revisionTranslation.translation?.status_name === 'failed' || revisionTranslation.needsUpdate || revisionTranslation.hasStuckItems) {
+                  void revisionTranslation.retry();
+                  return;
+                }
+                setShowAllTranslations((current) => !current);
+              }}
+              className="ml-auto"
+            />
+          )}
         </div>
         <h1 className="text-[22px] font-bold text-slate-900 tracking-tight">Revise</h1>
         <p className="text-[13px] text-slate-500 mt-0.5">
@@ -660,6 +712,16 @@ export function Revise() {
             onSynthesize={handleSynthesizeItem}
             isPlayingOriginal={playingOriginalItemId === item.id}
             isSynthesizing={synthesizingItemId === item.id}
+            translationText={revisionTranslation.itemsByKey.get(item.id)?.translated_text}
+            translationStatus={
+              revisionTranslation.hasStuckItems && revisionTranslation.itemsByKey.get(item.id)?.status_name === 'generating'
+                ? 'failed'
+                : revisionTranslation.itemsByKey.get(item.id)?.status_name ?? revisionTranslation.translation?.status_name
+            }
+            translationStale={revisionTranslation.itemsByKey.get(item.id)?.status_name === 'stale'}
+            showTranslation={showAllTranslations}
+            onRetryTranslation={() => void revisionTranslation.retry()}
+            showAssessment={session.type !== 'text'}
           />
         )) : (
           <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">

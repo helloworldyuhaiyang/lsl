@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from lsl.modules.job.service import JobService
 from lsl.modules.job.types import JobData, JobRunResult, JobStatus
@@ -19,6 +20,9 @@ from lsl.modules.session.service import SessionService
 from lsl.modules.transcript.schema import TranscriptUtteranceData
 from lsl.modules.transcript.service import TranscriptService
 
+if TYPE_CHECKING:
+    from lsl.modules.translation.service import TranslationService
+
 logger = logging.getLogger(__name__)
 
 
@@ -31,12 +35,14 @@ class RevisionService:
         session_service: SessionService,
         transcript_service: TranscriptService,
         job_service: JobService | None = None,
+        translation_service: TranslationService | None = None,
     ) -> None:
         self._repository = repository
         self._generator = generator
         self._session_service = session_service
         self._transcript_service = transcript_service
         self._job_service = job_service
+        self._translation_service = translation_service
 
     def shutdown(self) -> None:
         return None
@@ -139,6 +145,7 @@ class RevisionService:
             error_message=None,
         )
         model = self._repository.set_job_id(session_id=session_id, job_id=None)
+        self._enqueue_revision_translation(session_id=session_id)
         return self._to_revision_data(model)
 
     def update_revision_item(self, *, item_id: str, payload: UpdateRevisionItemRequest) -> RevisionItemData:
@@ -231,6 +238,7 @@ class RevisionService:
                 error_code=None,
                 error_message=None,
             )
+            self._enqueue_revision_translation(session_id=session_id)
             return JobRunResult(status=JobStatus.COMPLETED, progress=100)
         except Exception as exc:
             logger.exception("Revision generation job failed session_id=%s transcript_id=%s job_id=%s", session_id, transcript_id, job_id)
@@ -260,6 +268,23 @@ class RevisionService:
             )
             for item in utterances
         ]
+
+    def _enqueue_revision_translation(self, *, session_id: str) -> None:
+        if self._translation_service is None:
+            return
+        try:
+            revision = self._repository.get_revision_by_session_id(session_id)
+            if revision is None:
+                return
+            self._translation_service.create_translation(
+                source_type="revision",
+                source_entity_id=str(revision.revision_id),
+                session_id=session_id,
+                target_language=None,
+                force=False,
+            )
+        except Exception:
+            logger.exception("Failed to enqueue revision translation session_id=%s", session_id)
 
     @staticmethod
     def _build_generated_revision_item(

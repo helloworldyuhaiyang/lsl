@@ -12,6 +12,9 @@ import { getSession } from '@/lib/api/sessions';
 import { getTranscript } from '@/lib/api/transcripts';
 import { getTtsSynthesis } from '@/lib/api/tts';
 import { applyTtsSynthesis, mapSessionItem, mapTranscript } from '@/lib/domain';
+import { useTranslation } from '@/hooks/useTranslation';
+import { TranslationButton } from '@/components/translation/TranslationButton';
+import { TranslationLine } from '@/components/translation/TranslationLine';
 
 export function SessionDetail() {
   const { id } = useParams<{ id: string }>();
@@ -20,8 +23,16 @@ export function SessionDetail() {
   const [notFound, setNotFound] = useState(false);
   const [activeTranscriptIndex, setActiveTranscriptIndex] = useState<number | null>(null);
   const [seekRequest, setSeekRequest] = useState<{ time: number; requestId: number } | null>(null);
+  const [showTranslation, setShowTranslation] = useState(false);
+  const [currentTranscriptId, setCurrentTranscriptId] = useState<string | null>(null);
 
   const session = useMemo(() => loadedSession || (id ? getSessionById(id) : undefined), [id, getSessionById, loadedSession]);
+  const transcriptTranslation = useTranslation({
+    sourceType: 'transcript',
+    sourceEntityId: currentTranscriptId,
+    sessionId: session?.id,
+    enabled: !!currentTranscriptId && !!session?.transcript && session.transcript.length > 0,
+  });
 
   useEffect(() => {
     if (session) dispatch({ type: 'SET_CURRENT_SESSION', payload: session });
@@ -38,6 +49,9 @@ export function SessionDetail() {
       try {
         const item = await getSession(sessionId);
         let nextSession = mapSessionItem(item);
+        if (!cancelled) {
+          setCurrentTranscriptId(item.session.current_transcript_id ?? null);
+        }
 
         if (item.session.current_transcript_id) {
           try {
@@ -202,7 +216,24 @@ export function SessionDetail() {
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
             <h3 className="text-[14px] font-bold text-slate-800">Transcript</h3>
-            <span className="text-[11px] text-slate-400 font-mono">{transcript.length} utterances</span>
+            <div className="flex items-center gap-2">
+              {session.transcript && (
+                <TranslationButton
+                  active={showTranslation}
+                  isTranslating={transcriptTranslation.isTranslating}
+                  failed={transcriptTranslation.translation?.status_name === 'failed' || transcriptTranslation.hasStuckItems}
+                  needsUpdate={transcriptTranslation.needsUpdate}
+                  onClick={() => {
+                    if (transcriptTranslation.translation?.status_name === 'failed' || transcriptTranslation.needsUpdate || transcriptTranslation.hasStuckItems) {
+                      void transcriptTranslation.retry();
+                      return;
+                    }
+                    setShowTranslation((current) => !current);
+                  }}
+                />
+              )}
+              <span className="text-[11px] text-slate-400 font-mono">{transcript.length} utterances</span>
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -245,14 +276,17 @@ export function SessionDetail() {
                       <td className={`py-3 px-3 text-[12px] font-mono ${isActive ? 'text-indigo-600 font-semibold' : 'text-slate-400'}`}>{formatTime(item.startTime)}</td>
                       <td className={`py-3 px-3 text-[13px] leading-relaxed ${isActive ? 'text-slate-900 font-medium' : 'text-slate-700'}`}>
                         {isRevision(item) && item.cue ? (
-                          <span>
+                          <div>
                             <span className="font-mono text-[11px] bg-amber-50 text-amber-700 border border-amber-200 rounded-md px-1.5 py-0.5 mr-1.5 font-medium">
                               [{item.cue}]
                             </span>
                             {item.content}
-                          </span>
+                          </div>
                         ) : (
                           'text' in item ? item.text : item.content
+                        )}
+                        {showTranslation && 'text' in item && (
+                          <TranslationLine text={transcriptTranslation.itemsByKey.get(item.id)?.translated_text} />
                         )}
                       </td>
                     </tr>

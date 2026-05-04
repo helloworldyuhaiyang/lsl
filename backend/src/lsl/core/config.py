@@ -93,6 +93,14 @@ class Settings:
     SCRIPT_LLM_MODEL: str = "doubao-1-5-pro-32k-250115"
     SCRIPT_LLM_HTTP_TIMEOUT: float = 60.0
 
+    # Translation / LLM
+    TRANSLATION_PROVIDER: str = "fake"
+    TRANSLATION_LLM_API_KEY: str = ""
+    TRANSLATION_LLM_BASE_URL: str = "https://ark.cn-beijing.volces.com/api/v3"
+    TRANSLATION_LLM_MODEL: str = "doubao-1-5-pro-32k-250115"
+    TRANSLATION_LLM_HTTP_TIMEOUT: float = 60.0
+    TRANSLATION_DEFAULT_TARGET_LANGUAGE: str = "zh-CN"
+
     # TTS
     TTS_PROVIDER: str = "fake"
     TTS_REDIS_URL: str = "redis://127.0.0.1:6379/0"
@@ -136,6 +144,10 @@ class Settings:
             "SCRIPT_LLM_HTTP_TIMEOUT",
             cls.SCRIPT_LLM_HTTP_TIMEOUT,
         )
+        translation_llm_http_timeout = _get_env_float(
+            "TRANSLATION_LLM_HTTP_TIMEOUT",
+            cls.TRANSLATION_LLM_HTTP_TIMEOUT,
+        )
         tts_cache_ttl_seconds = _get_env_int("TTS_CACHE_TTL_SECONDS", cls.TTS_CACHE_TTL_SECONDS)
         tts_volc_http_timeout = _get_env_float("TTS_VOLC_HTTP_TIMEOUT", cls.TTS_VOLC_HTTP_TIMEOUT)
         tts_default_emotion_scale = _get_env_float("TTS_DEFAULT_EMOTION_SCALE", cls.TTS_DEFAULT_EMOTION_SCALE)
@@ -160,6 +172,8 @@ class Settings:
             raise ValueError("REVISION_LLM_HTTP_TIMEOUT must be greater than 0")
         if script_llm_http_timeout <= 0:
             raise ValueError("SCRIPT_LLM_HTTP_TIMEOUT must be greater than 0")
+        if translation_llm_http_timeout <= 0:
+            raise ValueError("TRANSLATION_LLM_HTTP_TIMEOUT must be greater than 0")
         if tts_cache_ttl_seconds <= 0:
             raise ValueError("TTS_CACHE_TTL_SECONDS must be greater than 0")
         if tts_volc_http_timeout <= 0:
@@ -183,6 +197,11 @@ class Settings:
         script_llm_api_key = _get_env_str("SCRIPT_LLM_API_KEY", revision_llm_api_key or cls.SCRIPT_LLM_API_KEY)
         script_llm_base_url = _get_env_str("SCRIPT_LLM_BASE_URL", revision_llm_base_url or cls.SCRIPT_LLM_BASE_URL)
         script_llm_model = _get_env_str("SCRIPT_LLM_MODEL", revision_llm_model or cls.SCRIPT_LLM_MODEL)
+        translation_provider_default = "llm" if revision_provider == "llm" else cls.TRANSLATION_PROVIDER
+        translation_provider = os.getenv("TRANSLATION_PROVIDER", translation_provider_default).strip().lower() or translation_provider_default
+        translation_llm_api_key = _get_env_str("TRANSLATION_LLM_API_KEY", revision_llm_api_key or cls.TRANSLATION_LLM_API_KEY)
+        translation_llm_base_url = _get_env_str("TRANSLATION_LLM_BASE_URL", revision_llm_base_url or cls.TRANSLATION_LLM_BASE_URL)
+        translation_llm_model = _get_env_str("TRANSLATION_LLM_MODEL", revision_llm_model or cls.TRANSLATION_LLM_MODEL)
 
         return cls(
             STORAGE_PROVIDER=provider,
@@ -219,6 +238,15 @@ class Settings:
             SCRIPT_LLM_BASE_URL=script_llm_base_url,
             SCRIPT_LLM_MODEL=script_llm_model,
             SCRIPT_LLM_HTTP_TIMEOUT=script_llm_http_timeout,
+            TRANSLATION_PROVIDER=translation_provider,
+            TRANSLATION_LLM_API_KEY=translation_llm_api_key,
+            TRANSLATION_LLM_BASE_URL=translation_llm_base_url,
+            TRANSLATION_LLM_MODEL=translation_llm_model,
+            TRANSLATION_LLM_HTTP_TIMEOUT=translation_llm_http_timeout,
+            TRANSLATION_DEFAULT_TARGET_LANGUAGE=_get_env_str(
+                "TRANSLATION_DEFAULT_TARGET_LANGUAGE",
+                cls.TRANSLATION_DEFAULT_TARGET_LANGUAGE,
+            ),
             TTS_PROVIDER=tts_provider,
             TTS_REDIS_URL=_get_env_str("TTS_REDIS_URL", cls.TTS_REDIS_URL),
             TTS_CACHE_TTL_SECONDS=tts_cache_ttl_seconds,

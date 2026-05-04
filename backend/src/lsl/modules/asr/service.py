@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import uuid
+import logging
 from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING
 
 from lsl.modules.asr.repo import AsrRepository
 from lsl.modules.asr.schema import AsrRecognitionData, CreateAsrRecognitionData
@@ -17,6 +19,11 @@ from lsl.modules.job.types import JobData, JobHandler, JobRunResult, JobStatus
 from lsl.modules.transcript.service import TranscriptService
 from lsl.modules.transcript.types import TranscriptStatus, TranscriptUtterance
 
+if TYPE_CHECKING:
+    from lsl.modules.translation.service import TranslationService
+
+logger = logging.getLogger(__name__)
+
 
 class AsrService:
     def __init__(
@@ -26,11 +33,13 @@ class AsrService:
         transcript_service: TranscriptService,
         job_service: JobService,
         provider: AsrProvider,
+        translation_service: TranslationService | None = None,
     ) -> None:
         self._repository = repository
         self._transcript_service = transcript_service
         self._job_service = job_service
         self._provider = provider
+        self._translation_service = translation_service
 
     def create_recognition(
         self,
@@ -242,6 +251,16 @@ class AsrService:
             provider_message=query_result.provider_message,
             x_tt_logid=query_result.x_tt_logid,
         )
+        if self._translation_service is not None:
+            try:
+                self._translation_service.create_translation(
+                    source_type="transcript",
+                    source_entity_id=recognition.transcript_id,
+                    target_language=None,
+                    force=False,
+                )
+            except Exception:
+                logger.exception("Failed to enqueue transcript translation transcript_id=%s", recognition.transcript_id)
         return JobRunResult(status=JobStatus.COMPLETED, progress=100)
 
     def _provider_name(self) -> str:

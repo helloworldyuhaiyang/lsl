@@ -343,3 +343,44 @@ export interface CreateTtsSynthesisResponse {
   synthesis: TtsSynthesisResponse
   job?: JobItem | null
 }
+
+export interface TranslationItemResponse {
+  item_id: string
+  translation_id: string
+  source_item_key: string
+  source_seq?: number | null
+  speaker?: string | null
+  start_time?: number | null
+  end_time?: number | null
+  source_text: string
+  source_text_hash: string
+  translated_text?: string | null
+  status: number
+  status_name: string
+  error_code?: string | null
+  error_message?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface TranslationResponse {
+  translation_id: string
+  session_id?: string | null
+  source_type: string
+  source_entity_id: string
+  source_language?: string | null
+  target_language: string
+  job_id?: string | null
+  provider: string
+  model?: string | null
+  status: number
+  status_name: string
+  item_count: number
+  completed_count: number
+  stale_count: number
+  error_code?: string | null
+  error_message?: string | null
+  created_at: string
+  updated_at: string
+  items: TranslationItemResponse[]
+}

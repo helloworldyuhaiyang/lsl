@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Play, Pause, SkipBack, SkipForward, ArrowLeft, ChevronDown, ListRestart, Repeat, Repeat1, Volume2 } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, ArrowLeft, ListRestart, Repeat, Repeat1, Volume2 } from 'lucide-react';
 import { formatTime } from '@/utils/formatTime';
 import { useApp } from '@/context/AppContext';
 import type { RevisionItem, SpeakerMapping } from '@/types';
@@ -20,6 +20,9 @@ import {
   mapSessionItem,
 } from '@/lib/domain';
 import { getVoiceForSpeaker } from '@/lib/voice';
+import { useTranslation } from '@/hooks/useTranslation';
+import { TranslationButton } from '@/components/translation/TranslationButton';
+import { TranslationLine } from '@/components/translation/TranslationLine';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,6 +30,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 type PlaybackMode = 'once' | 'repeat-all' | 'repeat-one';
 
@@ -37,15 +41,16 @@ const PLAYBACK_MODES: Array<{ value: PlaybackMode; label: string; icon: typeof L
 ];
 
 function MobileSubtitleCard({
-  item, index, isActive, voice, onClick,
+  item, index, isActive, voice, onClick, translationText, showTranslation,
 }: {
   item: RevisionItem;
   index: number;
   isActive: boolean;
   voice?: TtsSpeakerItem;
   onClick: (time: number) => void;
+  translationText?: string | null;
+  showTranslation?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const parsed = parseCueText(item.fullText);
   const cardRef = useRef<HTMLDivElement>(null);
 
@@ -58,12 +63,20 @@ function MobileSubtitleCard({
   return (
     <div
       ref={cardRef}
-      onClick={() => { onClick(item.startTime); setExpanded(!expanded); }}
+      onClick={() => onClick(item.startTime)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onClick(item.startTime);
+        }
+      }}
+      role="button"
+      tabIndex={0}
       className={cn(
-        'bg-white rounded-xl border p-3.5 cursor-pointer transition-all duration-300 select-none',
+        'group bg-white rounded-xl border p-3.5 cursor-pointer select-none outline-none transition-all duration-300',
         isActive
           ? 'border-indigo-300 ring-1 ring-indigo-200 shadow-md shadow-indigo-100'
-          : 'border-slate-200'
+          : 'border-slate-200 hover:border-slate-300 hover:shadow-sm'
       )}
     >
       <div className="flex items-center gap-2">
@@ -72,25 +85,78 @@ function MobileSubtitleCard({
         <span className="text-[10px] text-slate-400 font-mono ml-auto">
           {formatTime(item.startTime)}
         </span>
-        <ChevronDown className={cn('w-3 h-3 text-slate-400 transition-transform', expanded && 'rotate-180')} />
       </div>
 
-      {expanded && (
-        <div className="mt-2 pt-2 border-t border-slate-100 animate-in fade-in slide-in-from-top-1 duration-200">
-          {parsed.cue && (
-            <span className="inline-block font-mono text-[11px] bg-amber-50 text-amber-700 border border-amber-200 rounded-md px-1.5 py-0.5 font-medium mb-1">
-              [{parsed.cue}]
-            </span>
-          )}
-          <p className="text-[14px] text-slate-700 leading-relaxed">{parsed.content}</p>
+      <div className="grid grid-rows-[0fr] opacity-0 transition-[grid-template-rows,opacity,margin-top] duration-200 group-hover:mt-2 group-hover:grid-rows-[1fr] group-hover:opacity-100 group-focus-visible:mt-2 group-focus-visible:grid-rows-[1fr] group-focus-visible:opacity-100">
+        <div className="min-h-0 overflow-hidden">
+          <div className="border-t border-slate-100 pt-2">
+            {parsed.cue && (
+              <span className="inline-block font-mono text-[11px] bg-amber-50 text-amber-700 border border-amber-200 rounded-md px-1.5 py-0.5 font-medium mb-1">
+                [{parsed.cue}]
+              </span>
+            )}
+            <p className="text-[14px] text-slate-700 leading-relaxed">{parsed.content}</p>
+            {showTranslation && <TranslationLine text={translationText} className="text-[12px]" />}
+          </div>
         </div>
-      )}
+      </div>
 
-      {!expanded && isActive && (
-        <p className="text-[12px] text-indigo-500 mt-1 font-medium truncate">
-          {parsed.content}
-        </p>
-      )}
+    </div>
+  );
+}
+
+function TranslationModeControls({
+  mode,
+  isTranslating,
+  needsUpdate,
+  failed,
+  onModeChange,
+  onRetry,
+}: {
+  mode: 'english' | 'bilingual' | 'peek';
+  isTranslating?: boolean;
+  needsUpdate?: boolean;
+  failed?: boolean;
+  onModeChange: (mode: 'english' | 'bilingual' | 'peek') => void;
+  onRetry: () => void;
+}) {
+  if (isTranslating || needsUpdate || failed) {
+    return (
+      <TranslationButton
+        isTranslating={isTranslating}
+        needsUpdate={needsUpdate}
+        failed={failed}
+        onClick={onRetry}
+      />
+    );
+  }
+
+  return (
+    <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1">
+      {[
+        { value: 'english', label: 'English', tip: 'Only show English subtitles.' },
+        { value: 'peek', label: 'Peek', tip: 'Only show the translation for the current active sentence.' },
+        { value: 'bilingual', label: 'Bilingual', tip: 'Show translations under every sentence.' },
+      ].map((item) => (
+        <Tooltip key={item.value}>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => onModeChange(item.value as 'english' | 'bilingual' | 'peek')}
+              aria-label={`${item.label}: ${item.tip}`}
+              className={cn(
+                'h-7 rounded-md px-2.5 text-[11px] font-semibold transition-colors',
+                mode === item.value ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:text-slate-700'
+              )}
+            >
+              {item.label}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top" sideOffset={6}>
+            {item.tip}
+          </TooltipContent>
+        </Tooltip>
+      ))}
     </div>
   );
 }
@@ -113,12 +179,20 @@ export function Listening() {
   const [activeIndex, setActiveIndex] = useState(-1);
   const [speakerMappings, setSpeakerMappings] = useState<SpeakerMapping[]>([]);
   const [voiceList, setVoiceList] = useState<TtsSpeakerItem[]>([]);
+  const [revisionId, setRevisionId] = useState<string | null>(null);
+  const [translationMode, setTranslationMode] = useState<'english' | 'bilingual' | 'peek'>('english');
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const activeIndexRef = useRef(-1);
 
   const audioUrl = session?.synthesizedAudioUrl || session?.audioUrl;
   const shouldFitTimelineToAudioDuration = !session?.synthesizedAudioUrl;
+  const revisionTranslation = useTranslation({
+    sourceType: 'revision',
+    sourceEntityId: revisionId,
+    sessionId: id,
+    enabled: !!revisionId && revision.length > 0,
+  });
 
   useEffect(() => {
     activeIndexRef.current = activeIndex;
@@ -150,6 +224,7 @@ export function Listening() {
         let nextVoiceList: TtsSpeakerItem[] = [];
         try {
           const revisionData = await getRevision(sessionId);
+          setRevisionId(revisionData.revision_id);
           nextRevision = mapRevision(revisionData);
           nextSession = { ...nextSession, revision: nextRevision, userPrompt: revisionData.user_prompt ?? undefined };
         } catch {
@@ -365,14 +440,41 @@ export function Listening() {
       {/* Header - hidden on mobile to save space */}
       <div className="hidden sm:block">
         <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider">Step 3</span>
-        <h1 className="text-[22px] font-bold text-slate-900 tracking-tight mt-1">Listening Practice</h1>
-        <p className="text-[13px] text-slate-500 mt-0.5">Follow along with the audio and review each sentence</p>
+        <div className="mt-1 flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-[22px] font-bold text-slate-900 tracking-tight">Listening Practice</h1>
+            <p className="text-[13px] text-slate-500 mt-0.5">Follow along with the audio and review each sentence</p>
+          </div>
+          <TranslationModeControls
+            mode={translationMode}
+            isTranslating={revisionTranslation.isTranslating}
+            needsUpdate={revisionTranslation.needsUpdate}
+            failed={revisionTranslation.translation?.status_name === 'failed' || revisionTranslation.hasStuckItems}
+            onModeChange={setTranslationMode}
+            onRetry={() => void revisionTranslation.retry()}
+          />
+        </div>
       </div>
 
       {/* Mobile mini header */}
       <div className="sm:hidden flex items-center justify-between">
         <h1 className="text-[16px] font-bold text-slate-800">Listening</h1>
-        <span className="text-[11px] text-slate-400">{revision.length} sentences</span>
+        <div className="flex items-center gap-2">
+          <TranslationButton
+            active={translationMode !== 'english'}
+            isTranslating={revisionTranslation.isTranslating}
+            failed={revisionTranslation.translation?.status_name === 'failed' || revisionTranslation.hasStuckItems}
+            needsUpdate={revisionTranslation.needsUpdate}
+            onClick={() => {
+              if (revisionTranslation.translation?.status_name === 'failed' || revisionTranslation.needsUpdate || revisionTranslation.hasStuckItems) {
+                void revisionTranslation.retry();
+                return;
+              }
+              setTranslationMode((current) => current === 'english' ? 'peek' : 'english');
+            }}
+          />
+          <span className="text-[11px] text-slate-400">{revision.length} sentences</span>
+        </div>
       </div>
 
       {/* Subtitle Cards */}
@@ -385,6 +487,8 @@ export function Listening() {
             isActive={activeIndex === index}
             voice={getVoiceForSpeaker(item.speaker, speakerMappings, voiceList)}
             onClick={handleSentenceClick}
+            translationText={revisionTranslation.itemsByKey.get(item.id)?.translated_text}
+            showTranslation={translationMode === 'bilingual' || (translationMode === 'peek' && activeIndex === index)}
           />
         ))}
       </div>

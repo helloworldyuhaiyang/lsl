@@ -42,6 +42,23 @@ class RevisionRepository:
         except SQLAlchemyError as exc:  # pragma: no cover
             raise RuntimeError(f"Failed to query revision by session_id: {exc}") from exc
 
+    def get_revision_by_id(self, revision_id: str) -> UtterancesRevisionModel | None:
+        normalized_revision_id = self._parse_uuid_str(revision_id)
+        if normalized_revision_id is None:
+            return None
+
+        stmt = (
+            select(UtterancesRevisionModel)
+            .options(selectinload(UtterancesRevisionModel.items))
+            .where(UtterancesRevisionModel.revision_id == normalized_revision_id)
+            .limit(1)
+        )
+        try:
+            with self._session_scope() as db:
+                return db.execute(stmt).scalar_one_or_none()
+        except SQLAlchemyError as exc:  # pragma: no cover
+            raise RuntimeError(f"Failed to query revision by id: {exc}") from exc
+
     def save_revision(
         self,
         *,
