@@ -32,26 +32,48 @@ class FakeScriptGenerator:
 
     def generate(self, req: ScriptGenerateRequest) -> GeneratedScript:
         speakers = [f"user-{index + 1}" for index in range(req.speaker_count)]
-        base_texts = [
-            "Hey, do you have a minute?",
-            "Sure. What do you need?",
-            "I want to practice this conversation before the meeting.",
-            "No problem. Let's run through it once.",
-            "I also want it to sound natural and confident.",
-            "Then keep it short and say it clearly.",
-            "That makes sense. Let me try again.",
-            "Go ahead. I'm listening.",
-        ]
-        base_cues = [
-            "轻松自然地开口",
-            "随意但友好地回应",
-            "带点认真地说明来意",
-            "平稳地配合对方",
-            "略带期待地补充",
-            "平静地给建议",
-            "重新组织后更自信地说",
-            "简短地鼓励对方继续",
-        ]
+        if _is_chinese_language(req.language):
+            base_texts = [
+                "嘿，你现在方便吗？",
+                "当然，你需要什么？",
+                "我想在会议前练一下这段对话。",
+                "没问题，我们先完整走一遍。",
+                "我也希望听起来自然又自信。",
+                "那就保持简短，说清楚重点。",
+                "有道理，我再试一次。",
+                "来吧，我在听。",
+            ]
+            base_cues = [
+                "轻松自然地开口",
+                "随意但友好地回应",
+                "带点认真地说明来意",
+                "平稳地配合对方",
+                "略带期待地补充",
+                "平静地给建议",
+                "重新组织后更自信地说",
+                "简短地鼓励对方继续",
+            ]
+        else:
+            base_texts = [
+                "Hey, do you have a minute?",
+                "Sure. What do you need?",
+                "I want to practice this conversation before the meeting.",
+                "No problem. Let's run through it once.",
+                "I also want it to sound natural and confident.",
+                "Then keep it short and say it clearly.",
+                "That makes sense. Let me try again.",
+                "Go ahead. I'm listening.",
+            ]
+            base_cues = [
+                "Open in a relaxed, natural tone",
+                "Reply casually but warmly",
+                "Explain the purpose with a focused tone",
+                "Cooperate in a steady tone",
+                "Add the thought with mild anticipation",
+                "Give calm, practical advice",
+                "Speak again with clearer confidence",
+                "Encourage the other person to continue briefly",
+            ]
         utterances: list[GeneratedScriptTurn] = []
         for index in range(req.turn_count):
             speaker = speakers[index % len(speakers)]
@@ -109,22 +131,25 @@ class LlmScriptGenerator:
             yield from self.generate(req).utterances
 
     def _build_messages(self, *, req: ScriptGenerateRequest, speaker_names: list[str]) -> list[dict[str, str]]:
+        language_label = _language_label(req.language)
+        cue_example = _cue_example(req.language)
+        text_example = _text_example(req.language)
         system_prompt = (
-            "You create cue-driven English speaking practice scripts.\n"
+            f"You create cue-driven {language_label} speaking practice scripts.\n"
             "Return JSON only.\n"
             "Output schema:\n"
             "{\n"
             '  "utterances": [\n'
-            '    {"speaker": "user-1", "cue": "轻松自然地开口", "text": "Hi, do you have a minute?"}\n'
+            f'    {{"speaker": "user-1", "cue": "{cue_example}", "text": "{text_example}"}}\n'
             "  ]\n"
             "}\n"
             "Rules:\n"
             f"- Use only these speakers: {', '.join(speaker_names)}.\n"
             f"- Target about {req.turn_count} utterances.\n"
-            "- Every utterance must include a non-empty cue and a non-empty spoken-English text.\n"
-            "- cue must be concise Chinese guidance describing delivery, tone, emotion, rhythm, or subtext.\n"
+            f"- Every utterance must include a non-empty cue and a non-empty spoken {language_label} text.\n"
+            f"- cue must be concise {language_label} guidance describing delivery, tone, emotion, rhythm, or subtext.\n"
             "- Do not include square brackets in the cue field.\n"
-            "- text must be spoken English only and must not include cue markers.\n"
+            f"- text must be spoken {language_label} only and must not include cue markers.\n"
             "- Keep the dialogue natural, practical, and suitable for TTS playback.\n"
             "- Alternate speakers naturally.\n"
             "- 适当的增加 Hmm,Well..., Let me think… , uh... , so, basically, actually, but, however, while 等使其更加逼真。"
@@ -154,18 +179,21 @@ class LlmScriptGenerator:
         ]
 
     def _build_stream_messages(self, *, req: ScriptGenerateRequest, speaker_names: list[str]) -> list[dict[str, str]]:
+        language_label = _language_label(req.language)
+        cue_example = _cue_example(req.language)
+        text_example = _text_example(req.language)
         system_prompt = (
-            "You create cue-driven English speaking practice scripts.\n"
+            f"You create cue-driven {language_label} speaking practice scripts.\n"
             "Return newline-delimited JSON only. Do not wrap the response in markdown.\n"
             "Each line must be one complete JSON object with this schema:\n"
-            '{"speaker":"user-1","cue":"轻松自然地开口","text":"Hi, do you have a minute?"}\n'
+            f'{{"speaker":"user-1","cue":"{cue_example}","text":"{text_example}"}}\n'
             "Rules:\n"
             f"- Use only these speakers: {', '.join(speaker_names)}.\n"
             f"- Return exactly {req.turn_count} lines.\n"
-            "- Every line must include a non-empty cue and a non-empty spoken-English text.\n"
-            "- cue must be concise Chinese guidance describing delivery, tone, emotion, rhythm, or subtext.\n"
+            f"- Every line must include a non-empty cue and a non-empty spoken {language_label} text.\n"
+            f"- cue must be concise {language_label} guidance describing delivery, tone, emotion, rhythm, or subtext.\n"
             "- Do not include square brackets in the cue field.\n"
-            "- text must be spoken English only and must not include cue markers.\n"
+            f"- text must be spoken {language_label} only and must not include cue markers.\n"
             "- Keep the dialogue natural, practical, and suitable for TTS playback.\n"
             "- Alternate speakers naturally.\n"
             "- 适当的增加 Hmm,Well..., Let me think… , uh... , so, basically, actually, but, however, while 等使其更加逼真。"
@@ -461,3 +489,28 @@ def _strip_cue_brackets(value: str) -> str:
     if not match:
         return value.strip()
     return re.sub(r"\s+", " ", (match.group(1) or "").strip())
+
+
+def _is_chinese_language(value: str | None) -> bool:
+    return (value or "").strip().lower().startswith("zh")
+
+
+def _language_label(value: str | None) -> str:
+    normalized = (value or "en").strip().lower()
+    if normalized.startswith("zh"):
+        return "Simplified Chinese"
+    if normalized.startswith("en"):
+        return "English"
+    return value.strip() if value and value.strip() else "English"
+
+
+def _cue_example(value: str | None) -> str:
+    if _is_chinese_language(value):
+        return "轻松自然地开口"
+    return "Open in a relaxed, natural tone"
+
+
+def _text_example(value: str | None) -> str:
+    if _is_chinese_language(value):
+        return "你好，现在方便聊一下吗？"
+    return "Hi, do you have a minute?"

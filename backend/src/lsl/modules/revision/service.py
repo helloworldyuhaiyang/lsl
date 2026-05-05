@@ -189,6 +189,7 @@ class RevisionService:
             transcript_id=transcript_id,
             user_prompt=user_prompt,
             utterances=prompt_utterances,
+            target_language=transcript.language,
         )
 
         try:
@@ -359,7 +360,7 @@ class RevisionService:
             return {}
 
         filtered: dict[str, str | int | float] = {}
-        for key in ("emotion", "emotion_degree"):
+        for key in ("cue", "emotion", "emotion_degree"):
             value = addions.get(key)
             if value is None:
                 continue

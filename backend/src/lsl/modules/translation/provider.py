@@ -15,12 +15,13 @@ from lsl.modules.translation.types import TranslationGenerateRequest, Translatio
 
 _CODE_FENCE_JSON_RE = re.compile(r"```(?:json)?\s*(.+?)\s*```", re.DOTALL | re.IGNORECASE)
 
-_TRANSLATION_SYSTEM_PROMPT = """You are a translation assistant for English listening practice.
+_TRANSLATION_SYSTEM_PROMPT = """You are a translation assistant for listening practice.
 
 Return a JSON object only.
-Translate each target item into natural Simplified Chinese.
+Translate each target item into the requested target_language.
 Preserve the speaker's meaning, tone, and context.
-Do not translate delivery CUEs in square brackets as spoken content; use them only to understand tone.
+If source text begins with a delivery CUE in square brackets, translate that CUE into target_language and keep it at the front in square brackets.
+Do not merge delivery CUEs into spoken content.
 Keep translations concise and useful for learners.
 
 Output schema:
@@ -28,7 +29,7 @@ Output schema:
   "items": [
     {
       "source_item_key": "item id",
-      "translated_text": "中文译文"
+      "translated_text": "[translated cue] translated spoken text"
     }
   ]
 }

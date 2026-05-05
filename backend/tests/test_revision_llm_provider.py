@@ -155,6 +155,91 @@ def test_generate_includes_context_around_target_segment(monkeypatch) -> None:
     assert [item["utterance_seq"] for item in captured_payloads[0]["context_after"]] == [3]
 
 
+def test_revision_prompt_includes_existing_cue_additions(monkeypatch) -> None:
+    generator = LLMRevisionGenerator(_build_settings())
+    req = RevisionGenerateRequest(
+        transcript_id="task-cue",
+        user_prompt=None,
+        target_language="en-US",
+        utterances=[
+            RevisionPromptUtterance(
+                utterance_seq=0,
+                speaker="student",
+                text="hello",
+                addions={"cue": "轻松自然地开口"},
+            ),
+        ],
+    )
+    captured_payloads: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        generator,
+        "_plan_segments",
+        lambda *, transcript_id, utterances, user_prompt: [
+            RevisionSegment(segment_index=1, start_seq=0, end_seq=0, title="Greeting", summary="One greeting")
+        ],
+    )
+
+    def fake_request_chat_completion(*, transcript_id, request_name, messages):
+        if request_name.startswith("segment_revision"):
+            user_message = next(item for item in messages if item["role"] == "user")
+            content = user_message["content"]
+            captured_payloads.append(json.loads(content[content.index("{"):]))
+            return """
+{
+  "items": [
+    {"source_seqs": [0], "suggested_text": "[Open naturally] Hello.", "score": 95}
+  ]
+}
+"""
+        raise AssertionError(f"Unexpected request_name: {request_name}")
+
+    monkeypatch.setattr(generator, "_request_chat_completion", fake_request_chat_completion)
+
+    result = generator.generate(req)
+
+    assert result[0].suggested_text == "[Open naturally] Hello."
+    target_utterance = captured_payloads[0]["target_utterances"][0]
+    assert target_utterance["addions"] == {"cue": "轻松自然地开口"}
+
+
+def test_revision_prompt_uses_target_language_for_cues() -> None:
+    generator = LLMRevisionGenerator(_build_settings())
+
+    english_messages = generator._build_segment_revision_messages(
+        transcript_id="task-en",
+        segment=RevisionSegment(segment_index=1, start_seq=0, end_seq=0),
+        user_prompt=None,
+        target_language="en-US",
+        context_before=[],
+        target_utterances=[
+            RevisionPromptUtterance(utterance_seq=0, speaker="student", text="hello")
+        ],
+        context_after=[],
+    )
+    english_system = next(item for item in english_messages if item["role"] == "system")["content"]
+    assert "Include one short English delivery cue in every rewritten script" in english_system
+    assert "suggested_text must be a single editable script string that starts with exactly one delivery CUE" in english_system
+    assert "translate or rewrite that CUE into English" in english_system
+    assert "[Open with relaxed, natural curiosity]" in english_system
+
+    chinese_messages = generator._build_segment_revision_messages(
+        transcript_id="task-zh",
+        segment=RevisionSegment(segment_index=1, start_seq=0, end_seq=0),
+        user_prompt=None,
+        target_language="zh-CN",
+        context_before=[],
+        target_utterances=[
+            RevisionPromptUtterance(utterance_seq=0, speaker="student", text="你好")
+        ],
+        context_after=[],
+    )
+    chinese_system = next(item for item in chinese_messages if item["role"] == "system")["content"]
+    assert "Include one short Simplified Chinese delivery cue in every rewritten script" in chinese_system
+    assert "translate or rewrite that CUE into Simplified Chinese" in chinese_system
+    assert "[用轻松自然的语气开口]" in chinese_system
+
+
 def test_append_debug_dump_writes_request_and_response(tmp_path) -> None:
     debug_file = tmp_path / "llm_revision.txt"
     generator = LLMRevisionGenerator(

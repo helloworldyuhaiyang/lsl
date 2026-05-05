@@ -34,8 +34,10 @@ Whether the source is a real recording or an AI script, LSL turns it into someth
 - Create a text session manually, or generate an AI dialogue script with embedded `CUE`s.
 - Compare original wording against revised wording, with scoring and draft saving.
 - Edit `CUE`-rich scripts as a single string in the UI.
-- Generate script-backed session data that is ready for revise and future listening / TTS flows.
-- Use a shared async job foundation for ASR, AI script generation, and future TTS workflows.
+- Generate script-backed session data that is ready for revise, listening, translation, and TTS flows.
+- Generate Chinese translations for transcript and revision items, with async status tracking and stale detection after edits.
+- Synthesize full listening audio and preview single revision items through TTS.
+- Use a shared async job foundation for ASR, AI script generation, revision, translation, and TTS workflows.
 
 ## A Typical Practice Loop
 
@@ -43,7 +45,8 @@ Whether the source is a real recording or an AI script, LSL turns it into someth
 2. Choose the source type: 1) upload a real recording; 2) generate a script from requirements such as scenario, key content, and speaker roles.
 3. If it is a recording, ASR produces the transcript. If it is a script, the LLM produces dialogue content with `CUE`s.
 4. Revision turns the content into something easier to learn from.
-5. The same `CUE`-driven script can then be reused for repeated listening and speaking drills.
+5. Translation can provide Chinese support in Session Detail, Revise, and Listening without changing the source script.
+6. TTS turns the revised `CUE` script into audio for repeated listening and speaking drills.
 
 ## Why CUE Is Powerful
 
@@ -73,6 +76,7 @@ Implementation-oriented module docs:
 - `backend/src/lsl/modules/script/README.md`
 - `backend/src/lsl/modules/session/README.md`
 - `backend/src/lsl/modules/revision/README.md`
+- `backend/src/lsl/modules/translation/`
 - `backend/src/lsl/modules/tts/README.md`
 
 Note: most module design docs are currently written in Chinese.
@@ -92,7 +96,7 @@ Note: most module design docs are currently written in Chinese.
   - Upload files
   - Generate and edit `CUE` scripts
   - Track async jobs
-  - Review transcript and revision
+  - Review transcript, revision, and translation
   - Prepare listening / TTS flows
 
         v
@@ -101,7 +105,8 @@ Note: most module design docs are currently written in Chinese.
   - Asset service (pre-signed uploads)
   - Job lifecycle management
   - Session management
-  - ASR / LLM / TTS domain orchestration
+  - Transcript / revision / translation persistence
+  - ASR / LLM / translation / TTS domain orchestration
   - Authentication
 
         v
@@ -109,7 +114,7 @@ Note: most module design docs are currently written in Chinese.
 [ External Services ]
   - Audio storage (S3, OSS)
   - ASR / TTS providers
-  - LLM providers
+  - LLM / translation providers
 ```
 
 ## Local Development (Current Backend Prototype)
@@ -187,73 +192,8 @@ backend/
    |- session/
    |- revision/
    |- script/
+   |- translation/
    `- tts/
 ```
 
 The real repository uses `src layout`, so the actual code lives under `backend/src/lsl/`.
-
-## Engineering Conventions
-
-### Layer responsibilities
-
-| File | Responsibility | Should not do |
-| --- | --- | --- |
-| `api.py` | FastAPI routers, request parsing, HTTP error mapping | Direct DB access or core business logic |
-| `service.py` | Business orchestration, domain rules, cross-module coordination | HTTP details or hand-written SQL assembly |
-| `repo.py` | Persistence, ORM / SQL queries, transaction writes | Business decisions or `HTTPException` |
-| `model.py` | SQLAlchemy models and table mapping | API protocol or workflow logic |
-| `schema.py` | Pydantic request / response models | Database logic |
-| `types.py` | Domain types, protocols, enums, dataclasses | FastAPI coupling |
-| `README.md` | Module design, schema notes, API constraints | Replacing code implementation |
-
-### Dependency direction
-
-The backend follows one-way dependencies:
-
-`API -> Service -> Repository -> DB`
-
-Additional rules:
-
-- `api.py` should return stable schema-based JSON responses instead of raw dictionaries.
-- `service.py` may depend on another module's service, but should not reach into another module's repository directly.
-- `repo.py` should return ORM models instead of ad-hoc `dict[str, Any]`.
-- `core/` must not depend on `modules/`.
-- Vendor-specific integrations should live inside the owning module.
-- Prefer storage-friendly cross-database types over PostgreSQL-only defaults when possible.
-- Table schemas must stay compatible with both `SQLite3` and `PostgreSQL`; 
-
-### Naming
-
-- Routers are named `router`.
-- Service classes are named `XxxService`.
-- Repository classes are named `XxxRepository`.
-- ORM classes are named `XxxModel`.
-- Database tables and indexes use the owning module as prefix, for example `job_jobs`, `asset_assets`, `session_sessions`, `revision_items`, and `tts_syntheses`.
-- Physical database columns that may conflict with SQL or programming-language keywords use the `x_` prefix, for example `x_status`, `x_type`, `x_language`, `x_description`, and `x_format`. Public API field names do not need this prefix.
-- Schemas follow semantic names such as `CreateXxxRequest`, `UpdateXxxRequest`, `XxxData`, and `XxxResponseData`.
-
-### API and error handling
-
-- `api.py` maps domain errors to HTTP status codes.
-- `service.py` raises business errors such as `ValueError` or `RuntimeError`, not `HTTPException`.
-- `repo.py` wraps low-level database errors into stable persistence errors.
-- New APIs should include clear validation and boundary handling.
-
-### Configuration and logging
-
-- Read environment variables through `core/config.py`.
-- Initialize logging in `core/logger.py`.
-- Use `logging.getLogger(__name__)` in business code.
-- Logs may include provider state, `transcript_id`, `recognition_id`, or `session_id`, but must not include secrets or tokens.
-
-### Data access
-
-- Single-table CRUD belongs in `repo.py`.
-- Filtering, ordering, and pagination rules should be explicit in the repository layer.
-- If a module mixes ORM and raw SQL later, both should still be routed through `repo.py`.
-
-### Requirements for a new module
-
-- Follow the `api/service/repo/model/schema/README` structure.
-- Document module responsibility, main flow, external dependencies, and data tables in its `README.md`.
-- Register router and wiring in `main.py`.

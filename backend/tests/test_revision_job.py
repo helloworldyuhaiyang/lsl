@@ -113,3 +113,16 @@ def test_revision_generation_job_updates_revision_items() -> None:
     revision = revision_service.get_revision(session_id=session.session.session_id)
     assert revision.status_name == "completed"
     assert [item.suggested_text for item in revision.items] == ["Hello there.", "Nice to meet you."]
+
+
+def test_revision_prompt_additions_preserve_cue() -> None:
+    assert RevisionService._filter_revision_addions(
+        {
+            "cue": "轻松自然地开口",
+            "emotion": "happy",
+            "ignored": "metadata",
+        }
+    ) == {
+        "cue": "轻松自然地开口",
+        "emotion": "happy",
+    }

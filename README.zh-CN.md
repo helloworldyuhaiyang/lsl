@@ -34,8 +34,10 @@ LSL 的宗旨是：学习语言应该是 `listening -> speak -> listening`。先
 - 手动创建文本 Session，或者根据提示词生成带 `CUE` 的 AI 对话脚本
 - 对比原句和优化句，支持打分和草稿保存
 - 在前端把带 `CUE` 的脚本作为单一字符串直接编辑
-- 生成可直接进入 revise 流程、并为后续听力 / TTS 链路做准备的脚本数据
-- 用统一 Job 基础设施承载 ASR、AI 脚本生成和后续 TTS 的异步生命周期
+- 生成可直接进入 revise、听力、翻译和 TTS 链路的脚本数据
+- 为 transcript 和 revision item 生成中文译文，并支持异步状态、编辑后过期检测和重试
+- 通过 TTS 生成完整听力音频，也可以预览单条 revision item
+- 用统一 Job 基础设施承载 ASR、AI 脚本生成、Revision、Translation 和 TTS 的异步生命周期
 
 ## 一条典型练习链路
 
@@ -43,7 +45,8 @@ LSL 的宗旨是：学习语言应该是 `listening -> speak -> listening`。先
 2. 选择素材来源：1）上传一段真实录音；2）根据要求生成脚本，例如场景、关键内容、人员角色。
 3. 如果是录音，ASR 生成 transcript；如果是脚本，LLM 生成带 `CUE` 的对话内容。
 4. Revision 把内容转成更适合学习和复盘的表达。
-5. 同一份带 `CUE` 的脚本可以继续用于反复听和反复说的训练。
+5. Translation 可以在 Session Detail、Revise 和 Listening 页面提供中文辅助，但不改变原始脚本。
+6. TTS 把修订后的 `CUE` 脚本转成音频，用于反复听和反复说的训练。
 
 ## CUE 为什么强大
 
@@ -73,9 +76,10 @@ LSL 的宗旨是：学习语言应该是 `listening -> speak -> listening`。先
 - 已完成：会话管理模块（Session Module，已支持录音 / 文本类型建模）
 - 已完成：Revision 模块（utterance 级 revise、打分、草稿保存）
 - 已完成：AI CUE 脚本生成（生成文本 Session + synthetic transcript + completed revision）
+- 已完成：Translation 模块（transcript / revision 译文、异步生成、过期检测）
+- 已完成：TTS 模块（TTS 设置、整段合成、单条预览、合成时间线）
 - 已完成：模块化后端结构（`core` + `modules`）
-- 已完成设计文档：TTS 模块
-- 尚未完成：TTS 运行时实现、鉴权
+- 尚未完成：鉴权
 
 模块设计文档：
 
@@ -86,6 +90,7 @@ LSL 的宗旨是：学习语言应该是 `listening -> speak -> listening`。先
 - `backend/src/lsl/modules/script/README.md`
 - `backend/src/lsl/modules/session/README.md`
 - `backend/src/lsl/modules/revision/README.md`
+- `backend/src/lsl/modules/translation/`
 - `backend/src/lsl/modules/tts/README.md`
 
 ## TODO
@@ -102,8 +107,8 @@ LSL 的宗旨是：学习语言应该是 `listening -> speak -> listening`。先
   - 创建 Session（录音 / 文本）
   - 文件上传
   - CUE 脚本生成与编辑（高亮输入）
-  - Job 管理（上传后异步转写、脚本生成、后续 TTS）
-  - 转写结果展示（Diff / 编辑 / 播放）
+  - Job 管理（上传后异步转写、脚本生成、revision、translation、TTS）
+  - 转写、修订和译文展示（Diff / 编辑 / 播放）
   - 听力 / TTS 链路
 
         v
@@ -112,7 +117,8 @@ LSL 的宗旨是：学习语言应该是 `listening -> speak -> listening`。先
   - 文件服务（预签名上传）
   - Job 生命周期管理
   - Session 管理
-  - ASR / LLM / TTS 领域调度
+  - Transcript / Revision / Translation 持久化
+  - ASR / LLM / Translation / TTS 领域调度
   - 鉴权
 
         v
@@ -120,7 +126,7 @@ LSL 的宗旨是：学习语言应该是 `listening -> speak -> listening`。先
 [ External Services ]
   - 音频存储（S3、OSS）
   - ASR / TTS 服务
-  - LLM 服务
+  - LLM / 翻译服务
 ```
 
 ## 本地启动（当前后端原型）
@@ -198,73 +204,8 @@ backend/
    |- session/
    |- revision/
    |- script/
+   |- translation/
    `- tts/
 ```
 
 当前仓库实际采用 `src layout`，实际代码位于 `backend/src/lsl/`。
-
-## 后端规范
-
-### 分层职责
-
-| 文件 | 职责 | 不应该做的事 |
-| --- | --- | --- |
-| `api.py` | FastAPI router、参数接收、HTTP 错误码转换 | 直接访问 DB、写核心业务 |
-| `service.py` | 业务编排、领域规则、跨模块协作 | 写 HTTP 细节、手拼 SQL |
-| `repo.py` | 持久化读写、ORM / SQL 查询、事务落库 | 做业务决策、抛 `HTTPException` |
-| `model.py` | SQLAlchemy ORM / 表结构映射 | 写接口协议和业务流程 |
-| `schema.py` | Pydantic 请求 / 响应模型 | 写数据库逻辑 |
-| `types.py` | domain type / protocol / enum / dataclass | 依赖 FastAPI |
-| `README.md` | 模块设计说明、表结构、接口约束 | 替代代码实现 |
-
-### 依赖方向
-
-后端必须遵守单向依赖：
-
-`API -> Service -> Repository -> DB`
-
-补充约束：
-
-- `api.py` 优先返回稳定的 schema，而不是裸字典。
-- `service.py` 可以依赖别的模块的 `Service`，但不能跨模块直接依赖别人的 `Repo`。
-- `repo.py` 优先返回 ORM Model，不要随意返回 `dict[str, Any]`。
-- `core/` 不能反向依赖 `modules/`。
-- 外部厂商适配代码应放在所属模块内部。
-- 能跨数据库兼容的场景，优先使用通用类型。
-- 建表语句要同时兼容 `SQLite3` 和 `PostgreSQL`；
-
-### 命名规范
-
-- Router 统一命名为 `router`
-- Service 类统一命名为 `XxxService`
-- Repository 类统一命名为 `XxxRepository`
-- ORM 类统一命名为 `XxxModel`
-- 数据库表名和索引名统一带所属模块前缀，例如 `job_jobs`、`asset_assets`、`session_sessions`、`revision_items`、`tts_syntheses`
-- 可能和 SQL 或编程语言关键字冲突的数据库物理列名统一加 `x_` 前缀，例如 `x_status`、`x_type`、`x_language`、`x_description`、`x_format`。对外 API 字段名不需要加这个前缀
-- Schema 命名按语义区分，例如 `CreateXxxRequest`、`UpdateXxxRequest`、`XxxData`、`XxxResponseData`
-
-### 接口与错误处理
-
-- `api.py` 负责把领域异常转换成 HTTP 状态码
-- `service.py` 只抛业务异常，例如 `ValueError`、`RuntimeError`
-- `repo.py` 负责把底层数据库异常包装成稳定的持久化错误
-- 新接口默认补充输入校验、边界校验和明确的错误语义
-
-### 配置与日志
-
-- 所有环境变量统一从 `core/config.py` 读取
-- 日志初始化统一放在 `core/logger.py`
-- 业务代码获取 logger 统一使用 `logging.getLogger(__name__)`
-- 日志可以记录 provider 状态、`transcript_id`、`recognition_id`、`session_id`，但不能输出密钥或 token
-
-### 数据访问规范
-
-- 简单单表 CRUD 由 `repo.py` 负责
-- 查询条件、排序、分页规则必须在 repo 层显式实现
-- 如果同一模块后续同时存在 ORM 和原生 SQL，也应统一收口到 `repo.py`
-
-### 新模块准入要求
-
-- 目录结构遵守 `api/service/repo/model/schema/README`
-- 在 `README.md` 中写清楚模块职责、核心流程、外部依赖和主要数据表
-- 在 `main.py` 中完成 router 注册和服务装配

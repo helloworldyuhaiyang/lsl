@@ -53,6 +53,7 @@ class RevisionGenerateRequest:
     transcript_id: str
     user_prompt: str | None
     utterances: list[RevisionPromptUtterance]
+    target_language: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
