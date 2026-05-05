@@ -6,6 +6,7 @@ import { VoiceAvatar } from '@/components/VoiceAvatar';
 import { Loader2, Volume2 } from 'lucide-react';
 import { TranslationButton } from '@/components/translation/TranslationButton';
 import { TranslationLine } from '@/components/translation/TranslationLine';
+import { useI18n } from '@/i18n';
 
 interface RevisionCardProps {
   item: RevisionItem;
@@ -66,6 +67,7 @@ export function RevisionCard({
   const highlightRef = useRef<HTMLDivElement>(null);
   const [showScoreDetail, setShowScoreDetail] = useState(false);
   const [showItemTranslation, setShowItemTranslation] = useState(false);
+  const { t } = useI18n();
 
   const handleTextChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onUpdate(item.id, e.target.value);
@@ -121,7 +123,7 @@ export function RevisionCard({
                 showScoreDetail ? 'border-current' : 'border-transparent hover:border-current'
               }`}
             >
-              <span className={`text-[11px] font-bold ${scoreColor}`}>Score {item.score}</span>
+              <span className={`text-[11px] font-bold ${scoreColor}`}>{t('common.score')} {item.score}</span>
             </button>
           )}
         </div>
@@ -172,7 +174,7 @@ export function RevisionCard({
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-slate-500 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg transition-colors disabled:pointer-events-none disabled:opacity-60"
           >
             {isPlayingOriginal ? <Loader2 className="w-3 h-3 animate-spin" /> : <Volume2 className="w-3 h-3" />}
-            Original
+            {t('revisionCard.original')}
           </button>
         )}
         <button
@@ -182,26 +184,26 @@ export function RevisionCard({
           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-white bg-indigo-500 hover:bg-indigo-600 rounded-lg transition-colors disabled:pointer-events-none disabled:opacity-60"
         >
           {isSynthesizing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Volume2 className="w-3 h-3" />}
-          Synthesize
+          {t('revisionCard.synthesize')}
         </button>
       </div>
 
       {showAssessment && showScoreDetail && (
         <div className="mt-5 rounded-xl border border-slate-200 bg-white px-4 py-4">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Score Detail</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{t('revisionCard.scoreDetail')}</p>
 
           <div className="mt-4 space-y-4">
             <div>
-              <p className="text-[15px] font-semibold text-slate-900">Score {item.score}</p>
+              <p className="text-[15px] font-semibold text-slate-900">{t('common.score')} {item.score}</p>
             </div>
 
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Original</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{t('common.original')}</p>
               <p className="mt-2 text-[13px] leading-relaxed text-slate-700">{item.originalText}</p>
             </div>
 
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Problems</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{t('common.problems')}</p>
               {item.issueTags && item.issueTags.length > 0 ? (
                 <div className="mt-2 flex flex-wrap gap-2">
                   {item.issueTags.map((tag) => (
@@ -214,14 +216,14 @@ export function RevisionCard({
                   ))}
                 </div>
               ) : (
-                <p className="mt-2 text-[12px] text-slate-400">No problem tags available.</p>
+                <p className="mt-2 text-[12px] text-slate-400">{t('revisionCard.noProblems')}</p>
               )}
             </div>
 
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Notes</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{t('common.notes')}</p>
               <p className="mt-2 text-[13px] leading-relaxed text-slate-700">
-                {item.explanations || 'No score notes available.'}
+                {item.explanations || t('revisionCard.noNotes')}
               </p>
             </div>
           </div>

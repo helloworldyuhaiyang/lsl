@@ -5,6 +5,7 @@ import { speakerColors } from '@/data/mockData';
 import type { RevisionItem } from '@/types';
 import { cn } from '@/lib/utils';
 import { ChevronDown } from 'lucide-react';
+import { useI18n } from '@/i18n';
 
 interface SubtitleCardProps {
   item: RevisionItem;
@@ -16,6 +17,7 @@ interface SubtitleCardProps {
 export function SubtitleCard({ item, index, isActive, onClick }: SubtitleCardProps) {
   const [showOriginal, setShowOriginal] = useState(false);
   const parsed = parseCueText(item.fullText);
+  const { t } = useI18n();
 
   return (
     <div
@@ -44,7 +46,7 @@ export function SubtitleCard({ item, index, isActive, onClick }: SubtitleCardPro
       </div>
 
       {!showOriginal ? (
-        <p className="text-[12px] text-slate-400 italic pl-0.5">Click to show text</p>
+        <p className="text-[12px] text-slate-400 italic pl-0.5">{t('subtitle.clickToShow')}</p>
       ) : (
         <div className="space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
           {parsed.cue && (

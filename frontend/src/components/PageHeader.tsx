@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
+import { useI18n } from '@/i18n';
 
 interface PageHeaderProps {
   label?: string;
@@ -11,6 +12,8 @@ interface PageHeaderProps {
 }
 
 export function PageHeader({ label, title, subtitle, action, backTo, backLabel }: PageHeaderProps) {
+  const { t } = useI18n();
+
   return (
     <div className="space-y-4">
       {backTo && (
@@ -19,7 +22,7 @@ export function PageHeader({ label, title, subtitle, action, backTo, backLabel }
           className="inline-flex items-center gap-1.5 text-[13px] text-[#78716C] hover:text-[#1C1917] transition-colors duration-150"
         >
           <ArrowLeft className="w-4 h-4" />
-          {backLabel || 'Back to Dashboard'}
+          {backLabel || t('create.back')}
         </Link>
       )}
 

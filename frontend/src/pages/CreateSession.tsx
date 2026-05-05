@@ -1,10 +1,9 @@
-import { useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Sparkles, Mic, Loader2 } from 'lucide-react';
+import { useCallback, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Loader2, Mic, Sparkles } from 'lucide-react';
 import { FileUpload } from '@/components/FileUpload';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -13,22 +12,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { useApp } from '@/context/AppContext';
-import { validateSessionName, validateFile, validateScenarioPrompt } from '@/utils/validateForm';
 import type { Difficulty } from '@/types';
 import { cn } from '@/lib/utils';
-import { Link } from 'react-router-dom';
 import { createSession } from '@/lib/api/sessions';
 import { createAsrRecognition } from '@/lib/api/asr';
 import { completeUploadedAsset, prepareUploadUrl, uploadToPresignedUrl } from '@/lib/api/upload';
 import { generateScriptSession } from '@/lib/api/scripts';
 import { mapSessionItem } from '@/lib/domain';
-
-const DEFAULT_CUE_STYLE = '自然口语、便于 TTS 演绎';
+import { useI18n } from '@/i18n';
 
 export function CreateSession() {
   const navigate = useNavigate();
   const { dispatch, refreshSessions } = useApp();
+  const { t } = useI18n();
   const [mode, setMode] = useState<'audio' | 'script'>('audio');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -40,7 +38,7 @@ export function CreateSession() {
   const [turnCount, setTurnCount] = useState('8');
   const [speakerCount, setSpeakerCount] = useState('2');
   const [difficulty, setDifficulty] = useState<Difficulty>('Beginner');
-  const [cueStyle, setCueStyle] = useState(DEFAULT_CUE_STYLE);
+  const [cueStyle, setCueStyle] = useState(() => t('create.defaultCueStyle'));
   const [mustInclude, setMustInclude] = useState('');
 
   const clearErrors = useCallback(() => setErrors({}), []);
@@ -49,15 +47,28 @@ export function CreateSession() {
     clearErrors();
     const newErrors: Record<string, string> = {};
 
-    const nameError = validateSessionName(sessionName);
-    if (nameError) newErrors.name = nameError.message;
+    if (!sessionName.trim()) {
+      newErrors.name = t('validation.sessionNameRequired');
+    } else if (sessionName.trim().length < 2) {
+      newErrors.name = t('validation.sessionNameTooShort');
+    }
 
     if (mode === 'audio') {
-      const fileError = validateFile(selectedFile);
-      if (fileError) newErrors.file = fileError.message;
-    } else {
-      const promptError = validateScenarioPrompt(scenarioPrompt);
-      if (promptError) newErrors.prompt = promptError.message;
+      if (!selectedFile) {
+        newErrors.file = t('validation.fileRequired');
+      } else {
+        const validTypes = ['audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/x-m4a'];
+        const validExtensions = ['.mp3', '.wav', '.m4a'];
+        const hasValidType = validTypes.includes(selectedFile.type);
+        const hasValidExt = validExtensions.some(ext => selectedFile.name.toLowerCase().endsWith(ext));
+        if (!hasValidType && !hasValidExt) {
+          newErrors.file = t('validation.fileUnsupported');
+        }
+      }
+    } else if (!scenarioPrompt.trim()) {
+      newErrors.prompt = t('validation.promptRequired');
+    } else if (scenarioPrompt.trim().length < 10) {
+      newErrors.prompt = t('validation.promptTooShort');
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -125,26 +136,24 @@ export function CreateSession() {
       void refreshSessions();
     } catch (error) {
       setErrors({
-        submit: error instanceof Error ? error.message : 'Failed to create session',
+        submit: error instanceof Error ? error.message : t('error.createSession'),
       });
     } finally {
       setIsSubmitting(false);
     }
-  }, [sessionName, sessionDescription, selectedFile, scenarioPrompt, mode, clearErrors, dispatch, navigate, refreshSessions, turnCount, speakerCount, difficulty, cueStyle, mustInclude]);
+  }, [sessionName, mode, clearErrors, selectedFile, scenarioPrompt, t, sessionDescription, dispatch, navigate, turnCount, speakerCount, difficulty, cueStyle, mustInclude, refreshSessions]);
 
   return (
     <div className="max-w-2xl space-y-6">
-      {/* Header */}
       <div>
         <Link to="/" className="inline-flex items-center gap-1.5 text-[12px] text-slate-500 hover:text-indigo-600 transition-colors mb-4">
           <ArrowLeft className="w-3.5 h-3.5" />
-          Back to Dashboard
+          {t('create.back')}
         </Link>
-        <h1 className="text-[22px] font-bold text-slate-900 tracking-tight">Create Session</h1>
-        <p className="text-[13px] text-slate-500 mt-0.5">Upload audio or generate an AI script with CUE annotations</p>
+        <h1 className="text-[22px] font-bold text-slate-900 tracking-tight">{t('create.title')}</h1>
+        <p className="text-[13px] text-slate-500 mt-0.5">{t('create.subtitle')}</p>
       </div>
 
-      {/* Mode Toggle */}
       <div className="bg-slate-100 rounded-xl p-1 flex gap-1">
         <button
           onClick={() => { setMode('audio'); clearErrors(); }}
@@ -155,7 +164,7 @@ export function CreateSession() {
               : 'text-slate-500 hover:text-slate-700'
           )}
         >
-          <Mic className="w-4 h-4" /> Audio Upload
+          <Mic className="w-4 h-4" /> {t('create.audioUpload')}
         </button>
         <button
           onClick={() => { setMode('script'); clearErrors(); }}
@@ -166,40 +175,38 @@ export function CreateSession() {
               : 'text-slate-500 hover:text-slate-700'
           )}
         >
-          <Sparkles className="w-4 h-4" /> AI Script
+          <Sparkles className="w-4 h-4" /> {t('create.aiScript')}
         </button>
       </div>
 
-      {/* Form */}
       <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-5">
-        {/* Session Name */}
         <div>
-          <Label className="text-[12px] font-semibold text-slate-700">Session Name <span className="text-red-400">*</span></Label>
+          <Label className="text-[12px] font-semibold text-slate-700">{t('create.sessionName')} <span className="text-red-400">*</span></Label>
           <Input
             value={sessionName}
             onChange={(e) => { setSessionName(e.target.value); clearErrors(); }}
-            placeholder="e.g., Job Interview Practice"
+            placeholder={t('create.sessionNamePlaceholder')}
             className={`mt-1.5 text-[13px] border-slate-200 focus:border-indigo-300 h-10 ${errors.name ? 'border-red-300' : ''}`}
           />
           {errors.name && <p className="text-[11px] text-red-500 mt-1">{errors.name}</p>}
         </div>
 
-        {/* Description */}
         <div>
-          <Label className="text-[12px] font-semibold text-slate-700">Description <span className="text-slate-400 font-normal">(optional)</span></Label>
+          <Label className="text-[12px] font-semibold text-slate-700">
+            {t('create.description')} <span className="text-slate-400 font-normal">({t('common.optional')})</span>
+          </Label>
           <Textarea
             value={sessionDescription}
             onChange={(e) => setSessionDescription(e.target.value)}
-            placeholder="Brief description of this session..."
+            placeholder={t('create.descriptionPlaceholder')}
             className="mt-1.5 text-[13px] border-slate-200 focus:border-indigo-300 resize-none"
             rows={2}
           />
         </div>
 
-        {/* Mode-specific fields */}
         {mode === 'audio' ? (
           <div>
-            <Label className="text-[12px] font-semibold text-slate-700">Audio File <span className="text-red-400">*</span></Label>
+            <Label className="text-[12px] font-semibold text-slate-700">{t('create.audioFile')} <span className="text-red-400">*</span></Label>
             <div className="mt-1.5">
               <FileUpload onFileSelect={(file) => { setSelectedFile(file); clearErrors(); }} />
             </div>
@@ -208,14 +215,14 @@ export function CreateSession() {
         ) : (
           <div className="space-y-5">
             <div>
-              <Label className="text-[12px] font-semibold text-slate-700">Scenario Prompt <span className="text-red-400">*</span></Label>
+              <Label className="text-[12px] font-semibold text-slate-700">{t('create.scenarioPrompt')} <span className="text-red-400">*</span></Label>
               <p className="text-[11px] text-slate-400 mt-0.5 mb-1.5">
-                Describe the scene, speakers, and key content. AI will generate dialogue with embedded CUE markers.
+                {t('create.scenarioHelp')}
               </p>
               <Textarea
                 value={scenarioPrompt}
                 onChange={(e) => { setScenarioPrompt(e.target.value); clearErrors(); }}
-                placeholder="e.g., A job interview at a tech company. The candidate is confident but slightly nervous..."
+                placeholder={t('create.scenarioPlaceholder')}
                 className={`text-[13px] border-slate-200 focus:border-indigo-300 resize-none ${errors.prompt ? 'border-red-300' : ''}`}
                 rows={4}
               />
@@ -224,51 +231,56 @@ export function CreateSession() {
 
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <Label className="text-[12px] font-semibold text-slate-700">Turns</Label>
+                <Label className="text-[12px] font-semibold text-slate-700">{t('create.turns')}</Label>
                 <Select value={turnCount} onValueChange={setTurnCount}>
                   <SelectTrigger className="mt-1.5 h-10 text-[13px] border-slate-200"><SelectValue /></SelectTrigger>
                   <SelectContent>{['8', '12', '16', '20', '24'].map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div>
-                <Label className="text-[12px] font-semibold text-slate-700">Speakers</Label>
+                <Label className="text-[12px] font-semibold text-slate-700">{t('create.speakers')}</Label>
                 <Select value={speakerCount} onValueChange={setSpeakerCount}>
                   <SelectTrigger className="mt-1.5 h-10 text-[13px] border-slate-200"><SelectValue /></SelectTrigger>
                   <SelectContent>{['2', '3', '4'].map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
               <div>
-                <Label className="text-[12px] font-semibold text-slate-700">Difficulty</Label>
+                <Label className="text-[12px] font-semibold text-slate-700">{t('create.difficulty')}</Label>
                 <Select value={difficulty} onValueChange={(v) => setDifficulty(v as Difficulty)}>
                   <SelectTrigger className="mt-1.5 h-10 text-[13px] border-slate-200"><SelectValue /></SelectTrigger>
-                  <SelectContent>{['Beginner', 'Intermediate', 'Advanced'].map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent>
+                  <SelectContent>
+                    <SelectItem value="Beginner">{t('create.difficulty.beginner')}</SelectItem>
+                    <SelectItem value="Intermediate">{t('create.difficulty.intermediate')}</SelectItem>
+                    <SelectItem value="Advanced">{t('create.difficulty.advanced')}</SelectItem>
+                  </SelectContent>
                 </Select>
               </div>
             </div>
 
             <div>
-              <Label className="text-[12px] font-semibold text-slate-700">CUE Style</Label>
+              <Label className="text-[12px] font-semibold text-slate-700">{t('create.cueStyle')}</Label>
               <Input
                 value={cueStyle}
                 onChange={(e) => setCueStyle(e.target.value)}
-                placeholder="e.g., Casual, professional, emotional..."
+                placeholder={t('create.cueStylePlaceholder')}
                 className="mt-1.5 text-[13px] border-slate-200 h-10"
               />
             </div>
 
             <div>
-              <Label className="text-[12px] font-semibold text-slate-700">Must-Include Expressions <span className="text-slate-400 font-normal">(optional)</span></Label>
+              <Label className="text-[12px] font-semibold text-slate-700">
+                {t('create.mustInclude')} <span className="text-slate-400 font-normal">({t('common.optional')})</span>
+              </Label>
               <Input
                 value={mustInclude}
                 onChange={(e) => setMustInclude(e.target.value)}
-                placeholder="Expressions to include in the dialogue..."
+                placeholder={t('create.mustIncludePlaceholder')}
                 className="mt-1.5 text-[13px] border-slate-200 h-10"
               />
             </div>
           </div>
         )}
 
-        {/* Submit */}
         {errors.submit && <p className="text-[12px] text-red-500">{errors.submit}</p>}
         <Button
           onClick={handleSubmit}
@@ -278,12 +290,12 @@ export function CreateSession() {
           {isSubmitting ? (
             <span className="flex items-center gap-2">
               <Loader2 className="w-4 h-4 animate-spin" />
-              {mode === 'audio' ? 'Creating...' : 'Generating...'}
+              {mode === 'audio' ? t('create.creating') : t('create.generating')}
             </span>
           ) : (
             <span className="flex items-center gap-2">
               {mode === 'audio' ? <Mic className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
-              {mode === 'audio' ? 'Create Audio Session' : 'Generate CUE Script'}
+              {mode === 'audio' ? t('create.createAudio') : t('create.generateScript')}
             </span>
           )}
         </Button>

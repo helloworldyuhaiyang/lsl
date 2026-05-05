@@ -10,6 +10,7 @@ import { getVoiceDisplayName, getVoiceForSpeaker, getVoiceSubtitle } from '@/lib
 import type { SpeakerMapping } from '@/types';
 import type { TtsSpeakerItem } from '@/types/api';
 import { Users } from 'lucide-react';
+import { useI18n } from '@/i18n';
 
 interface SpeakerSelectProps {
   speakers: string[];
@@ -19,6 +20,7 @@ interface SpeakerSelectProps {
 }
 
 export function SpeakerSelect({ speakers, mappings, onMappingChange, voices = [] }: SpeakerSelectProps) {
+  const { t } = useI18n();
   const getVoiceIdForSpeaker = (speaker: string) => {
     return mappings.find(m => m.speaker === speaker)?.voice || voices[0]?.speaker_id || '';
   };
@@ -27,9 +29,9 @@ export function SpeakerSelect({ speakers, mappings, onMappingChange, voices = []
     <div className="space-y-3">
       <div className="flex items-center gap-2">
         <Users className="w-4 h-4 text-slate-500" />
-        <h4 className="text-[13px] font-semibold text-slate-700">Speaker Mapping</h4>
+        <h4 className="text-[13px] font-semibold text-slate-700">{t('speaker.mapping')}</h4>
       </div>
-      <p className="text-[11px] text-slate-500">Map each speaker to a TTS voice</p>
+      <p className="text-[11px] text-slate-500">{t('speaker.mappingHelp')}</p>
 
       <div className="space-y-2.5">
         {speakers.map(speaker => {

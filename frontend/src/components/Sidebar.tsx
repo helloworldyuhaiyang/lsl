@@ -1,14 +1,16 @@
 import { Link, useLocation } from 'react-router-dom';
 import { LayoutDashboard, PlusCircle, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/i18n';
 
 const navItems = [
-  { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
-  { icon: PlusCircle, label: 'Create Session', path: '/create' },
+  { icon: LayoutDashboard, labelKey: 'common.dashboard' as const, path: '/' },
+  { icon: PlusCircle, labelKey: 'common.createSession' as const, path: '/create' },
 ];
 
 export function Sidebar() {
   const location = useLocation();
+  const { t } = useI18n();
 
   return (
     <aside className="fixed left-0 top-0 bottom-0 w-64 bg-slate-900 flex flex-col z-50">
@@ -20,7 +22,7 @@ export function Sidebar() {
           </div>
           <div>
             <h1 className="text-white font-semibold text-[15px] tracking-tight leading-tight">LSL</h1>
-            <p className="text-slate-500 text-[10px] uppercase tracking-widest">Workspace</p>
+            <p className="text-slate-500 text-[10px] uppercase tracking-widest">{t('common.workspace')}</p>
           </div>
         </Link>
       </div>
@@ -44,7 +46,7 @@ export function Sidebar() {
                 'w-[18px] h-[18px] transition-colors',
                 isActive ? 'text-indigo-400' : 'text-slate-500 group-hover:text-slate-400'
               )} />
-              {item.label}
+              {t(item.labelKey)}
             </Link>
           );
         })}
@@ -57,8 +59,8 @@ export function Sidebar() {
             <span className="text-white text-[11px] font-bold">U</span>
           </div>
           <div>
-            <p className="text-slate-300 text-[12px] font-medium">User</p>
-            <p className="text-slate-600 text-[10px]">Free Plan</p>
+            <p className="text-slate-300 text-[12px] font-medium">{t('common.user')}</p>
+            <p className="text-slate-600 text-[10px]">{t('common.freePlan')}</p>
           </div>
         </div>
       </div>

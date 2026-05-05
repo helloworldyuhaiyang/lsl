@@ -3,15 +3,17 @@ import { Plus, TrendingUp, CheckCircle2, Clock, AlertCircle } from 'lucide-react
 import { Button } from '@/components/ui/button';
 import { SessionTable } from '@/components/SessionTable';
 import { useApp } from '@/context/AppContext';
+import { useI18n } from '@/i18n';
 
 export function Dashboard() {
   const { state } = useApp();
+  const { t } = useI18n();
 
   const stats = [
-    { label: 'Total Sessions', value: state.sessions.length, icon: TrendingUp, color: 'text-indigo-600', bg: 'bg-indigo-50' },
-    { label: 'Completed', value: state.sessions.filter(s => s.status === 'completed').length, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-    { label: 'Processing', value: state.sessions.filter(s => s.status === 'processing' || s.status === 'pending').length, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50' },
-    { label: 'Failed', value: state.sessions.filter(s => s.status === 'failed').length, icon: AlertCircle, color: 'text-red-500', bg: 'bg-red-50' },
+    { label: t('dashboard.totalSessions'), value: state.sessions.length, icon: TrendingUp, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+    { label: t('dashboard.completed'), value: state.sessions.filter(s => s.status === 'completed').length, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { label: t('dashboard.processing'), value: state.sessions.filter(s => s.status === 'processing' || s.status === 'pending').length, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50' },
+    { label: t('dashboard.failed'), value: state.sessions.filter(s => s.status === 'failed').length, icon: AlertCircle, color: 'text-red-500', bg: 'bg-red-50' },
   ];
 
   return (
@@ -19,13 +21,13 @@ export function Dashboard() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-[22px] font-bold text-slate-900 tracking-tight">Dashboard</h1>
-          <p className="text-[13px] text-slate-500 mt-0.5">Manage your sessions and track processing status</p>
+          <h1 className="text-[22px] font-bold text-slate-900 tracking-tight">{t('dashboard.title')}</h1>
+          <p className="text-[13px] text-slate-500 mt-0.5">{t('dashboard.subtitle')}</p>
         </div>
         <Link to="/create">
           <Button className="bg-indigo-500 hover:bg-indigo-600 text-white h-9 px-4 text-[12px] font-semibold gap-1.5 shadow-sm shadow-indigo-200">
             <Plus className="w-3.5 h-3.5" />
-            New Session
+            {t('common.newSession')}
           </Button>
         </Link>
       </div>

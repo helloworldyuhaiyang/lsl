@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { Play, Pause, SkipBack, SkipForward, Volume2 } from 'lucide-react';
 import { formatTime } from '@/utils/formatTime';
+import { useI18n } from '@/i18n';
 
 interface AudioPlayerProps {
   audioUrl?: string;
@@ -17,6 +18,7 @@ export function AudioPlayer({ audioUrl, onTimeUpdate, onActiveIndexChange, items
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(1);
   const [playbackRate, setPlaybackRate] = useState(1);
+  const { t } = useI18n();
 
   useEffect(() => {
     if (audioRef.current && audioUrl) {
@@ -116,9 +118,9 @@ export function AudioPlayer({ audioUrl, onTimeUpdate, onActiveIndexChange, items
   if (!audioUrl) {
     return (
       <div className="bg-white rounded-lg shadow-md p-6">
-        <h3 className="text-[20px] font-medium text-[#1C1917] mb-4">Audio Player</h3>
+        <h3 className="text-[20px] font-medium text-[#1C1917] mb-4">{t('audio.title')}</h3>
         <p className="text-[15px] text-[#A8A29E] text-center py-8">
-          Audio URL is not available for this session yet.
+          {t('audio.unavailable')}
         </p>
       </div>
     );
@@ -170,6 +172,7 @@ export function AudioPlayer({ audioUrl, onTimeUpdate, onActiveIndexChange, items
             value={currentTime}
             onChange={handleSeek}
             className="w-full h-1 bg-[#E7E5E4] rounded-full appearance-none cursor-pointer accent-[#1C1917]"
+            aria-label={t('common.playbackPosition')}
           />
         </div>
 
@@ -187,6 +190,7 @@ export function AudioPlayer({ audioUrl, onTimeUpdate, onActiveIndexChange, items
             value={volume}
             onChange={handleVolumeChange}
             className="w-20 h-1 bg-[#E7E5E4] rounded-full appearance-none cursor-pointer accent-[#1C1917]"
+            aria-label={t('common.volume')}
           />
         </div>
 
@@ -194,6 +198,7 @@ export function AudioPlayer({ audioUrl, onTimeUpdate, onActiveIndexChange, items
           value={playbackRate}
           onChange={handleRateChange}
           className="text-[12px] text-[#78716C] bg-[#F5F5F4] border border-[#E7E5E4] rounded-md px-2 py-1 cursor-pointer"
+          aria-label={t('common.playbackSpeed')}
         >
           {[0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5].map(rate => (
             <option key={rate} value={rate}>{rate}x</option>

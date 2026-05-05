@@ -1,30 +1,31 @@
 import { cn } from '@/lib/utils';
 import type { SessionStatus } from '@/types';
 import { CheckCircle2, XCircle, Loader2, Clock } from 'lucide-react';
+import { useI18n } from '@/i18n';
 
 interface StatusBadgeProps {
   status: SessionStatus;
   showIcon?: boolean;
 }
 
-const statusConfig: Record<SessionStatus, { label: string; className: string; icon: React.ElementType }> = {
+const statusConfig: Record<SessionStatus, { labelKey: 'status.completed' | 'status.failed' | 'status.processing' | 'status.pending'; className: string; icon: React.ElementType }> = {
   completed: {
-    label: 'Completed',
+    labelKey: 'status.completed',
     className: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     icon: CheckCircle2,
   },
   failed: {
-    label: 'Failed',
+    labelKey: 'status.failed',
     className: 'bg-red-50 text-red-700 border-red-200',
     icon: XCircle,
   },
   processing: {
-    label: 'Processing',
+    labelKey: 'status.processing',
     className: 'bg-amber-50 text-amber-700 border-amber-200',
     icon: Loader2,
   },
   pending: {
-    label: 'Pending',
+    labelKey: 'status.pending',
     className: 'bg-slate-100 text-slate-600 border-slate-200',
     icon: Clock,
   },
@@ -33,6 +34,7 @@ const statusConfig: Record<SessionStatus, { label: string; className: string; ic
 export function StatusBadge({ status, showIcon = true }: StatusBadgeProps) {
   const config = statusConfig[status];
   const Icon = config.icon;
+  const { t } = useI18n();
 
   return (
     <span className={cn(
@@ -40,7 +42,7 @@ export function StatusBadge({ status, showIcon = true }: StatusBadgeProps) {
       config.className
     )}>
       {showIcon && <Icon className={cn('w-3 h-3', status === 'processing' && 'animate-spin')} />}
-      {config.label}
+      {t(config.labelKey)}
     </span>
   );
 }

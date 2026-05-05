@@ -24,6 +24,7 @@ import { getVoiceForSpeaker } from '@/lib/voice';
 import type { ScriptGenerationPreviewItemResponse, TtsSynthesisResponse } from '@/types/api';
 import { useTranslation } from '@/hooks/useTranslation';
 import { TranslationButton } from '@/components/translation/TranslationButton';
+import { useI18n } from '@/i18n';
 
 const TTS_PARAM_RANGES = {
   emotionScale: { min: 1, max: 5, step: 0.1, defaultValue: 4 },
@@ -42,6 +43,7 @@ export function Revise() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { getSessionById, dispatch } = useApp();
+  const { t } = useI18n();
   const [loadedSession, setLoadedSession] = useState<ReturnType<typeof getSessionById> | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [isPreparingScript, setIsPreparingScript] = useState(false);
@@ -129,7 +131,7 @@ export function Revise() {
           shouldPoll = shouldPoll || revisionGenerating;
         } catch (err) {
           if (!(err instanceof ApiRequestError && err.status === 404)) {
-            setError(err instanceof Error ? err.message : 'Failed to load revision');
+            setError(err instanceof Error ? err.message : t('error.loadRevision'));
           }
         }
 
@@ -143,11 +145,11 @@ export function Revise() {
             revisionGenerating = isRevisionGenerating(revisionData.status_name);
             shouldPoll = shouldPoll || revisionGenerating;
             if (revisionData.status_name === 'failed') {
-              setError(revisionData.error_message || 'Failed to revise session');
+              setError(revisionData.error_message || t('error.reviseSession'));
             }
           } catch (err) {
             revisionGenerating = false;
-            setError(err instanceof Error ? err.message : 'Failed to start revision');
+            setError(err instanceof Error ? err.message : t('error.startRevision'));
           }
         }
 
@@ -178,11 +180,11 @@ export function Revise() {
                 shouldPoll = true;
               } else if (preview.generation.status_name === 'failed') {
                 preparingScript = false;
-                setError(preview.generation.error_message || 'Script generation failed');
+                setError(preview.generation.error_message || t('error.scriptGeneration'));
               }
             } catch (err) {
               if (!(err instanceof ApiRequestError && err.status === 404)) {
-                setError(err instanceof Error ? err.message : 'Failed to load script preview');
+                setError(err instanceof Error ? err.message : t('error.loadScriptPreview'));
               }
             }
           }
@@ -192,14 +194,14 @@ export function Revise() {
               const job = await getJob(scriptJobId);
               if (job.status_name === 'failed' || job.status_name === 'canceled') {
                 preparingScript = false;
-                setError(job.error_message || 'Script generation failed');
+                setError(job.error_message || t('error.scriptGeneration'));
               } else if (job.status_name === 'queued' || job.status_name === 'running' || job.status_name === 'completed') {
                 preparingScript = true;
                 shouldPoll = true;
               }
             } catch (err) {
               if (!(err instanceof ApiRequestError && err.status === 404)) {
-                setError(err instanceof Error ? err.message : 'Failed to load script job');
+                setError(err instanceof Error ? err.message : t('error.loadScriptJob'));
               }
             }
           } else if (preparingScript) {
@@ -254,7 +256,7 @@ export function Revise() {
       cancelled = true;
       if (refreshTimer) window.clearTimeout(refreshTimer);
     };
-  }, [id, dispatch, scriptGenerationId, scriptJobId, setSearchParams]);
+  }, [id, dispatch, scriptGenerationId, scriptJobId, setSearchParams, t]);
 
   useEffect(() => {
     return () => {
@@ -272,9 +274,9 @@ export function Revise() {
     void updateRevisionItem(itemId, { draftText: fullText })
       .then(() => revisionTranslation.reload())
       .catch((err) => {
-        setError(err instanceof Error ? err.message : 'Failed to save revision item');
+        setError(err instanceof Error ? err.message : t('error.saveRevisionItem'));
       });
-  }, [revisionTranslation]);
+  }, [revisionTranslation, t]);
 
   const handleReviseByAI = useCallback(async () => {
     if (!id) return;
@@ -307,18 +309,18 @@ export function Revise() {
       }
 
       if (data.status_name === 'failed') {
-        throw new Error(data.error_message || 'Failed to revise session');
+        throw new Error(data.error_message || t('error.reviseSession'));
       }
 
       if (isRevisionGenerating(data.status_name)) {
-        throw new Error('Revision is still generating. Please check again later.');
+        throw new Error(t('error.revisionStillGenerating'));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to revise session');
+      setError(err instanceof Error ? err.message : t('error.reviseSession'));
     } finally {
       setIsRevising(false);
     }
-  }, [id, userPrompt, session, dispatch]);
+  }, [id, userPrompt, session, dispatch, t]);
 
   // Ensure speaker mappings use valid speaker_ids after voices are loaded
   useEffect(() => {
@@ -368,7 +370,7 @@ export function Revise() {
       }
 
       if (synthesis.status_name === 'failed') {
-        throw new Error(synthesis.error_message || 'Failed to synthesize audio');
+        throw new Error(synthesis.error_message || t('error.synthesizeAudio'));
       }
 
       if (synthesis.full_asset_url && session) {
@@ -378,11 +380,11 @@ export function Revise() {
         navigate(`/session/${session.id}/listening`);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to synthesize audio');
+      setError(err instanceof Error ? err.message : t('error.synthesizeAudio'));
     } finally {
       setIsSynthesizing(false);
     }
-  }, [id, format, emotionScale, speechRate, loudnessRate, speakerMappings, session, dispatch, navigate]);
+  }, [id, format, emotionScale, speechRate, loudnessRate, speakerMappings, session, dispatch, navigate, t]);
 
   const stopItemAudio = useCallback(() => {
     if (itemAudioRef.current) {
@@ -423,7 +425,7 @@ export function Revise() {
       audio.currentTime = Math.max(0, options.startTime ?? 0);
       void audio.play().catch((err) => {
         finish();
-        setError(err instanceof Error ? err.message : 'Failed to play audio');
+        setError(err instanceof Error ? err.message : t('error.playAudio'));
       });
     };
 
@@ -437,7 +439,7 @@ export function Revise() {
       audio.addEventListener('loadedmetadata', startPlayback, { once: true });
       audio.load();
     }
-  }, [stopItemAudio]);
+  }, [stopItemAudio, t]);
 
   const prepareItemTtsSettings = useCallback(async () => {
     if (!id) return;
@@ -483,9 +485,9 @@ export function Revise() {
       });
     } catch (err) {
       setPlayingOriginalItemId(null);
-      setError(err instanceof Error ? err.message : 'Failed to play original item');
+      setError(err instanceof Error ? err.message : t('error.playOriginalItem'));
     }
-  }, [id, session?.audioUrl, playAudio, prepareItemTtsSettings]);
+  }, [id, session?.audioUrl, playAudio, prepareItemTtsSettings, t]);
 
   const handleSynthesizeItem = useCallback(async (item: RevisionItem) => {
     if (!id) return;
@@ -514,11 +516,11 @@ export function Revise() {
       const audioUrl = URL.createObjectURL(audioBlob);
       playAudio(new Audio(audioUrl), { objectUrl: audioUrl });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to synthesize item audio');
+      setError(err instanceof Error ? err.message : t('error.synthesizeItemAudio'));
     } finally {
       setSynthesizingItemId(null);
     }
-  }, [id, format, emotionScale, speechRate, loudnessRate, speakerMappings, playAudio]);
+  }, [id, format, emotionScale, speechRate, loudnessRate, speakerMappings, playAudio, t]);
 
   const handleMappingChange = useCallback((speaker: string, voice: string) => {
     setSpeakerMappings(prev => {
@@ -536,7 +538,7 @@ export function Revise() {
   const shouldShowRevisionControls = !isScriptGenerationRoute;
 
   if (!session && !notFound) {
-    return <div className="text-[13px] text-slate-500">Loading revision...</div>;
+    return <div className="text-[13px] text-slate-500">{t('revise.loading')}</div>;
   }
 
   if (!session) return <NotFound />;
@@ -547,17 +549,17 @@ export function Revise() {
       <div className="flex items-center justify-between">
         <Link to={`/session/${session.id}`} className="inline-flex items-center gap-1.5 text-[12px] text-slate-500 hover:text-indigo-600 transition-colors">
           <ArrowLeft className="w-3.5 h-3.5" />
-          Session
+          {t('common.session')}
         </Link>
         <Link to={`/session/${session.id}/listening`} className="inline-flex items-center gap-1.5 text-[12px] text-indigo-600 hover:text-indigo-700 transition-colors font-medium">
-          Listening <ArrowRight className="w-3.5 h-3.5" />
+          {t('common.listening')} <ArrowRight className="w-3.5 h-3.5" />
         </Link>
       </div>
 
       {/* Header */}
       <div>
         <div className="flex items-center gap-2 mb-1">
-          <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider">Step 2</span>
+          <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider">{t('revise.step')}</span>
           {shouldShowRevisionControls && (
             <TranslationButton
               active={showAllTranslations}
@@ -575,13 +577,13 @@ export function Revise() {
             />
           )}
         </div>
-        <h1 className="text-[22px] font-bold text-slate-900 tracking-tight">Revise</h1>
+        <h1 className="text-[22px] font-bold text-slate-900 tracking-tight">{t('revise.title')}</h1>
         <p className="text-[13px] text-slate-500 mt-0.5">
           {isWaitingForScript
-            ? 'Generating script transcript...'
+            ? t('revise.scriptGenerating')
             : isRevising
-              ? `${revision.length} revised spans generated...`
-              : `${revision.length} utterances ready for revision`}
+              ? t('revise.spansGenerated', { count: revision.length })
+              : t('revise.utterancesReady', { count: revision.length })}
         </p>
       </div>
 
@@ -591,9 +593,9 @@ export function Revise() {
             <Loader2 className="h-5 w-5 animate-spin" />
           </div>
           <div className="text-center">
-            <h3 className="text-[14px] font-bold text-slate-800">Generating script</h3>
+            <h3 className="text-[14px] font-bold text-slate-800">{t('revise.generatingScript')}</h3>
             <p className="mt-1 text-[12px] text-slate-500">
-              {scriptPreviewItems.length > 0 ? `${scriptPreviewItems.length} turns generated...` : 'Preparing the first revision...'}
+              {scriptPreviewItems.length > 0 ? t('revise.turnsGenerated', { count: scriptPreviewItems.length }) : t('revise.preparingFirstRevision')}
             </p>
           </div>
 
@@ -622,14 +624,14 @@ export function Revise() {
       <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
         <div className="flex items-center gap-2 mb-3">
           <Wand2 className="w-4 h-4 text-indigo-500" />
-          <h3 className="text-[13px] font-bold text-slate-800">AI Revise</h3>
+          <h3 className="text-[13px] font-bold text-slate-800">{t('revise.aiRevise')}</h3>
         </div>
-        <p className="text-[12px] text-slate-500 mb-3">Add a prompt to guide the AI in generating improved rewrites.</p>
+        <p className="text-[12px] text-slate-500 mb-3">{t('revise.aiHelp')}</p>
         <div className="flex gap-3">
           <Textarea
             value={userPrompt}
             onChange={(e) => setUserPrompt(e.target.value)}
-            placeholder="Optional prompt for AI..."
+            placeholder={t('revise.aiPlaceholder')}
             className="flex-1 text-[13px] border-slate-200 resize-none"
             rows={2}
           />
@@ -650,9 +652,9 @@ export function Revise() {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Volume2 className="w-4 h-4 text-indigo-500" />
-            <h3 className="text-[13px] font-bold text-slate-800">TTS Settings</h3>
+            <h3 className="text-[13px] font-bold text-slate-800">{t('revise.ttsSettings')}</h3>
           </div>
-          <span className="text-[10px] text-slate-400">{voiceList.length > 0 ? voiceList.length : ttsVoices.length} voices</span>
+          <span className="text-[10px] text-slate-400">{t('revise.voices', { count: voiceList.length > 0 ? voiceList.length : ttsVoices.length })}</span>
         </div>
 
         <Button
@@ -661,30 +663,30 @@ export function Revise() {
           className="w-full bg-indigo-500 hover:bg-indigo-600 text-white h-10 text-[12px] font-semibold mb-5 disabled:opacity-60"
         >
           {isSynthesizing ? (
-            <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Synthesizing...</span>
+            <span className="flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> {t('revise.synthesizing')}</span>
           ) : (
-            <span className="flex items-center gap-2"><Volume2 className="w-4 h-4" /> Synthesize All</span>
+            <span className="flex items-center gap-2"><Volume2 className="w-4 h-4" /> {t('revise.synthesizeAll')}</span>
           )}
         </Button>
 
         <div className="grid grid-cols-2 gap-4 mb-5">
           <div>
-            <Label className="text-[11px] font-semibold text-slate-600 mb-1.5 block">Format</Label>
+            <Label className="text-[11px] font-semibold text-slate-600 mb-1.5 block">{t('common.format')}</Label>
             <Select value={format} onValueChange={setFormat}>
               <SelectTrigger className="h-9 text-[12px] border-slate-200"><SelectValue /></SelectTrigger>
               <SelectContent><SelectItem value="mp3">mp3</SelectItem><SelectItem value="wav">wav</SelectItem></SelectContent>
             </Select>
           </div>
           <div>
-            <div className="flex justify-between mb-1"><Label className="text-[11px] font-semibold text-slate-600">Emotion</Label><span className="text-[10px] text-slate-400">{emotionScale[0].toFixed(1)}</span></div>
+            <div className="flex justify-between mb-1"><Label className="text-[11px] font-semibold text-slate-600">{t('common.emotion')}</Label><span className="text-[10px] text-slate-400">{emotionScale[0].toFixed(1)}</span></div>
             <Slider value={emotionScale} onValueChange={setEmotionScale} min={TTS_PARAM_RANGES.emotionScale.min} max={TTS_PARAM_RANGES.emotionScale.max} step={TTS_PARAM_RANGES.emotionScale.step} />
           </div>
           <div>
-            <div className="flex justify-between mb-1"><Label className="text-[11px] font-semibold text-slate-600">Speech Rate</Label><span className="text-[10px] text-slate-400">{speechRate[0]}</span></div>
+            <div className="flex justify-between mb-1"><Label className="text-[11px] font-semibold text-slate-600">{t('common.speechRate')}</Label><span className="text-[10px] text-slate-400">{speechRate[0]}</span></div>
             <Slider value={speechRate} onValueChange={setSpeechRate} min={TTS_PARAM_RANGES.speechRate.min} max={TTS_PARAM_RANGES.speechRate.max} step={TTS_PARAM_RANGES.speechRate.step} />
           </div>
           <div>
-            <div className="flex justify-between mb-1"><Label className="text-[11px] font-semibold text-slate-600">Loudness</Label><span className="text-[10px] text-slate-400">{loudnessRate[0]}</span></div>
+            <div className="flex justify-between mb-1"><Label className="text-[11px] font-semibold text-slate-600">{t('common.loudness')}</Label><span className="text-[10px] text-slate-400">{loudnessRate[0]}</span></div>
             <Slider value={loudnessRate} onValueChange={setLoudnessRate} min={TTS_PARAM_RANGES.loudnessRate.min} max={TTS_PARAM_RANGES.loudnessRate.max} step={TTS_PARAM_RANGES.loudnessRate.step} />
           </div>
         </div>
@@ -728,10 +730,10 @@ export function Revise() {
             {isRevising ? (
               <div className="flex flex-col items-center gap-3">
                 <Loader2 className="h-5 w-5 animate-spin text-indigo-500" />
-                <p className="text-[13px] text-slate-500">Revising transcript...</p>
+                <p className="text-[13px] text-slate-500">{t('revise.revisingTranscript')}</p>
               </div>
             ) : (
-              <p className="text-[13px] text-slate-400">No revision data available.</p>
+              <p className="text-[13px] text-slate-400">{t('revise.noRevision')}</p>
             )}
           </div>
         )}

@@ -1,16 +1,18 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, PlusCircle, Sparkles, Menu, X } from 'lucide-react';
+import { Languages, LayoutDashboard, PlusCircle, Sparkles, Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/i18n';
 
 const navItems = [
-  { icon: LayoutDashboard, label: 'Dashboard', path: '/' },
-  { icon: PlusCircle, label: 'New Session', path: '/create' },
+  { icon: LayoutDashboard, labelKey: 'common.dashboard' as const, path: '/' },
+  { icon: PlusCircle, labelKey: 'common.newSession' as const, path: '/create' },
 ];
 
 export function TopNav() {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { language, setLanguage, t } = useI18n();
 
   return (
     <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-slate-200">
@@ -40,11 +42,30 @@ export function TopNav() {
                   )}
                 >
                   <item.icon className="w-4 h-4" />
-                  {item.label}
+                  {t(item.labelKey)}
                 </Link>
               );
             })}
           </nav>
+
+          <div className="hidden sm:flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
+            <Languages className="ml-1.5 h-3.5 w-3.5 text-slate-400" />
+            {(['en', 'zh-CN'] as const).map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setLanguage(item)}
+                className={cn(
+                  'h-7 rounded-md px-2 text-[11px] font-semibold transition-colors',
+                  language === item
+                    ? 'bg-indigo-50 text-indigo-700'
+                    : 'text-slate-500 hover:text-slate-700'
+                )}
+              >
+                {item === 'en' ? t('app.language.english') : t('app.language.chinese')}
+              </button>
+            ))}
+          </div>
 
           {/* Mobile menu button */}
           <button
@@ -75,10 +96,31 @@ export function TopNav() {
                   )}
                 >
                   <item.icon className="w-4.5 h-4.5" />
-                  {item.label}
+                  {t(item.labelKey)}
                 </Link>
               );
             })}
+            <div className="flex items-center gap-1 px-3 py-2">
+              <Languages className="h-3.5 w-3.5 text-slate-400" />
+              {(['en', 'zh-CN'] as const).map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => {
+                    setLanguage(item);
+                    setMobileOpen(false);
+                  }}
+                  className={cn(
+                    'h-7 rounded-md px-2 text-[11px] font-semibold transition-colors',
+                    language === item
+                      ? 'bg-indigo-50 text-indigo-700'
+                      : 'text-slate-500 hover:text-slate-700'
+                  )}
+                >
+                  {item === 'en' ? t('app.language.english') : t('app.language.chinese')}
+                </button>
+              ))}
+            </div>
           </nav>
         </div>
       )}

@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { UploadCloud, FileAudio, X, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/i18n';
 
 interface FileUploadProps {
   onFileSelect: (file: File | null) => void;
@@ -11,6 +12,7 @@ export function FileUpload({ onFileSelect, accept = '.mp3,.wav,.m4a' }: FileUplo
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { t } = useI18n();
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -61,7 +63,7 @@ export function FileUpload({ onFileSelect, accept = '.mp3,.wav,.m4a' }: FileUplo
           </div>
           <div className="flex items-center gap-2">
             <span className="flex items-center gap-1 text-[11px] font-medium text-emerald-600">
-              <Check className="w-3.5 h-3.5" /> Ready
+              <Check className="w-3.5 h-3.5" /> {t('common.ready')}
             </span>
             <button onClick={handleRemove} className="p-1.5 hover:bg-white rounded-md transition-colors">
               <X className="w-4 h-4 text-slate-400" />
@@ -93,9 +95,9 @@ export function FileUpload({ onFileSelect, accept = '.mp3,.wav,.m4a' }: FileUplo
         <UploadCloud className={cn('w-6 h-6', isDragging ? 'text-indigo-500' : 'text-slate-400')} />
       </div>
       <p className="text-[13px] text-slate-600 font-medium">
-        {isDragging ? 'Drop your file here' : 'Drag & drop or click to upload'}
+        {isDragging ? t('fileUpload.dropHere') : t('fileUpload.upload')}
       </p>
-      <p className="text-[11px] text-slate-400 mt-1">MP3, WAV, M4A up to 100MB</p>
+      <p className="text-[11px] text-slate-400 mt-1">{t('fileUpload.support')}</p>
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { useSessionFilter } from '@/hooks/useSessionFilter';
 import { formatDuration, formatDate } from '@/utils/formatTime';
 import type { Session } from '@/types';
 import { useApp } from '@/context/AppContext';
+import { useI18n } from '@/i18n';
 
 interface SessionTableProps {
   sessions: Session[];
@@ -16,6 +17,7 @@ export function SessionTable({ sessions }: SessionTableProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const { refreshSessions } = useApp();
+  const { t } = useI18n();
 
   const filteredSessions = useSessionFilter(sessions, searchQuery);
 
@@ -32,7 +34,7 @@ export function SessionTable({ sessions }: SessionTableProps) {
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <Input
-            placeholder="Search sessions..."
+            placeholder={t('sessionTable.searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-10 bg-white border-slate-200 focus:border-indigo-300 focus:ring-indigo-200 text-[13px] h-10"
@@ -51,11 +53,11 @@ export function SessionTable({ sessions }: SessionTableProps) {
         <table className="w-full">
           <thead>
             <tr className="border-b border-slate-100 bg-slate-50/50">
-              <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-3 px-5">Session</th>
-              <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-3 px-4 w-[100px]">Type</th>
-              <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-3 px-4 w-[100px]">Duration</th>
-              <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-3 px-4 w-[120px]">Status</th>
-              <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-3 px-4 w-[100px]">Created</th>
+              <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-3 px-5">{t('common.session')}</th>
+              <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-3 px-4 w-[100px]">{t('common.type')}</th>
+              <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-3 px-4 w-[100px]">{t('common.duration')}</th>
+              <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-3 px-4 w-[120px]">{t('common.status')}</th>
+              <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-3 px-4 w-[100px]">{t('common.created')}</th>
               <th className="py-3 px-4 w-[60px]"></th>
             </tr>
           </thead>
@@ -87,7 +89,7 @@ export function SessionTable({ sessions }: SessionTableProps) {
                         ? 'bg-violet-50 text-violet-600'
                         : 'bg-sky-50 text-sky-600'
                     }`}>
-                      {session.type === 'audio' ? 'Audio' : 'Script'}
+                      {session.type === 'audio' ? t('common.audio') : t('common.script')}
                     </span>
                   </Link>
                 </td>
@@ -115,7 +117,7 @@ export function SessionTable({ sessions }: SessionTableProps) {
 
         {filteredSessions.length === 0 && (
           <div className="py-16 text-center">
-            <p className="text-[14px] text-slate-400">No sessions found.</p>
+            <p className="text-[14px] text-slate-400">{t('sessionTable.noSessions')}</p>
           </div>
         )}
       </div>

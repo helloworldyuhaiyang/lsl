@@ -31,14 +31,15 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useI18n } from '@/i18n';
 
 type PlaybackMode = 'once' | 'repeat-all' | 'repeat-one';
 
-const PLAYBACK_MODES: Array<{ value: PlaybackMode; label: string; icon: typeof ListRestart }> = [
-  { value: 'once', label: 'Play once', icon: ListRestart },
-  { value: 'repeat-all', label: 'Repeat all', icon: Repeat },
-  { value: 'repeat-one', label: 'Repeat sentence', icon: Repeat1 },
-];
+const PLAYBACK_MODES = [
+  { value: 'once', labelKey: 'listening.playOnce', icon: ListRestart },
+  { value: 'repeat-all', labelKey: 'listening.repeatAll', icon: Repeat },
+  { value: 'repeat-one', labelKey: 'listening.repeatSentence', icon: Repeat1 },
+] as const satisfies Array<{ value: PlaybackMode; labelKey: 'listening.playOnce' | 'listening.repeatAll' | 'listening.repeatSentence'; icon: typeof ListRestart }>;
 
 function MobileSubtitleCard({
   item, index, isActive, voice, onClick, translationText, showTranslation,
@@ -120,6 +121,8 @@ function TranslationModeControls({
   onModeChange: (mode: 'english' | 'bilingual' | 'peek') => void;
   onRetry: () => void;
 }) {
+  const { t } = useI18n();
+
   if (isTranslating || needsUpdate || failed) {
     return (
       <TranslationButton
@@ -134,9 +137,9 @@ function TranslationModeControls({
   return (
     <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1">
       {[
-        { value: 'english', label: 'English', tip: 'Only show English subtitles.' },
-        { value: 'peek', label: 'Peek', tip: 'Only show the translation for the current active sentence.' },
-        { value: 'bilingual', label: 'Bilingual', tip: 'Show translations under every sentence.' },
+        { value: 'english', label: t('listening.mode.original'), tip: t('listening.mode.originalTip') },
+        { value: 'peek', label: t('listening.mode.peek'), tip: t('listening.mode.peekTip') },
+        { value: 'bilingual', label: t('listening.mode.bilingual'), tip: t('listening.mode.bilingualTip') },
       ].map((item) => (
         <Tooltip key={item.value}>
           <TooltipTrigger asChild>
@@ -164,6 +167,7 @@ function TranslationModeControls({
 export function Listening() {
   const { id } = useParams<{ id: string }>();
   const { getSessionById, dispatch } = useApp();
+  const { t } = useI18n();
   const [loadedSession, setLoadedSession] = useState<ReturnType<typeof getSessionById> | null>(null);
   const [notFound, setNotFound] = useState(false);
 
@@ -421,7 +425,7 @@ export function Listening() {
   }, [revision, playbackMode, shouldFitTimelineToAudioDuration]);
 
   if (!session && !notFound) {
-    return <div className="text-[13px] text-slate-500">Loading listening practice...</div>;
+    return <div className="text-[13px] text-slate-500">{t('listening.loading')}</div>;
   }
 
   if (!session) return <NotFound />;
@@ -434,16 +438,16 @@ export function Listening() {
       {/* Breadcrumb */}
       <Link to={`/session/${session.id}/revise`} className="inline-flex items-center gap-1.5 text-[12px] text-slate-500 hover:text-indigo-600 transition-colors">
         <ArrowLeft className="w-3.5 h-3.5" />
-        Revise
+        {t('common.revise')}
       </Link>
 
       {/* Header - hidden on mobile to save space */}
       <div className="hidden sm:block">
-        <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider">Step 3</span>
+        <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider">{t('listening.step')}</span>
         <div className="mt-1 flex items-start justify-between gap-3">
           <div>
-            <h1 className="text-[22px] font-bold text-slate-900 tracking-tight">Listening Practice</h1>
-            <p className="text-[13px] text-slate-500 mt-0.5">Follow along with the audio and review each sentence</p>
+            <h1 className="text-[22px] font-bold text-slate-900 tracking-tight">{t('listening.title')}</h1>
+            <p className="text-[13px] text-slate-500 mt-0.5">{t('listening.subtitle')}</p>
           </div>
           <TranslationModeControls
             mode={translationMode}
@@ -458,7 +462,7 @@ export function Listening() {
 
       {/* Mobile mini header */}
       <div className="sm:hidden flex items-center justify-between">
-        <h1 className="text-[16px] font-bold text-slate-800">Listening</h1>
+        <h1 className="text-[16px] font-bold text-slate-800">{t('listening.mobileTitle')}</h1>
         <div className="flex items-center gap-2">
           <TranslationButton
             active={translationMode !== 'english'}
@@ -473,7 +477,7 @@ export function Listening() {
               setTranslationMode((current) => current === 'english' ? 'peek' : 'english');
             }}
           />
-          <span className="text-[11px] text-slate-400">{revision.length} sentences</span>
+          <span className="text-[11px] text-slate-400">{t('listening.sentences', { count: revision.length })}</span>
         </div>
       </div>
 
@@ -545,22 +549,24 @@ function DesktopPlayer({
   onVolumeChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onPlaybackModeChange: (mode: PlaybackMode) => void;
 }) {
+  const { t } = useI18n();
+
   return (
     <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm">
       <div className="flex items-center gap-4">
-        <button onClick={() => onSkip(-5)} className="p-2 hover:bg-white rounded-full transition-colors" aria-label="Skip back 5 seconds">
+        <button onClick={() => onSkip(-5)} className="p-2 hover:bg-white rounded-full transition-colors" aria-label={t('common.skipBack5')}>
           <SkipBack className="w-5 h-5 text-slate-600" />
         </button>
 
         <button
           onClick={onTogglePlay}
           className="w-12 h-12 bg-indigo-500 hover:bg-indigo-600 rounded-full flex items-center justify-center transition-colors shadow-lg shadow-indigo-200"
-          aria-label={isPlaying ? 'Pause' : 'Play'}
+          aria-label={isPlaying ? t('common.pause') : t('common.play')}
         >
           {isPlaying ? <Pause className="w-5 h-5 text-white" /> : <Play className="w-5 h-5 text-white ml-0.5" />}
         </button>
 
-        <button onClick={() => onSkip(5)} className="p-2 hover:bg-white rounded-full transition-colors" aria-label="Skip forward 5 seconds">
+        <button onClick={() => onSkip(5)} className="p-2 hover:bg-white rounded-full transition-colors" aria-label={t('common.skipForward5')}>
           <SkipForward className="w-5 h-5 text-slate-600" />
         </button>
 
@@ -576,7 +582,7 @@ function DesktopPlayer({
             value={volume}
             onChange={onVolumeChange}
             className="w-full accent-indigo-500"
-            aria-label="Volume"
+            aria-label={t('common.volume')}
           />
         </div>
 
@@ -592,7 +598,7 @@ function DesktopPlayer({
             value={currentTime}
             onChange={onSeek}
             className="w-full accent-indigo-500"
-            aria-label="Playback position"
+            aria-label={t('common.playbackPosition')}
           />
         </div>
 
@@ -600,7 +606,7 @@ function DesktopPlayer({
           value={playbackRate}
           onChange={(e) => onRateChange(Number(e.target.value))}
           className="text-[11px] text-slate-600 bg-white border border-slate-200 rounded-lg px-2 py-1.5 cursor-pointer font-medium"
-          aria-label="Playback speed"
+          aria-label={t('common.playbackSpeed')}
         >
           {[0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5].map(r => <option key={r} value={r}>{r}x</option>)}
         </select>
@@ -620,6 +626,8 @@ function MobilePlayer({
   onVolumeChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onPlaybackModeChange: (mode: PlaybackMode) => void;
 }) {
+  const { t } = useI18n();
+
   return (
     <div className="space-y-2">
       {/* Progress */}
@@ -632,28 +640,28 @@ function MobilePlayer({
           value={currentTime}
           onChange={onSeek}
           className="flex-1 accent-indigo-500"
-          aria-label="Playback position"
+          aria-label={t('common.playbackPosition')}
         />
         <span className="text-[10px] text-slate-500 font-mono w-8">{formatTime(duration)}</span>
       </div>
 
       {/* Controls */}
       <div className="flex items-center justify-center gap-4">
-        <button onClick={() => onSkip(-5)} className="p-2 active:bg-slate-100 rounded-full transition-colors" aria-label="Skip back 5 seconds">
+        <button onClick={() => onSkip(-5)} className="p-2 active:bg-slate-100 rounded-full transition-colors" aria-label={t('common.skipBack5')}>
           <SkipBack className="w-5 h-5 text-slate-600" />
         </button>
 
         <button
           onClick={onTogglePlay}
           className="w-11 h-11 bg-indigo-500 active:bg-indigo-600 rounded-full flex items-center justify-center transition-colors shadow-md shadow-indigo-200"
-          aria-label={isPlaying ? 'Pause' : 'Play'}
+          aria-label={isPlaying ? t('common.pause') : t('common.play')}
         >
           {isPlaying
             ? <Pause className="w-5 h-5 text-white" />
             : <Play className="w-5 h-5 text-white ml-0.5" />}
         </button>
 
-        <button onClick={() => onSkip(5)} className="p-2 active:bg-slate-100 rounded-full transition-colors" aria-label="Skip forward 5 seconds">
+        <button onClick={() => onSkip(5)} className="p-2 active:bg-slate-100 rounded-full transition-colors" aria-label={t('common.skipForward5')}>
           <SkipForward className="w-5 h-5 text-slate-600" />
         </button>
 
@@ -678,7 +686,7 @@ function MobilePlayer({
           value={volume}
           onChange={onVolumeChange}
           className="flex-1 accent-indigo-500"
-          aria-label="Volume"
+          aria-label={t('common.volume')}
         />
       </div>
     </div>
@@ -696,6 +704,7 @@ function PlaybackModeMenu({
 }) {
   const currentMode = PLAYBACK_MODES.find((mode) => mode.value === playbackMode) ?? PLAYBACK_MODES[0];
   const Icon = currentMode.icon;
+  const { t } = useI18n();
 
   return (
     <DropdownMenu>
@@ -706,7 +715,7 @@ function PlaybackModeMenu({
             'inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:bg-slate-100',
             compact ? 'h-8 w-8' : 'h-9 w-9'
           )}
-          aria-label={currentMode.label}
+          aria-label={t(currentMode.labelKey)}
         >
           <Icon className={compact ? 'w-4 h-4' : 'w-5 h-5'} />
         </button>
@@ -718,7 +727,7 @@ function PlaybackModeMenu({
             return (
               <DropdownMenuRadioItem key={mode.value} value={mode.value} className="gap-2 text-[12px]">
                 <ModeIcon className="w-4 h-4 text-slate-500" />
-                {mode.label}
+                {t(mode.labelKey)}
               </DropdownMenuRadioItem>
             );
           })}

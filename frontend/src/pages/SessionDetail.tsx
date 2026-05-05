@@ -15,6 +15,7 @@ import { applyTtsSynthesis, mapSessionItem, mapTranscript } from '@/lib/domain';
 import { useTranslation } from '@/hooks/useTranslation';
 import { TranslationButton } from '@/components/translation/TranslationButton';
 import { TranslationLine } from '@/components/translation/TranslationLine';
+import { useI18n } from '@/i18n';
 
 export function SessionDetail() {
   const { id } = useParams<{ id: string }>();
@@ -25,6 +26,7 @@ export function SessionDetail() {
   const [seekRequest, setSeekRequest] = useState<{ time: number; requestId: number } | null>(null);
   const [showTranslation, setShowTranslation] = useState(false);
   const [currentTranscriptId, setCurrentTranscriptId] = useState<string | null>(null);
+  const { t } = useI18n();
 
   const session = useMemo(() => loadedSession || (id ? getSessionById(id) : undefined), [id, getSessionById, loadedSession]);
   const transcriptTranslation = useTranslation({
@@ -95,7 +97,7 @@ export function SessionDetail() {
   }, [id, dispatch]);
 
   if (!session && !notFound) {
-    return <div className="text-[13px] text-slate-500">Loading session...</div>;
+    return <div className="text-[13px] text-slate-500">{t('session.loading')}</div>;
   }
 
   if (!session) return <NotFound />;
@@ -120,7 +122,7 @@ export function SessionDetail() {
       {/* Breadcrumb */}
       <Link to="/" className="inline-flex items-center gap-1.5 text-[12px] text-slate-500 hover:text-indigo-600 transition-colors">
         <ArrowLeft className="w-3.5 h-3.5" />
-        Dashboard
+        {t('common.dashboard')}
       </Link>
 
       {/* Header Card */}
@@ -154,11 +156,11 @@ export function SessionDetail() {
               to={`/session/${session.id}/revise`}
               className="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-[12px] font-semibold rounded-lg transition-colors shadow-sm shadow-indigo-200"
             >
-              Go to Revise <ArrowRight className="w-3.5 h-3.5" />
+              {t('session.goToRevise')} <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           ) : (
             <span className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-100 text-slate-400 text-[12px] font-semibold rounded-lg">
-              Go to Revise <ArrowRight className="w-3.5 h-3.5" />
+              {t('session.goToRevise')} <ArrowRight className="w-3.5 h-3.5" />
             </span>
           )}
         </div>
@@ -168,9 +170,9 @@ export function SessionDetail() {
       <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
         <div className="flex items-center">
           {[
-            { label: 'Session', path: `/session/${session.id}`, active: true },
-            { label: 'Revise', path: `/session/${session.id}/revise`, active: canOpenRevise },
-            { label: 'Listening', path: `/session/${session.id}/listening`, active: !!session.synthesizedAudioUrl },
+            { label: t('session.stepSession'), path: `/session/${session.id}`, active: true },
+            { label: t('session.stepRevise'), path: `/session/${session.id}/revise`, active: canOpenRevise },
+            { label: t('session.stepListening'), path: `/session/${session.id}/listening`, active: !!session.synthesizedAudioUrl },
           ].map((step, i, arr) => (
             <div key={step.label} className="flex items-center flex-1">
               <Link
@@ -207,7 +209,7 @@ export function SessionDetail() {
       {(!transcript || transcript.length === 0) && session.status !== 'failed' && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
           <p className="text-[13px] text-slate-500">
-            {session.type === 'text' ? 'Generating script transcript...' : 'Transcription is still processing...'}
+            {session.type === 'text' ? t('session.generatingScriptTranscript') : t('session.transcriptionProcessing')}
           </p>
         </div>
       )}
@@ -215,7 +217,7 @@ export function SessionDetail() {
       {transcript && transcript.length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-            <h3 className="text-[14px] font-bold text-slate-800">Transcript</h3>
+            <h3 className="text-[14px] font-bold text-slate-800">{t('session.transcript')}</h3>
             <div className="flex items-center gap-2">
               {session.transcript && (
                 <TranslationButton
@@ -232,16 +234,16 @@ export function SessionDetail() {
                   }}
                 />
               )}
-              <span className="text-[11px] text-slate-400 font-mono">{transcript.length} utterances</span>
+              <span className="text-[11px] text-slate-400 font-mono">{t('session.utterances', { count: transcript.length })}</span>
             </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-50 bg-slate-50/50">
-                  <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-2.5 px-5 w-[15%]">Speaker</th>
-                  <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-2.5 px-3 w-[10%]">Time</th>
-                  <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-2.5 px-3">Content</th>
+                  <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-2.5 px-5 w-[15%]">{t('common.speaker')}</th>
+                  <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-2.5 px-3 w-[10%]">{t('common.time')}</th>
+                  <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-2.5 px-3">{t('common.content')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">

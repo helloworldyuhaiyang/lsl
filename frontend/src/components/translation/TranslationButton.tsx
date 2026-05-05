@@ -1,5 +1,6 @@
 import { Languages, Loader2, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useI18n } from '@/i18n'
 
 interface TranslationButtonProps {
   active?: boolean
@@ -20,12 +21,19 @@ export function TranslationButton({
   onClick,
   className,
 }: TranslationButtonProps) {
+  const { t } = useI18n()
   const icon = isTranslating
     ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
     : needsUpdate || failed
       ? <RefreshCw className="h-3.5 w-3.5" />
       : <Languages className="h-3.5 w-3.5" />
-  const label = isTranslating ? '翻译中' : failed ? '重试翻译' : needsUpdate ? '更新译文' : '译'
+  const label = isTranslating
+    ? t('translation.translating')
+    : failed
+      ? t('translation.retry')
+      : needsUpdate
+        ? t('translation.update')
+        : t('translation.short')
 
   return (
     <button
