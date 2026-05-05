@@ -184,6 +184,7 @@ export interface CreateRevisionRequest {
   sessionId: string
   userPrompt?: string
   force?: boolean
+  cueLanguage?: string
 }
 
 export interface UpdateRevisionItemRequest {

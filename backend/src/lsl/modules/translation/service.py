@@ -127,6 +127,91 @@ class TranslationService:
         )
         return TranslationData.from_row(row)
 
+    def translate_item(
+        self,
+        *,
+        source_type: str,
+        source_entity_id: str,
+        source_item_key: str,
+        session_id: str | None = None,
+        target_language: str | None = None,
+    ) -> TranslationData:
+        normalized_source_type = self._normalize_source_type(source_type)
+        target = self._normalize_language(target_language)
+        source = self._load_source_items(source_type=normalized_source_type, source_entity_id=source_entity_id)
+        if not any(item.source_item_key == source_item_key for item in source.items):
+            raise ValueError("translation source item not found")
+
+        existing = self._repository.get_translation_by_source(
+            source_type=normalized_source_type,
+            source_entity_id=source_entity_id,
+            target_language=target,
+        )
+        row = self._repository.upsert_translation(
+            translation_id=existing["translation_id"] if existing else uuid.uuid4().hex,
+            session_id=session_id or source.session_id,
+            source_type=normalized_source_type,
+            source_entity_id=source_entity_id,
+            source_language=source.source_language,
+            target_language=target,
+            provider=self._provider_name(),
+            model_name=self._model_name(),
+            source_items=source.items,
+        )
+        item_row = next((item for item in row["items"] if str(item["source_item_key"]) == source_item_key), None)
+        if item_row is None:
+            raise ValueError("translation source item not found")
+
+        self._repository.mark_items_generating(
+            translation_id=row["translation_id"],
+            source_item_keys=[source_item_key],
+        )
+        req = TranslationGenerateRequest(
+            translation_id=str(row["translation_id"]),
+            source_type=str(row["source_type"]),
+            source_entity_id=str(row["source_entity_id"]),
+            source_language=row.get("source_language"),
+            target_language=str(row["target_language"]),
+            items=[
+                TranslationRequestItem(
+                    source_item_key=str(item_row["source_item_key"]),
+                    source_seq=item_row.get("source_seq"),
+                    speaker=item_row.get("speaker"),
+                    start_time=item_row.get("start_time"),
+                    end_time=item_row.get("end_time"),
+                    source_text=str(item_row["source_text"]),
+                    source_text_hash=str(item_row["source_text_hash"]),
+                )
+            ],
+        )
+        try:
+            suggestions = {
+                item.source_item_key: item.translated_text
+                for item in self._generator.generate(req)
+                if item.source_item_key == source_item_key
+            }
+            if source_item_key not in suggestions:
+                raise RuntimeError("translation provider returned no item result")
+
+            final_row = self._repository.apply_suggestions(
+                translation_id=str(row["translation_id"]),
+                suggestions=suggestions,
+            )
+            if int(final_row["item_count"]) > 0 and int(final_row["completed_count"]) == int(final_row["item_count"]):
+                final_row = self._repository.mark_completed(
+                    translation_id=str(row["translation_id"]),
+                    raw_result={"translated_count": 1},
+                )
+            return TranslationData.from_row(final_row)
+        except Exception as exc:
+            self._repository.mark_items_failed(
+                translation_id=str(row["translation_id"]),
+                source_item_keys=[source_item_key],
+                error_code="translation_item_generation_failed",
+                error_message=str(exc),
+            )
+            raise RuntimeError(f"Failed to translate item: {exc}") from exc
+
     def run_generation_job(self, *, translation_id: str, job_id: str) -> JobRunResult:
         row = self._repository.get_translation_by_id(translation_id)
         if row is None:

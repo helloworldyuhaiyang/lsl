@@ -53,7 +53,8 @@ REVISION_LLM_DEBUG_FILE=./revision_debug.log
 {
   "session_id": "8f85f0be-6f53-4ca4-b6fe-b5d3f0a64047",
   "user_prompt": "请改成更自然、适合迪拜和印度口语对话风格",
-  "force": true
+  "force": true,
+  "cue_language": "zh-CN"
 }
 ```
 
@@ -62,6 +63,7 @@ REVISION_LLM_DEBUG_FILE=./revision_debug.log
 - `session_id` 必填。
 - `user_prompt` 可选，用于本次生成时给大模型的额外提示词。
 - `force=true` 时，即使当前已有 revise 结果，也重新生成并覆盖。
+- `cue_language` 可选，只控制 `[...]` CUE 的语言；revise 正文语言仍由当前 transcript 的 `language` 决定。
 - 接口会先落一份 `status=generating` 的空 revision，并创建 `job_type=revision_generation`。
 - 重新生成时会清空当前 revision items 上已有的 `draft_text`。
 - 通用 job runner 继续执行 LLM 任务；前端应轮询 `GET /revisions`。

@@ -21,6 +21,7 @@ class CreateRevisionRequest(BaseModel):
     session_id: str = Field(..., min_length=1, max_length=64)
     user_prompt: str | None = Field(default=None, max_length=4000)
     force: bool = False
+    cue_language: str | None = Field(default=None, max_length=32)
 
     @field_validator("session_id")
     @classmethod
@@ -33,6 +34,14 @@ class CreateRevisionRequest(BaseModel):
     @field_validator("user_prompt")
     @classmethod
     def normalize_user_prompt(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @field_validator("cue_language")
+    @classmethod
+    def normalize_cue_language(cls, value: str | None) -> str | None:
         if value is None:
             return None
         normalized = value.strip()

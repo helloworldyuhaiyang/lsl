@@ -219,6 +219,32 @@ class TranslationRepository:
         except SQLAlchemyError as exc:  # pragma: no cover
             raise RuntimeError(f"Failed to apply translation suggestions: {exc}") from exc
 
+    def mark_items_failed(
+        self,
+        *,
+        translation_id: str,
+        source_item_keys: list[str],
+        error_code: str,
+        error_message: str | None,
+    ) -> dict[str, Any]:
+        normalized_translation_id = self._require_uuid(translation_id, field_name="translation_id")
+        try:
+            with self._session_scope() as db:
+                model = self._get_required_translation(db, normalized_translation_id)
+                keys = set(source_item_keys)
+                for item in model.items:
+                    if item.source_item_key in keys:
+                        item.status = int(TranslationItemStatus.FAILED)
+                        item.error_code = error_code
+                        item.error_message = error_message
+                self._refresh_counts(model)
+                db.commit()
+                db.refresh(model)
+                _ = list(model.items)
+                return self._to_row(model)
+        except SQLAlchemyError as exc:  # pragma: no cover
+            raise RuntimeError(f"Failed to mark translation items failed: {exc}") from exc
+
     def mark_completed(self, *, translation_id: str, raw_result: dict[str, Any] | None = None) -> dict[str, Any]:
         return self._mark_terminal(
             translation_id=translation_id,
@@ -299,10 +325,20 @@ class TranslationRepository:
         model.item_count = len(model.items)
         model.completed_count = sum(1 for item in model.items if int(item.status) == int(TranslationItemStatus.COMPLETED))
         model.stale_count = sum(1 for item in model.items if int(item.status) == int(TranslationItemStatus.STALE))
+        pending_count = sum(1 for item in model.items if int(item.status) == int(TranslationItemStatus.PENDING))
+        generating_count = sum(1 for item in model.items if int(item.status) == int(TranslationItemStatus.GENERATING))
+        failed_count = sum(1 for item in model.items if int(item.status) == int(TranslationItemStatus.FAILED))
+        unfinished_count = pending_count + generating_count + model.stale_count + failed_count
         if model.item_count > 0 and model.completed_count == model.item_count:
             model.status = int(TranslationStatus.COMPLETED)
-        elif model.completed_count > 0:
+        elif model.job_id is not None and unfinished_count > 0:
+            model.status = int(TranslationStatus.GENERATING)
+        elif failed_count > 0 and unfinished_count == failed_count:
+            model.status = int(TranslationStatus.FAILED)
+        elif model.completed_count > 0 or model.stale_count > 0 or failed_count > 0:
             model.status = int(TranslationStatus.PARTIAL)
+        elif model.item_count > 0:
+            model.status = int(TranslationStatus.PENDING)
 
     @staticmethod
     def _to_row(model: TranslationModel) -> dict[str, Any]:

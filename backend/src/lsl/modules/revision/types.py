@@ -54,6 +54,7 @@ class RevisionGenerateRequest:
     user_prompt: str | None
     utterances: list[RevisionPromptUtterance]
     target_language: str | None = None
+    cue_language: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

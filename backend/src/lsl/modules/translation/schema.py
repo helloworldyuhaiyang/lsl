@@ -40,6 +40,30 @@ class CreateTranslationRequest(BaseModel):
         return normalized or None
 
 
+class TranslateTranslationItemRequest(BaseModel):
+    source_type: str = Field(..., min_length=1, max_length=32)
+    source_entity_id: str = Field(..., min_length=1, max_length=128)
+    source_item_key: str = Field(..., min_length=1, max_length=128)
+    session_id: str | None = Field(default=None, max_length=64)
+    target_language: str = Field(default="zh-CN", min_length=2, max_length=16)
+
+    @field_validator("source_type", "source_entity_id", "source_item_key", "target_language")
+    @classmethod
+    def normalize_required(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("value is required")
+        return normalized
+
+    @field_validator("session_id")
+    @classmethod
+    def normalize_optional(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+
 class TranslationItemData(BaseModel):
     item_id: str
     translation_id: str

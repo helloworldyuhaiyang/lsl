@@ -211,6 +211,7 @@ def test_revision_prompt_uses_target_language_for_cues() -> None:
         segment=RevisionSegment(segment_index=1, start_seq=0, end_seq=0),
         user_prompt=None,
         target_language="en-US",
+        cue_language=None,
         context_before=[],
         target_utterances=[
             RevisionPromptUtterance(utterance_seq=0, speaker="student", text="hello")
@@ -228,6 +229,7 @@ def test_revision_prompt_uses_target_language_for_cues() -> None:
         segment=RevisionSegment(segment_index=1, start_seq=0, end_seq=0),
         user_prompt=None,
         target_language="zh-CN",
+        cue_language=None,
         context_before=[],
         target_utterances=[
             RevisionPromptUtterance(utterance_seq=0, speaker="student", text="你好")
@@ -238,6 +240,24 @@ def test_revision_prompt_uses_target_language_for_cues() -> None:
     assert "Include one short Simplified Chinese delivery cue in every rewritten script" in chinese_system
     assert "translate or rewrite that CUE into Simplified Chinese" in chinese_system
     assert "[用轻松自然的语气开口]" in chinese_system
+
+    mixed_messages = generator._build_segment_revision_messages(
+        transcript_id="task-en-cue-zh",
+        segment=RevisionSegment(segment_index=1, start_seq=0, end_seq=0),
+        user_prompt=None,
+        target_language="en-US",
+        cue_language="zh-CN",
+        context_before=[],
+        target_utterances=[
+            RevisionPromptUtterance(utterance_seq=0, speaker="student", text="hello")
+        ],
+        context_after=[],
+    )
+    mixed_system = next(item for item in mixed_messages if item["role"] == "system")["content"]
+    assert "fluent, natural spoken English" in mixed_system
+    assert "Include one short Simplified Chinese delivery cue in every rewritten script" in mixed_system
+    assert "translate or rewrite that CUE into Simplified Chinese" in mixed_system
+    assert "[用轻松自然的语气开口] What did you do last weekend?" in mixed_system
 
 
 def test_append_debug_dump_writes_request_and_response(tmp_path) -> None:

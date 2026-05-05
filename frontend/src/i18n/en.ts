@@ -119,6 +119,7 @@ export const en = {
   'revise.aiRevise': 'AI Revise',
   'revise.aiHelp': 'Add a prompt to guide the AI in generating improved rewrites.',
   'revise.aiPlaceholder': 'Optional prompt for AI...',
+  'revise.aiReviseTooltip': 'Regenerate revision with the prompt',
   'revise.ttsSettings': 'TTS Settings',
   'revise.voices': '{{count}} voices',
   'revise.synthesizing': 'Synthesizing...',
@@ -128,7 +129,7 @@ export const en = {
 
   'revisionCard.scoreDetail': 'Score Detail',
   'revisionCard.original': 'Original',
-  'revisionCard.synthesize': 'Synthesize',
+  'revisionCard.synthesize': 'Preview',
   'revisionCard.noProblems': 'No problem tags available.',
   'revisionCard.noNotes': 'No score notes available.',
 
@@ -172,6 +173,7 @@ export const en = {
   'error.loadScriptPreview': 'Failed to load script preview',
   'error.loadScriptJob': 'Failed to load script job',
   'error.saveRevisionItem': 'Failed to save revision item',
+  'error.updateTranslation': 'Failed to update translation',
   'error.synthesizeAudio': 'Failed to synthesize audio',
   'error.playAudio': 'Failed to play audio',
   'error.playOriginalItem': 'Failed to play original item',

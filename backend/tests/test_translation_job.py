@@ -12,6 +12,7 @@ from lsl.modules.revision.repo import RevisionRepository
 from lsl.modules.translation.provider import FakeTranslationGenerator
 from lsl.modules.translation.repo import TranslationRepository
 from lsl.modules.translation.service import TranslationJobHandler, TranslationService
+from lsl.modules.translation.types import TranslationSourceItem, TranslationStatus
 from lsl.modules.transcript.repo import TranscriptRepository
 from lsl.modules.transcript.service import TranscriptService
 from lsl.modules.transcript.types import TranscriptUtterance
@@ -111,3 +112,113 @@ def test_translation_retry_recovers_generating_items() -> None:
     assert translation.status_name == "completed"
     assert translation.items[0].status_name == "completed"
     assert translation.items[0].translated_text == "译文：hello there"
+
+
+def test_active_translation_job_stays_generating_after_read_refresh() -> None:
+    translation_service, _, transcript_service = _build_services()
+    transcript = transcript_service.create_completed_transcript(
+        source_type="manual",
+        source_entity_id=None,
+        language="en-US",
+        utterances=[
+            TranscriptUtterance(seq=0, speaker="A", text="hello there", start_time=0, end_time=1000),
+            TranscriptUtterance(seq=1, speaker="B", text="nice to meet you", start_time=1000, end_time=2000),
+        ],
+    )
+
+    created = translation_service.create_translation(
+        source_type="transcript",
+        source_entity_id=transcript.transcript_id,
+        target_language="zh-CN",
+    )
+    translation_service._repository.mark_items_generating(
+        translation_id=created.translation_id,
+        source_item_keys=[item.source_item_key for item in created.items],
+    )
+    translation_service._repository.apply_suggestions(
+        translation_id=created.translation_id,
+        suggestions={created.items[0].source_item_key: "译文：hello there"},
+    )
+
+    translation = translation_service.get_translation(
+        source_type="transcript",
+        source_entity_id=transcript.transcript_id,
+        target_language="zh-CN",
+    )
+    assert translation.status_name == "generating"
+    assert translation.job_id == created.job_id
+    assert [item.status_name for item in translation.items] == ["completed", "generating"]
+
+
+def test_stale_translation_without_active_job_is_partial() -> None:
+    translation_service, job_service, transcript_service = _build_services()
+    transcript = transcript_service.create_completed_transcript(
+        source_type="manual",
+        source_entity_id=None,
+        language="en-US",
+        utterances=[
+            TranscriptUtterance(seq=0, speaker="A", text="hello there", start_time=0, end_time=1000),
+        ],
+    )
+
+    created = translation_service.create_translation(
+        source_type="transcript",
+        source_entity_id=transcript.transcript_id,
+        target_language="zh-CN",
+    )
+    assert created.job_id is not None
+    job_service.run_job(job_id=created.job_id, worker_id="test-worker")
+    completed = translation_service.get_translation(
+        source_type="transcript",
+        source_entity_id=transcript.transcript_id,
+        target_language="zh-CN",
+    )
+
+    row = translation_service._repository.upsert_translation(
+        translation_id=completed.translation_id,
+        session_id=None,
+        source_type="transcript",
+        source_entity_id=transcript.transcript_id,
+        source_language="en-US",
+        target_language="zh-CN",
+        provider="fake",
+        model_name=None,
+        source_items=[
+            TranslationSourceItem(
+                source_item_key="0",
+                source_seq=0,
+                speaker="A",
+                start_time=0,
+                end_time=1000,
+                source_text="hello there again",
+            )
+        ],
+    )
+
+    assert row["status"] == int(TranslationStatus.PARTIAL)
+    assert row["stale_count"] == 1
+
+
+def test_translate_single_item_runs_without_job() -> None:
+    translation_service, _, transcript_service = _build_services()
+    transcript = transcript_service.create_completed_transcript(
+        source_type="manual",
+        source_entity_id=None,
+        language="en-US",
+        utterances=[
+            TranscriptUtterance(seq=0, speaker="A", text="hello there", start_time=0, end_time=1000),
+            TranscriptUtterance(seq=1, speaker="B", text="nice to meet you", start_time=1000, end_time=2000),
+        ],
+    )
+
+    translation = translation_service.translate_item(
+        source_type="transcript",
+        source_entity_id=transcript.transcript_id,
+        source_item_key="1",
+        target_language="zh-CN",
+    )
+
+    assert translation.job_id is None
+    assert translation.status_name == "partial"
+    assert [item.status_name for item in translation.items] == ["pending", "completed"]
+    assert translation.items[1].translated_text == "译文：nice to meet you"

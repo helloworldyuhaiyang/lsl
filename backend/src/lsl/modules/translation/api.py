@@ -4,7 +4,12 @@ from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from lsl.modules.translation.schema import ApiResponse, CreateTranslationRequest, TranslationData
+from lsl.modules.translation.schema import (
+    ApiResponse,
+    CreateTranslationRequest,
+    TranslateTranslationItemRequest,
+    TranslationData,
+)
 from lsl.modules.translation.service import TranslationService
 
 router = APIRouter(prefix="/translations", tags=["translations"])
@@ -33,6 +38,28 @@ def create_translation(
     except ValueError as exc:
         detail = str(exc)
         status_code = 404 if detail in {"transcript not found", "revision not found"} else 400
+        raise HTTPException(status_code=status_code, detail=detail) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return ApiResponse(data=translation)
+
+
+@router.post("/items/translate", response_model=ApiResponse[TranslationData])
+def translate_item(
+    payload: TranslateTranslationItemRequest,
+    translation_service: TranslationService = Depends(get_translation_service),
+):
+    try:
+        translation = translation_service.translate_item(
+            source_type=payload.source_type,
+            source_entity_id=payload.source_entity_id,
+            source_item_key=payload.source_item_key,
+            session_id=payload.session_id,
+            target_language=payload.target_language,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        status_code = 404 if detail in {"transcript not found", "revision not found", "translation source item not found"} else 400
         raise HTTPException(status_code=status_code, detail=detail) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc

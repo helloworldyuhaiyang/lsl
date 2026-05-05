@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useApp } from '@/context/AppContext';
 import { ttsVoices } from '@/data/mockData';
 import type { RevisionItem, SpeakerMapping } from '@/types';
@@ -43,7 +44,7 @@ export function Revise() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { getSessionById, dispatch } = useApp();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [loadedSession, setLoadedSession] = useState<ReturnType<typeof getSessionById> | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [isPreparingScript, setIsPreparingScript] = useState(false);
@@ -66,8 +67,17 @@ export function Revise() {
   const [synthesizingItemId, setSynthesizingItemId] = useState<string | null>(null);
   const [playingOriginalItemId, setPlayingOriginalItemId] = useState<string | null>(null);
   const [showAllTranslations, setShowAllTranslations] = useState(false);
+  const [isStartingTranslation, setIsStartingTranslation] = useState(false);
+  const [syncingTranslationItemIds, setSyncingTranslationItemIds] = useState<Set<string>>(() => new Set());
   const itemAudioRef = useRef<HTMLAudioElement | null>(null);
   const itemAudioUrlRef = useRef<string | null>(null);
+  const draftSaveTimersRef = useRef(new Map<string, ReturnType<typeof window.setTimeout>>());
+  const pendingDraftTextRef = useRef(new Map<string, string>());
+  const draftSavePromisesRef = useRef(new Map<string, Promise<void>>());
+  const savingDraftItemIdsRef = useRef(new Set<string>());
+  const dirtyTranslationVersionRef = useRef(0);
+  const dirtyTranslationItemVersionsRef = useRef(new Map<string, number>());
+  const [dirtyTranslationItemIds, setDirtyTranslationItemIds] = useState<Set<string>>(() => new Set());
   const scriptGenerationId = searchParams.get('generation_id');
   const scriptJobId = searchParams.get('job_id');
   const revisionTranslation = useTranslation({
@@ -76,6 +86,15 @@ export function Revise() {
     sessionId: id,
     enabled: !!revisionId && revision.length > 0,
   });
+
+  useEffect(() => {
+    draftSaveTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    draftSaveTimersRef.current.clear();
+    pendingDraftTextRef.current.clear();
+    dirtyTranslationItemVersionsRef.current.clear();
+    setDirtyTranslationItemIds(new Set());
+    setSyncingTranslationItemIds(new Set());
+  }, [revisionId]);
 
   useEffect(() => {
     if (session) {
@@ -138,7 +157,7 @@ export function Revise() {
         if (!hasRevision && nextSession.type === 'audio' && nextSession.status === 'completed') {
           revisionGenerating = true;
           try {
-            const revisionData = await createRevision({ sessionId, userPrompt: '', force: false });
+            const revisionData = await createRevision({ sessionId, userPrompt: '', force: false, cueLanguage: language });
             setRevisionId(revisionData.revision_id);
             nextSession = { ...nextSession, revision: mapRevision(revisionData), userPrompt: revisionData.user_prompt ?? undefined };
             hasRevision = true;
@@ -256,10 +275,12 @@ export function Revise() {
       cancelled = true;
       if (refreshTimer) window.clearTimeout(refreshTimer);
     };
-  }, [id, dispatch, scriptGenerationId, scriptJobId, setSearchParams, t]);
+  }, [id, dispatch, language, scriptGenerationId, scriptJobId, setSearchParams, t]);
 
   useEffect(() => {
     return () => {
+      draftSaveTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+      draftSaveTimersRef.current.clear();
       if (itemAudioRef.current) {
         itemAudioRef.current.pause();
       }
@@ -269,14 +290,135 @@ export function Revise() {
     };
   }, []);
 
+  const saveRevisionDraftNow = useCallback((itemId: string): Promise<void> => {
+    const existing = draftSavePromisesRef.current.get(itemId);
+    if (existing) return existing;
+
+    const promise = (async () => {
+      savingDraftItemIdsRef.current.add(itemId);
+      try {
+        while (pendingDraftTextRef.current.has(itemId)) {
+          const textToSave = pendingDraftTextRef.current.get(itemId) ?? '';
+          await updateRevisionItem(itemId, { draftText: textToSave });
+          if (pendingDraftTextRef.current.get(itemId) === textToSave) {
+            pendingDraftTextRef.current.delete(itemId);
+          }
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : t('error.saveRevisionItem'));
+        throw err;
+      } finally {
+        savingDraftItemIdsRef.current.delete(itemId);
+        draftSavePromisesRef.current.delete(itemId);
+      }
+    })();
+
+    draftSavePromisesRef.current.set(itemId, promise);
+    return promise;
+  }, [t]);
+
+  const flushRevisionDraftSaves = useCallback(async () => {
+    draftSaveTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    draftSaveTimersRef.current.clear();
+
+    const itemIds = new Set([
+      ...pendingDraftTextRef.current.keys(),
+      ...savingDraftItemIdsRef.current.values(),
+    ]);
+    if (itemIds.size === 0) return;
+
+    await Promise.all([...itemIds].map((itemId) => saveRevisionDraftNow(itemId)));
+  }, [saveRevisionDraftNow]);
+
   const handleUpdateRevision = useCallback((itemId: string, fullText: string) => {
     setRevision(prev => prev.map(item => item.id === itemId ? { ...item, fullText } : item));
-    void updateRevisionItem(itemId, { draftText: fullText })
-      .then(() => revisionTranslation.reload())
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : t('error.saveRevisionItem'));
+    pendingDraftTextRef.current.set(itemId, fullText);
+    dirtyTranslationVersionRef.current += 1;
+    dirtyTranslationItemVersionsRef.current.set(itemId, dirtyTranslationVersionRef.current);
+    setDirtyTranslationItemIds(new Set(dirtyTranslationItemVersionsRef.current.keys()));
+
+    const existingTimer = draftSaveTimersRef.current.get(itemId);
+    if (existingTimer) {
+      window.clearTimeout(existingTimer);
+    }
+    const timer = window.setTimeout(() => {
+      draftSaveTimersRef.current.delete(itemId);
+      void saveRevisionDraftNow(itemId).catch(() => undefined);
+    }, 600);
+    draftSaveTimersRef.current.set(itemId, timer);
+  }, [saveRevisionDraftNow]);
+
+  const handleUpdateTranslation = useCallback(async (itemId?: string) => {
+    setIsStartingTranslation(true);
+    const requestedItemIds = itemId
+      ? [itemId]
+      : [
+          ...new Set([
+            ...dirtyTranslationItemVersionsRef.current.keys(),
+            ...(revisionTranslation.translation?.items ?? [])
+              .filter((item) => item.status_name === 'stale')
+              .map((item) => item.source_item_key),
+          ]),
+        ];
+    if (requestedItemIds.length > 0) {
+      setSyncingTranslationItemIds((prev) => {
+        const next = new Set(prev);
+        requestedItemIds.forEach((id) => next.add(id));
+        return next;
       });
-  }, [revisionTranslation, t]);
+    }
+    try {
+      await flushRevisionDraftSaves();
+      if (requestedItemIds.length > 0) {
+        const flushedDirtyVersions = new Map(
+          requestedItemIds.map((id) => [id, dirtyTranslationItemVersionsRef.current.get(id)])
+        );
+        let translated = false;
+        for (const requestedItemId of requestedItemIds) {
+          const data = await revisionTranslation.translateItem(requestedItemId);
+          if (!data) {
+            throw new Error(t('error.updateTranslation'));
+          }
+          translated = translated || !!data;
+        }
+        if (translated) {
+          flushedDirtyVersions.forEach((version, requestedItemId) => {
+            const currentVersion = dirtyTranslationItemVersionsRef.current.get(requestedItemId);
+            if (version === undefined ? currentVersion === undefined : currentVersion === version) {
+              dirtyTranslationItemVersionsRef.current.delete(requestedItemId);
+            }
+          });
+          setDirtyTranslationItemIds(new Set(dirtyTranslationItemVersionsRef.current.keys()));
+        }
+        return;
+      }
+
+      const flushedDirtyVersions = new Map(dirtyTranslationItemVersionsRef.current);
+      const data = await revisionTranslation.retry();
+      if (!data) {
+        throw new Error(t('error.updateTranslation'));
+      }
+      if (data) {
+        flushedDirtyVersions.forEach((version, itemId) => {
+          if (dirtyTranslationItemVersionsRef.current.get(itemId) === version) {
+            dirtyTranslationItemVersionsRef.current.delete(itemId);
+          }
+        });
+        setDirtyTranslationItemIds(new Set(dirtyTranslationItemVersionsRef.current.keys()));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('error.saveRevisionItem'));
+    } finally {
+      setIsStartingTranslation(false);
+      if (requestedItemIds.length > 0) {
+        setSyncingTranslationItemIds((prev) => {
+          const next = new Set(prev);
+          requestedItemIds.forEach((id) => next.delete(id));
+          return next;
+        });
+      }
+    }
+  }, [flushRevisionDraftSaves, revisionTranslation, t]);
 
   const handleReviseByAI = useCallback(async () => {
     if (!id) return;
@@ -288,7 +430,7 @@ export function Revise() {
       dispatch({ type: 'UPDATE_SESSION', payload: { ...session, revision: [], userPrompt } });
     }
     try {
-      let data = await createRevision({ sessionId: id, userPrompt, force: true });
+      let data = await createRevision({ sessionId: id, userPrompt, force: true, cueLanguage: language });
       setRevisionId(data.revision_id);
       let nextRevision = mapRevision(data);
       setRevision(nextRevision);
@@ -320,7 +462,7 @@ export function Revise() {
     } finally {
       setIsRevising(false);
     }
-  }, [id, userPrompt, session, dispatch, t]);
+  }, [id, userPrompt, session, dispatch, language, t]);
 
   // Ensure speaker mappings use valid speaker_ids after voices are loaded
   useEffect(() => {
@@ -350,6 +492,12 @@ export function Revise() {
     setIsSynthesizing(true);
     setError(null);
     try {
+      await flushRevisionDraftSaves();
+      const shouldUpdateTranslation = revisionTranslation.needsUpdate || dirtyTranslationItemVersionsRef.current.size > 0;
+      if (shouldUpdateTranslation) {
+        await handleUpdateTranslation();
+      }
+
       await updateTtsSettings({
         sessionId: id,
         format,
@@ -384,7 +532,21 @@ export function Revise() {
     } finally {
       setIsSynthesizing(false);
     }
-  }, [id, format, emotionScale, speechRate, loudnessRate, speakerMappings, session, dispatch, navigate, t]);
+  }, [
+    id,
+    flushRevisionDraftSaves,
+    revisionTranslation.needsUpdate,
+    handleUpdateTranslation,
+    format,
+    emotionScale,
+    speechRate,
+    loudnessRate,
+    speakerMappings,
+    session,
+    dispatch,
+    navigate,
+    t,
+  ]);
 
   const stopItemAudio = useCallback(() => {
     if (itemAudioRef.current) {
@@ -536,6 +698,8 @@ export function Revise() {
   const isScriptGenerationRoute = revision.length === 0 && session?.type === 'text' && (isPreparingScript || !!scriptJobId || !!scriptGenerationId);
   const isWaitingForScript = isScriptGenerationRoute && !error;
   const shouldShowRevisionControls = !isScriptGenerationRoute;
+  const translationNeedsUpdate = revisionTranslation.needsUpdate || dirtyTranslationItemIds.size > 0;
+  const isTranslationBusy = isStartingTranslation || revisionTranslation.isTranslating;
 
   if (!session && !notFound) {
     return <div className="text-[13px] text-slate-500">{t('revise.loading')}</div>;
@@ -563,12 +727,12 @@ export function Revise() {
           {shouldShowRevisionControls && (
             <TranslationButton
               active={showAllTranslations}
-              isTranslating={revisionTranslation.isTranslating}
+              isTranslating={isTranslationBusy}
               failed={revisionTranslation.translation?.status_name === 'failed' || revisionTranslation.hasStuckItems}
-              needsUpdate={revisionTranslation.needsUpdate}
+              needsUpdate={translationNeedsUpdate}
               onClick={() => {
-                if (revisionTranslation.translation?.status_name === 'failed' || revisionTranslation.needsUpdate || revisionTranslation.hasStuckItems) {
-                  void revisionTranslation.retry();
+                if (revisionTranslation.translation?.status_name === 'failed' || translationNeedsUpdate || revisionTranslation.hasStuckItems) {
+                  void handleUpdateTranslation();
                   return;
                 }
                 setShowAllTranslations((current) => !current);
@@ -635,13 +799,23 @@ export function Revise() {
             className="flex-1 text-[13px] border-slate-200 resize-none"
             rows={2}
           />
-          <Button
-            onClick={handleReviseByAI}
-            disabled={isRevising}
-            className="bg-indigo-500 hover:bg-indigo-600 text-white h-auto px-5 disabled:opacity-60"
-          >
-            {isRevising ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex">
+                <Button
+                  onClick={handleReviseByAI}
+                  disabled={isRevising}
+                  aria-label={t('revise.aiReviseTooltip')}
+                  className="bg-indigo-500 hover:bg-indigo-600 text-white h-auto px-5 disabled:opacity-60"
+                >
+                  {isRevising ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" sideOffset={6}>
+              {t('revise.aiReviseTooltip')}
+            </TooltipContent>
+          </Tooltip>
         </div>
       </div>
       )}
@@ -704,28 +878,35 @@ export function Revise() {
       {/* Revision Cards */}
       {shouldShowRevisionControls && (
       <div>
-        {revision.length > 0 ? revision.map(item => (
-          <RevisionCard
-            key={item.id}
-            item={item}
-            voice={getVoiceForSpeaker(item.speaker, speakerMappings, voiceList)}
-            onUpdate={handleUpdateRevision}
-            onPlayOriginal={handlePlayOriginal}
-            onSynthesize={handleSynthesizeItem}
-            isPlayingOriginal={playingOriginalItemId === item.id}
-            isSynthesizing={synthesizingItemId === item.id}
-            translationText={revisionTranslation.itemsByKey.get(item.id)?.translated_text}
-            translationStatus={
-              revisionTranslation.hasStuckItems && revisionTranslation.itemsByKey.get(item.id)?.status_name === 'generating'
-                ? 'failed'
-                : revisionTranslation.itemsByKey.get(item.id)?.status_name ?? revisionTranslation.translation?.status_name
-            }
-            translationStale={revisionTranslation.itemsByKey.get(item.id)?.status_name === 'stale'}
-            showTranslation={showAllTranslations}
-            onRetryTranslation={() => void revisionTranslation.retry()}
-            showAssessment={session.type !== 'text'}
-          />
-        )) : (
+        {revision.length > 0 ? revision.map(item => {
+          const translationItem = revisionTranslation.itemsByKey.get(item.id);
+          const translationItemDirty = dirtyTranslationItemIds.has(item.id);
+          const translationItemSyncing = syncingTranslationItemIds.has(item.id);
+          return (
+            <RevisionCard
+              key={item.id}
+              item={item}
+              voice={getVoiceForSpeaker(item.speaker, speakerMappings, voiceList)}
+              onUpdate={handleUpdateRevision}
+              onPlayOriginal={handlePlayOriginal}
+              onSynthesize={handleSynthesizeItem}
+              isPlayingOriginal={playingOriginalItemId === item.id}
+              isSynthesizing={synthesizingItemId === item.id}
+              translationText={translationItem?.translated_text}
+              translationStatus={
+                translationItemSyncing
+                  ? 'generating'
+                  : revisionTranslation.hasStuckItems && translationItem?.status_name === 'generating'
+                  ? 'failed'
+                  : translationItem?.status_name ?? revisionTranslation.translation?.status_name
+              }
+              translationStale={translationItemDirty || translationItem?.status_name === 'stale'}
+              showTranslation={showAllTranslations}
+              onRetryTranslation={() => void handleUpdateTranslation(item.id)}
+              showAssessment={session.type !== 'text'}
+            />
+          );
+        }) : (
           <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
             {isRevising ? (
               <div className="flex flex-col items-center gap-3">

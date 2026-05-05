@@ -34,6 +34,7 @@ def create_revision(
             session_id=payload.session_id,
             user_prompt=payload.user_prompt,
             force=payload.force,
+            cue_language=payload.cue_language,
         )
     except ValueError as exc:
         detail = str(exc)

@@ -123,7 +123,7 @@ class FakeRevisionGenerator:
     provider_name = "fake"
 
     def generate(self, req: RevisionGenerateRequest) -> list[RevisionSuggestion]:
-        cue = "用夸张又兴奋的语气读这句" if _is_chinese_language(req.target_language) else "Read this line with exaggerated excitement"
+        cue = "用夸张又兴奋的语气读这句" if _is_chinese_language(req.cue_language or req.target_language) else "Read this line with exaggerated excitement"
         text = "这是一个用于调试的假修订句子。" if _is_chinese_language(req.target_language) else "This is a fake revised sentence for debugging."
         suggestions: list[RevisionSuggestion] = []
         for item in req.utterances:
@@ -177,6 +177,7 @@ class LLMRevisionGenerator:
             utterances=req.utterances,
             user_prompt=req.user_prompt,
             target_language=req.target_language,
+            cue_language=req.cue_language,
             segments=segments,
         ):
             yield segment_suggestions
@@ -207,6 +208,7 @@ class LLMRevisionGenerator:
         utterances: list[RevisionPromptUtterance],
         user_prompt: str | None,
         target_language: str | None,
+        cue_language: str | None,
         segments: list[RevisionSegment],
     ):
         if not segments:
@@ -223,6 +225,7 @@ class LLMRevisionGenerator:
                     utterances=utterances,
                     user_prompt=user_prompt,
                     target_language=target_language,
+                    cue_language=cue_language,
                     segment=segment,
                     utterance_index_by_seq=utterance_index_by_seq,
                 ): segment
@@ -244,6 +247,7 @@ class LLMRevisionGenerator:
         utterances: list[RevisionPromptUtterance],
         user_prompt: str | None,
         target_language: str | None,
+        cue_language: str | None,
         segment: RevisionSegment,
         utterance_index_by_seq: dict[int, int],
     ) -> list[RevisionSuggestion]:
@@ -265,6 +269,7 @@ class LLMRevisionGenerator:
                 segment=segment,
                 user_prompt=user_prompt,
                 target_language=target_language,
+                cue_language=cue_language,
                 context_before=context_before,
                 target_utterances=target_utterances,
                 context_after=context_after,
@@ -394,6 +399,7 @@ class LLMRevisionGenerator:
         segment: RevisionSegment,
         user_prompt: str | None,
         target_language: str | None,
+        cue_language: str | None,
         context_before: list[RevisionPromptUtterance],
         target_utterances: list[RevisionPromptUtterance],
         context_after: list[RevisionPromptUtterance],
@@ -420,7 +426,7 @@ class LLMRevisionGenerator:
         )
         system_message: ChatCompletionSystemMessageParam = {
             "role": "system",
-            "content": _build_segment_revision_system_prompt(target_language),
+            "content": _build_segment_revision_system_prompt(target_language, cue_language),
         }
         user_message: ChatCompletionUserMessageParam = {
             "role": "user",
@@ -893,18 +899,20 @@ class LLMRevisionGenerator:
         return int(score)
 
 
-def _build_segment_revision_system_prompt(target_language: str | None) -> str:
+def _build_segment_revision_system_prompt(target_language: str | None, cue_language: str | None) -> str:
     spoken_language = _language_label(target_language)
-    cue_language = "Simplified Chinese" if _is_chinese_language(target_language) else spoken_language
-    example = (
-        "[用轻松自然的语气开口] 你上周末做了什么？"
-        if _is_chinese_language(target_language)
-        else "[Open with relaxed, natural curiosity] What did you do last weekend?"
+    cue_language_label = _language_label(cue_language or target_language)
+    cue_example = (
+        "用轻松自然的语气开口"
+        if _is_chinese_language(cue_language or target_language)
+        else "Open with relaxed, natural curiosity"
     )
+    text_example = "你上周末做了什么？" if _is_chinese_language(target_language) else "What did you do last weekend?"
+    example = f"[{cue_example}] {text_example}"
     return (
         _SEGMENT_REVISION_SYSTEM_PROMPT_TEMPLATE
         .replace("{spoken_language}", spoken_language)
-        .replace("{cue_language}", cue_language)
+        .replace("{cue_language}", cue_language_label)
         .replace("{suggested_text_example}", example)
     )
 

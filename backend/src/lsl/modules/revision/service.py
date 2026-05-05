@@ -59,6 +59,7 @@ class RevisionService:
         session_id: str,
         user_prompt: str | None = None,
         force: bool = False,
+        cue_language: str | None = None,
     ) -> RevisionData:
         session_data = self._session_service.get_session(session_id)
         transcript_id = session_data.session.current_transcript_id
@@ -104,6 +105,7 @@ class RevisionService:
                 "session_id": session_id,
                 "transcript_id": transcript_id,
                 "revision_id": revision.revision_id,
+                "cue_language": cue_language,
             },
         )
 
@@ -164,6 +166,7 @@ class RevisionService:
         session_id: str,
         transcript_id: str,
         job_id: str,
+        cue_language: str | None = None,
     ) -> JobRunResult:
         # Revision job flow 5/5: a claimed revision_generation job runs here.
         revision = self._repository.get_revision_by_session_id(session_id)
@@ -190,6 +193,7 @@ class RevisionService:
             user_prompt=user_prompt,
             utterances=prompt_utterances,
             target_language=transcript.language,
+            cue_language=cue_language,
         )
 
         try:
@@ -454,6 +458,7 @@ class RevisionJobHandler:
         # JobService calls this handler for jobs whose job_type is revision_generation.
         session_id = str(job.payload.get("session_id") or "").strip()
         transcript_id = str(job.payload.get("transcript_id") or "").strip()
+        cue_language = str(job.payload.get("cue_language") or "").strip() or None
         if not session_id or not transcript_id:
             return JobRunResult(
                 status=JobStatus.FAILED,
@@ -464,4 +469,5 @@ class RevisionJobHandler:
             session_id=session_id,
             transcript_id=transcript_id,
             job_id=job.job_id,
+            cue_language=cue_language,
         )

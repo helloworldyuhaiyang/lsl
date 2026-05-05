@@ -27,6 +27,7 @@ export async function createRevision(payload: CreateRevisionRequest): Promise<Re
       session_id: payload.sessionId,
       user_prompt: payload.userPrompt,
       force: payload.force ?? true,
+      cue_language: payload.cueLanguage,
     }),
   })
 

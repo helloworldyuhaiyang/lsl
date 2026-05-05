@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { createTranslation, getTranslation, isMissingTranslationError } from '@/lib/api/translations'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createTranslation, getTranslation, isMissingTranslationError, translateTranslationItem } from '@/lib/api/translations'
 import type { TranslationItemResponse, TranslationResponse } from '@/types/api'
 
 type SourceType = 'transcript' | 'revision'
@@ -21,15 +21,20 @@ export function useTranslation({
 }: UseTranslationParams) {
   const [translation, setTranslation] = useState<TranslationResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const requestSeqRef = useRef(0)
 
   const canLoad = enabled && !!sourceType && !!sourceEntityId
 
   const load = useCallback(async () => {
     if (!canLoad || !sourceType || !sourceEntityId) return null
+    const seq = requestSeqRef.current + 1
+    requestSeqRef.current = seq
     setError(null)
     try {
       const data = await getTranslation({ sourceType, sourceEntityId, targetLanguage })
-      setTranslation(data)
+      if (requestSeqRef.current === seq) {
+        setTranslation(data)
+      }
       return data
     } catch (err) {
       if (isMissingTranslationError(err)) {
@@ -39,16 +44,22 @@ export function useTranslation({
           sessionId: sessionId ?? undefined,
           targetLanguage,
         })
-        setTranslation(created)
+        if (requestSeqRef.current === seq) {
+          setTranslation(created)
+        }
         return created
       }
-      setError(err instanceof Error ? err.message : 'Failed to load translation')
+      if (requestSeqRef.current === seq) {
+        setError(err instanceof Error ? err.message : 'Failed to load translation')
+      }
       return null
     }
   }, [canLoad, sourceType, sourceEntityId, sessionId, targetLanguage])
 
   const retry = useCallback(async () => {
     if (!canLoad || !sourceType || !sourceEntityId) return null
+    const seq = requestSeqRef.current + 1
+    requestSeqRef.current = seq
     setError(null)
     try {
       const data = await createTranslation({
@@ -58,37 +69,65 @@ export function useTranslation({
         targetLanguage,
         force: true,
       })
-      setTranslation(data)
+      if (requestSeqRef.current === seq) {
+        setTranslation(data)
+      }
       return data
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start translation')
+      if (requestSeqRef.current === seq) {
+        setError(err instanceof Error ? err.message : 'Failed to start translation')
+      }
+      return null
+    }
+  }, [canLoad, sourceType, sourceEntityId, sessionId, targetLanguage])
+
+  const translateItem = useCallback(async (sourceItemKey: string) => {
+    if (!canLoad || !sourceType || !sourceEntityId) return null
+    const seq = requestSeqRef.current + 1
+    requestSeqRef.current = seq
+    setError(null)
+    try {
+      const data = await translateTranslationItem({
+        sourceType,
+        sourceEntityId,
+        sourceItemKey,
+        sessionId: sessionId ?? undefined,
+        targetLanguage,
+      })
+      if (requestSeqRef.current === seq) {
+        setTranslation(data)
+      }
+      return data
+    } catch (err) {
+      if (requestSeqRef.current === seq) {
+        setError(err instanceof Error ? err.message : 'Failed to translate item')
+      }
       return null
     }
   }, [canLoad, sourceType, sourceEntityId, sessionId, targetLanguage])
 
   useEffect(() => {
     if (!canLoad) {
+      requestSeqRef.current += 1
       setTranslation(null)
       setError(null)
       return
     }
-    let cancelled = false
-    let timer: ReturnType<typeof window.setTimeout> | null = null
 
-    async function loadAndSchedule() {
-      const data = await load()
-      const status = data?.status_name
-      if (!cancelled && (status === 'pending' || status === 'generating')) {
-        timer = window.setTimeout(loadAndSchedule, 2000)
-      }
-    }
-
-    void loadAndSchedule()
-    return () => {
-      cancelled = true
-      if (timer) window.clearTimeout(timer)
-    }
+    void load()
   }, [canLoad, load])
+
+  useEffect(() => {
+    if (!canLoad) return
+    const status = translation?.status_name
+    if (status !== 'pending' && status !== 'generating') return
+
+    const timer = window.setTimeout(() => {
+      void load()
+    }, 2000)
+
+    return () => window.clearTimeout(timer)
+  }, [canLoad, load, translation])
 
   const itemsByKey = useMemo(() => {
     const map = new Map<string, TranslationItemResponse>()
@@ -113,5 +152,6 @@ export function useTranslation({
     error,
     reload: load,
     retry,
+    translateItem,
   }
 }

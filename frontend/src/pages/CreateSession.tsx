@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Loader2, Mic, Sparkles } from 'lucide-react';
 import { FileUpload } from '@/components/FileUpload';
@@ -26,7 +26,7 @@ import { useI18n } from '@/i18n';
 export function CreateSession() {
   const navigate = useNavigate();
   const { dispatch, refreshSessions } = useApp();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [mode, setMode] = useState<'audio' | 'script'>('audio');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -40,8 +40,18 @@ export function CreateSession() {
   const [difficulty, setDifficulty] = useState<Difficulty>('Beginner');
   const [cueStyle, setCueStyle] = useState(() => t('create.defaultCueStyle'));
   const [mustInclude, setMustInclude] = useState('');
+  const scenarioPromptRef = useRef<HTMLTextAreaElement | null>(null);
 
   const clearErrors = useCallback(() => setErrors({}), []);
+  const adjustScenarioPromptHeight = useCallback((element?: HTMLTextAreaElement | null) => {
+    if (!element) return;
+    element.style.height = 'auto';
+    element.style.height = `${element.scrollHeight}px`;
+  }, []);
+
+  useEffect(() => {
+    adjustScenarioPromptHeight(scenarioPromptRef.current);
+  }, [scenarioPrompt, adjustScenarioPromptHeight]);
 
   const handleSubmit = useCallback(async () => {
     clearErrors();
@@ -114,7 +124,7 @@ export function CreateSession() {
         const result = await generateScriptSession({
           title: sessionName,
           description: sessionDescription,
-          language: 'en',
+          language,
           prompt: scenarioPrompt,
           turnCount: Number(turnCount),
           speakerCount: Number(speakerCount),
@@ -141,7 +151,7 @@ export function CreateSession() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [sessionName, mode, clearErrors, selectedFile, scenarioPrompt, t, sessionDescription, dispatch, navigate, turnCount, speakerCount, difficulty, cueStyle, mustInclude, refreshSessions]);
+  }, [sessionName, mode, clearErrors, selectedFile, scenarioPrompt, t, sessionDescription, dispatch, navigate, turnCount, speakerCount, difficulty, cueStyle, mustInclude, refreshSessions, language]);
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -220,10 +230,15 @@ export function CreateSession() {
                 {t('create.scenarioHelp')}
               </p>
               <Textarea
+                ref={scenarioPromptRef}
                 value={scenarioPrompt}
-                onChange={(e) => { setScenarioPrompt(e.target.value); clearErrors(); }}
+                onChange={(e) => {
+                  setScenarioPrompt(e.target.value);
+                  adjustScenarioPromptHeight(e.target);
+                  clearErrors();
+                }}
                 placeholder={t('create.scenarioPlaceholder')}
-                className={`text-[13px] border-slate-200 focus:border-indigo-300 resize-none ${errors.prompt ? 'border-red-300' : ''}`}
+                className={`text-[13px] border-slate-200 focus:border-indigo-300 resize-none overflow-hidden ${errors.prompt ? 'border-red-300' : ''}`}
                 rows={4}
               />
               {errors.prompt && <p className="text-[11px] text-red-500 mt-1">{errors.prompt}</p>}

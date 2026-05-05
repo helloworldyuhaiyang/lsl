@@ -43,6 +43,23 @@ export async function createTranslation(params: TranslationSourceParams & { forc
   return response.data
 }
 
+export async function translateTranslationItem(params: TranslationSourceParams & { sourceItemKey: string }): Promise<TranslationResponse> {
+  const response = await requestJson<ApiResponse<TranslationResponse>>('/translations/items/translate', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      source_type: params.sourceType,
+      source_entity_id: params.sourceEntityId,
+      source_item_key: params.sourceItemKey,
+      session_id: params.sessionId,
+      target_language: params.targetLanguage ?? 'zh-CN',
+    }),
+  })
+  return response.data
+}
+
 export function isMissingTranslationError(error: unknown): boolean {
   return error instanceof ApiRequestError && error.status === 404
 }
