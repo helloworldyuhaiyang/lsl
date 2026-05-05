@@ -3,7 +3,6 @@ from __future__ import annotations
 import base64
 import json
 import logging
-import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -66,56 +65,51 @@ class _VolcSpeakerRow:
     launched_for: str
 
 
-_VOLC_TTS_2_SOURCE_ROWS: list[tuple[str, str, str, str, str, str]] = [
-    ("通用场景", "Vivi 2.0", "zh_female_vv_uranus_bigtts", "中文、日文、印尼、墨西哥西班牙语", "情感变化、指令遵循、ASMR", ""),
-    ("通用场景", "小何 2.0", "zh_female_xiaohe_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
-    ("视频配音", "猴哥 2.0", "zh_male_sunwukong_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
-    ("通用场景", "云舟 2.0", "zh_male_m191_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
-    ("通用场景", "小天 2.0", "zh_male_taocheng_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
-    ("通用场景", "刘飞 2.0", "zh_male_liufei_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
-    ("通用场景", "魅力苏菲 2.0", "zh_male_sophie_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
-    ("通用场景", "清新女声 2.0", "zh_female_qingxinnvsheng_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
-    ("角色扮演", "知性灿灿 2.0", "zh_female_cancan_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
-    ("角色扮演", "撒娇学妹 2.0", "zh_female_sajiaoxuemei_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
-    ("通用场景", "甜美小源 2.0", "zh_female_tianmeixiaoyuan_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
-    ("通用场景", "甜美桃子 2.0", "zh_female_tianmeitaozi_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
-    ("通用场景", "爽快思思 2.0", "zh_female_shuangkuaisisi_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
-    ("视频配音", "佩奇猪 2.0", "zh_female_peiqi_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
-    ("通用场景", "邻家女孩 2.0", "zh_female_linjianvhai_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
-    ("通用场景", "少年梓辛/Brayan 2.0", "zh_male_shaonianzixin_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
-    ("教育场景", "Tina老师 2.0", "zh_female_yingyujiaoxue_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
-    ("客服场景", "暖阳女声 2.0", "zh_female_kefunvsheng_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
-    ("有声阅读", "儿童绘本 2.0", "zh_female_xiaoxue_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
-    ("视频配音", "大壹 2.0", "zh_male_dayi_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
-    ("视频配音", "黑猫侦探社咪仔 2.0", "zh_female_mizai_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
-    ("视频配音", "鸡汤女 2.0", "zh_female_jitangnv_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
-    ("通用场景", "魅力女友 2.0", "zh_female_meilinvyou_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
-    ("视频配音", "流畅女声 2.0", "zh_female_liuchangnv_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
-    ("视频配音", "儒雅逸辰 2.0", "zh_male_ruyayichen_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
-    ("多语种", "Tim", "en_male_tim_uranus_bigtts", "美式英语", "情感变化、指令遵循、ASMR", ""),
-    ("多语种", "Dacey", "en_female_dacey_uranus_bigtts", "美式英语", "情感变化、指令遵循、ASMR", ""),
-    ("多语种", "Stokie", "en_female_stokie_uranus_bigtts", "美式英语", "情感变化、指令遵循、ASMR", ""),
-    ("有声阅读", "儿童绘本", "zh_female_xueayi_saturn_bigtts", "中文", "指令遵循", "剪映"),
-    ("视频配音", "大壹", "zh_male_dayi_saturn_bigtts", "中文", "指令遵循", "剪映"),
-    ("视频配音", "黑猫侦探社咪仔", "zh_female_mizai_saturn_bigtts", "中文", "指令遵循", "剪映"),
-    ("视频配音", "鸡汤女", "zh_female_jitangnv_saturn_bigtts", "中文", "指令遵循", "剪映"),
-    ("视频配音", "魅力女友", "zh_female_meilinvyou_saturn_bigtts", "中文", "指令遵循", "剪映"),
-    ("视频配音", "流畅女声", "zh_female_santongyongns_saturn_bigtts", "中文", "指令遵循", "剪映"),
-    ("视频配音", "儒雅逸辰", "zh_male_ruyayichen_saturn_bigtts", "中文", "指令遵循", "剪映"),
-    ("角色扮演", "可爱女生", "saturn_zh_female_keainvsheng_tob", "中文", "指令遵循、COT/QA功能", ""),
-    ("角色扮演", "调皮公主", "saturn_zh_female_tiaopigongzhu_tob", "中文", "指令遵循、COT/QA功能", ""),
-    ("角色扮演", "爽朗少年", "saturn_zh_male_shuanglangshaonian_tob", "中文", "指令遵循、COT/QA功能", ""),
-    ("角色扮演", "天才同桌", "saturn_zh_male_tiancaitongzhuo_tob", "中文", "指令遵循、COT/QA功能", ""),
-    ("角色扮演", "知性灿灿", "saturn_zh_female_cancan_tob", "中文", "指令遵循、COT/QA功能", ""),
-    ("客服场景", "轻盈朵朵 2.0", "saturn_zh_female_qingyingduoduo_cs_tob", "中文", "指令遵循", ""),
-    ("客服场景", "温婉珊珊 2.0", "saturn_zh_female_wenwanshanshan_cs_tob", "中文", "指令遵循", ""),
-    ("客服场景", "热情艾娜 2.0", "saturn_zh_female_reqingaina_cs_tob", "中文", "指令遵循", ""),
+_VOLC_TTS_2_SOURCE_ROWS: list[tuple[str, str, str, str, str, str, str, str]] = [
+    ("通用场景", "Vivi 2.0", "Vivi", "Vivi", "zh_female_vv_uranus_bigtts", "中文、日文、印尼、墨西哥西班牙语", "情感变化、指令遵循、ASMR", ""),
+    ("通用场景", "小何 2.0", "小何", "Xiaohe", "zh_female_xiaohe_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
+    ("视频配音", "猴哥 2.0", "猴哥", "Monkey King", "zh_male_sunwukong_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
+    ("通用场景", "云舟 2.0", "云舟", "Yunzhou", "zh_male_m191_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
+    ("通用场景", "小天 2.0", "小天", "Xiaotian", "zh_male_taocheng_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
+    ("通用场景", "刘飞 2.0", "刘飞", "Liufei", "zh_male_liufei_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
+    ("通用场景", "魅力苏菲 2.0", "魅力苏菲", "Charming Sophie", "zh_male_sophie_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
+    ("通用场景", "清新女声 2.0", "清新女声", "Fresh Female Voice", "zh_female_qingxinnvsheng_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
+    ("角色扮演", "知性灿灿 2.0", "知性灿灿", "Elegant Cancan", "zh_female_cancan_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
+    ("角色扮演", "撒娇学妹 2.0", "撒娇学妹", "Playful Schoolmate", "zh_female_sajiaoxuemei_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
+    ("通用场景", "甜美小源 2.0", "甜美小源", "Sweet Xiaoyuan", "zh_female_tianmeixiaoyuan_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
+    ("通用场景", "甜美桃子 2.0", "甜美桃子", "Sweet Taozi", "zh_female_tianmeitaozi_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
+    ("通用场景", "爽快思思 2.0", "爽快思思", "Cheerful Sisi", "zh_female_shuangkuaisisi_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
+    ("视频配音", "佩奇猪 2.0", "佩奇猪", "Peiqi Pig", "zh_female_peiqi_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
+    ("通用场景", "邻家女孩 2.0", "邻家女孩", "Girl Next Door", "zh_female_linjianvhai_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
+    ("通用场景", "少年梓辛/Brayan 2.0", "少年梓辛", "Brayan", "zh_male_shaonianzixin_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
+    ("教育场景", "Tina老师 2.0", "Tina老师", "Teacher Tina", "zh_female_yingyujiaoxue_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
+    ("客服场景", "暖阳女声 2.0", "暖阳女声", "Warm Female Voice", "zh_female_kefunvsheng_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
+    ("有声阅读", "儿童绘本 2.0", "儿童绘本", "Children's Picture Book", "zh_female_xiaoxue_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
+    ("视频配音", "大壹 2.0", "大壹", "Dayi", "zh_male_dayi_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
+    ("视频配音", "黑猫侦探社咪仔 2.0", "黑猫侦探社咪仔", "Mizai Detective", "zh_female_mizai_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
+    ("视频配音", "鸡汤女 2.0", "鸡汤女", "Inspirational Female Voice", "zh_female_jitangnv_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
+    ("通用场景", "魅力女友 2.0", "魅力女友", "Charming Girlfriend", "zh_female_meilinvyou_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
+    ("视频配音", "流畅女声 2.0", "流畅女声", "Fluent Female Voice", "zh_female_liuchangnv_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
+    ("视频配音", "儒雅逸辰 2.0", "儒雅逸辰", "Refined Yichen", "zh_male_ruyayichen_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
+    ("多语种", "Tim", "蒂姆", "Tim", "en_male_tim_uranus_bigtts", "美式英语", "情感变化、指令遵循、ASMR", ""),
+    ("多语种", "Dacey", "黛西", "Dacey", "en_female_dacey_uranus_bigtts", "美式英语", "情感变化、指令遵循、ASMR", ""),
+    ("多语种", "Stokie", "斯托奇", "Stokie", "en_female_stokie_uranus_bigtts", "美式英语", "情感变化、指令遵循、ASMR", ""),
+    ("有声阅读", "儿童绘本", "儿童绘本", "Children's Picture Book", "zh_female_xueayi_saturn_bigtts", "中文", "指令遵循", "剪映"),
+    ("视频配音", "大壹", "大壹", "Dayi", "zh_male_dayi_saturn_bigtts", "中文", "指令遵循", "剪映"),
+    ("视频配音", "黑猫侦探社咪仔", "黑猫侦探社咪仔", "Mizai Detective", "zh_female_mizai_saturn_bigtts", "中文", "指令遵循", "剪映"),
+    ("视频配音", "鸡汤女", "鸡汤女", "Inspirational Female Voice", "zh_female_jitangnv_saturn_bigtts", "中文", "指令遵循", "剪映"),
+    ("视频配音", "魅力女友", "魅力女友", "Charming Girlfriend", "zh_female_meilinvyou_saturn_bigtts", "中文", "指令遵循", "剪映"),
+    ("视频配音", "流畅女声", "流畅女声", "Fluent Female Voice", "zh_female_santongyongns_saturn_bigtts", "中文", "指令遵循", "剪映"),
+    ("视频配音", "儒雅逸辰", "儒雅逸辰", "Refined Yichen", "zh_male_ruyayichen_saturn_bigtts", "中文", "指令遵循", "剪映"),
+    ("角色扮演", "可爱女生", "可爱女生", "Cute Girl", "saturn_zh_female_keainvsheng_tob", "中文", "指令遵循、COT/QA功能", ""),
+    ("角色扮演", "调皮公主", "调皮公主", "Mischievous Princess", "saturn_zh_female_tiaopigongzhu_tob", "中文", "指令遵循、COT/QA功能", ""),
+    ("角色扮演", "爽朗少年", "爽朗少年", "Bright Boy", "saturn_zh_male_shuanglangshaonian_tob", "中文", "指令遵循、COT/QA功能", ""),
+    ("角色扮演", "天才同桌", "天才同桌", "Genius Classmate", "saturn_zh_male_tiancaitongzhuo_tob", "中文", "指令遵循、COT/QA功能", ""),
+    ("角色扮演", "知性灿灿", "知性灿灿", "Elegant Cancan", "saturn_zh_female_cancan_tob", "中文", "指令遵循、COT/QA功能", ""),
+    ("客服场景", "轻盈朵朵 2.0", "轻盈朵朵", "Light Duoduo", "saturn_zh_female_qingyingduoduo_cs_tob", "中文", "指令遵循", ""),
+    ("客服场景", "温婉珊珊 2.0", "温婉珊珊", "Gentle Shanshan", "saturn_zh_female_wenwanshanshan_cs_tob", "中文", "指令遵循", ""),
+    ("客服场景", "热情艾娜 2.0", "热情艾娜", "Warm Aina", "saturn_zh_female_reqingaina_cs_tob", "中文", "指令遵循", ""),
 ]
-
-
-def _strip_speaker_version(name: str) -> str:
-    normalized = re.sub(r"\s+", " ", name.strip())
-    return re.sub(r"\s+\d+(?:\.\d+)*$", "", normalized).strip() or normalized
 
 
 def _to_english_list(value: str, mapping: dict[str, str]) -> str:
@@ -125,18 +119,19 @@ def _to_english_list(value: str, mapping: dict[str, str]) -> str:
 
 def _build_volc_speaker_row(
     scene: str,
-    name: str,
+    provider_name: str,
+    cn_name: str,
+    en_name: str,
     voice_type: str,
     language: str,
     capability: str,
     launched_for: str,
 ) -> _VolcSpeakerRow:
-    display_name = _strip_speaker_version(name)
     return _VolcSpeakerRow(
         scene=scene,
-        provider_name=name,
-        cn_name=display_name,
-        en_name=display_name,
+        provider_name=provider_name,
+        cn_name=cn_name,
+        en_name=en_name,
         voice_type=voice_type,
         language=language,
         capability=capability,
@@ -178,7 +173,6 @@ def _build_avatar(row: _VolcSpeakerRow) -> dict[str, Any]:
         "type": "preset",
         "key": f"{_infer_gender(row.voice_type) or 'neutral'}_{row.scene}",
         "color": _AVATAR_COLORS[color_index],
-        "initials": (row.cn_name or row.en_name or row.provider_name)[:2],
     }
 
 

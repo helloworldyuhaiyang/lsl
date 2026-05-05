@@ -77,7 +77,7 @@ export interface TranscriptItemResponse {
 export interface CreateAsrRecognitionRequest {
   objectKey: string
   audioUrl: string
-  language?: string
+  targetLanguage?: string
 }
 
 export interface AsrRecognitionResponse {
@@ -86,7 +86,7 @@ export interface AsrRecognitionResponse {
   job_id?: string | null
   object_key: string
   audio_url?: string | null
-  language?: string | null
+  target_language?: string | null
   provider?: string | null
   status: number
   status_name: string
@@ -106,7 +106,7 @@ export interface SessionEntity {
   session_id: string
   title: string
   description?: string | null
-  language?: string | null
+  target_language?: string | null
   f_type: number
   asset_object_key?: string | null
   current_transcript_id?: string | null
@@ -127,7 +127,7 @@ export interface SessionListResponse {
 export interface CreateSessionRequest {
   title: string
   description?: string
-  language?: string
+  targetLanguage?: string
   fType?: 1 | 2
   assetObjectKey?: string
   currentTranscriptId?: string
@@ -136,7 +136,8 @@ export interface CreateSessionRequest {
 export interface GenerateScriptSessionRequest {
   title: string
   description?: string
-  language?: string
+  targetLanguage?: string
+  cueLanguage?: string
   prompt: string
   turnCount?: number
   speakerCount?: number
@@ -159,6 +160,9 @@ export interface ScriptGenerationResponse {
   job_id?: string | null
   provider: string
   title: string
+  description?: string | null
+  target_language?: string | null
+  cue_language?: string | null
   prompt: string
   status: number
   status_name: string
@@ -218,6 +222,7 @@ export interface RevisionResponse {
   transcript_id: string
   job_id?: string | null
   user_prompt?: string | null
+  cue_language?: string | null
   status: number
   status_name: string
   error_code?: string | null

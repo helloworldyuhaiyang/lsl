@@ -27,7 +27,8 @@ def script_generation_status_to_name(status: int) -> str:
 class ScriptGenerateRequest:
     title: str
     description: str | None
-    language: str | None
+    target_language: str | None
+    cue_language: str | None
     prompt: str
     turn_count: int
     speaker_count: int

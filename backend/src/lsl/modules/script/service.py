@@ -50,7 +50,7 @@ class ScriptService:
             CreateSessionRequest(
                 title=payload.title,
                 description=payload.description,
-                language=payload.language,
+                target_language=payload.target_language,
                 f_type=2,
             )
         )
@@ -61,7 +61,8 @@ class ScriptService:
             provider=self._generator.provider_name,
             title=payload.title,
             description=payload.description,
-            language=payload.language,
+            target_language=payload.target_language,
+            cue_language=payload.cue_language,
             prompt=payload.prompt,
             turn_count=payload.turn_count,
             speaker_count=payload.speaker_count,
@@ -140,7 +141,8 @@ class ScriptService:
         req = ScriptGenerateRequest(
             title=generation.title,
             description=generation.description,
-            language=generation.language,
+            target_language=generation.target_language,
+            cue_language=generation.cue_language,
             prompt=generation.prompt,
             turn_count=generation.turn_count,
             speaker_count=generation.speaker_count,
@@ -217,7 +219,7 @@ class ScriptService:
             transcript = self._transcript_service.create_completed_transcript(
                 source_type="ai_script",
                 source_entity_id=generation.generation_id,
-                language=generation.language,
+                language=generation.target_language,
                 utterances=transcript_utterances,
                 full_text="\n".join(item.text for item in transcript_utterances),
                 raw_result=raw_result,
@@ -233,7 +235,7 @@ class ScriptService:
                 payload=UpdateSessionRequest(
                     title=generation.title,
                     description=generation.description,
-                    language=generation.language,
+                    target_language=generation.target_language,
                     f_type=2,
                     current_transcript_id=transcript.transcript_id,
                 ),
@@ -247,6 +249,7 @@ class ScriptService:
                 session_id=generation.session_id,
                 transcript_id=transcript.transcript_id,
                 user_prompt=generation.prompt,
+                cue_language=generation.cue_language,
                 items=self._build_revision_items(
                     transcript_id=transcript.transcript_id,
                     transcript_utterances=transcript_utterances,

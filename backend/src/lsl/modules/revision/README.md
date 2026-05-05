@@ -63,7 +63,7 @@ REVISION_LLM_DEBUG_FILE=./revision_debug.log
 - `session_id` 必填。
 - `user_prompt` 可选，用于本次生成时给大模型的额外提示词。
 - `force=true` 时，即使当前已有 revise 结果，也重新生成并覆盖。
-- `cue_language` 可选，只控制 `[...]` CUE 的语言；revise 正文语言仍由当前 transcript 的 `language` 决定。
+- `cue_language` 可选，会保存到 `revision_revisions.cue_language`，只控制 `[...]` CUE 的语言；revise 正文语言仍由当前 transcript 的 `language` 决定。
 - 接口会先落一份 `status=generating` 的空 revision，并创建 `job_type=revision_generation`。
 - 重新生成时会清空当前 revision items 上已有的 `draft_text`。
 - 通用 job runner 继续执行 LLM 任务；前端应轮询 `GET /revisions`。
@@ -173,10 +173,9 @@ revision/
 
 ## 数据库
 
-初始化表结构在 `deploy/initdb/001-schema.sql` 中。旧 SQLite 数据库可执行
-`deploy/initdb/004-add-revision-job-id.sql` 增加 `revision_revisions.job_id`。
+初始化表结构在 `deploy/initdb/001-schema.sql` 中；当前阶段不保留迁移 SQL。
 
-新库会按当前“单脚本字段 + span item”结构创建 revision 表。
+新库会按当前“单脚本字段 + span item + cue_language”结构创建 revision 表。
 
 当前 item 表核心字段如下：
 

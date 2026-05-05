@@ -1,6 +1,6 @@
 # LSL - Session Module
 
-Session 模块负责会话级数据管理（标题、描述）以及与 `asset/transcript` 的关联。
+Session 模块负责会话级数据管理（标题、描述、学习目标语言）以及与 `asset/transcript` 的关联。
 
 设计原则：
 - `session_sessions` 不冗余 `transcript/asset` 业务字段。
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS public.session_sessions (
     session_id        VARCHAR(32) PRIMARY KEY,                    -- 会话主键（uuid hex）
     title             VARCHAR(200) NOT NULL,                      -- 会话标题
     x_description     TEXT,                                       -- 会话描述
-    x_language        VARCHAR(16),                                -- 会话语言（可选）
+    target_language   VARCHAR(16),                                -- 学习目标语言（可选）
     x_type            SMALLINT NOT NULL DEFAULT 1,                -- 会话类型：1录音/2文本
     asset_object_key  TEXT UNIQUE,                                -- 关联资产 object_key（可空）
     current_transcript_id VARCHAR(32) UNIQUE,                      -- 关联 transcript ID（可空，uuid hex）
@@ -67,3 +67,8 @@ EXECUTE FUNCTION public.set_updated_at();
 `f_type` 语义：
 - `1`：录音 Session（需要音频：`asset_object_key` 或 `current_transcript_id`）
 - `2`：文本 Session（不需要上传文件）
+
+`target_language` 语义：
+- Session 的学习目标语言，例如 `en-US` 或 `zh-CN`。
+- 录音 Session 创建 ASR 时使用它作为识别目标语言。
+- 文本 Session 创建 AI script 时使用它作为正文目标语言。

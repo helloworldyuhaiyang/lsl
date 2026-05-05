@@ -21,7 +21,7 @@ class ApiResponse(BaseModel, Generic[T]):
 class CreateAsrRecognitionRequest(BaseModel):
     object_key: str = Field(..., min_length=1, max_length=1024)
     audio_url: str = Field(..., min_length=1, max_length=4096)
-    language: str | None = Field(default=None, max_length=16)
+    target_language: str | None = Field(default=None, max_length=16)
 
     @field_validator("object_key")
     @classmethod
@@ -46,7 +46,7 @@ class AsrRecognitionData(BaseModel):
     job_id: str | None = None
     object_key: str
     audio_url: str
-    language: str | None = None
+    target_language: str | None = None
     provider: str
     status: int
     status_name: str

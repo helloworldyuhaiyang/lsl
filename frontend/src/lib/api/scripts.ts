@@ -20,7 +20,8 @@ export async function generateScriptSession(payload: GenerateScriptSessionReques
     body: JSON.stringify({
       title: payload.title,
       description: payload.description,
-      language: payload.language,
+      target_language: payload.targetLanguage,
+      cue_language: payload.cueLanguage,
       prompt: payload.prompt,
       turn_count: payload.turnCount,
       speaker_count: payload.speakerCount,

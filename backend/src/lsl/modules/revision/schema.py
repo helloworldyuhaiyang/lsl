@@ -21,7 +21,7 @@ class CreateRevisionRequest(BaseModel):
     session_id: str = Field(..., min_length=1, max_length=64)
     user_prompt: str | None = Field(default=None, max_length=4000)
     force: bool = False
-    cue_language: str | None = Field(default=None, max_length=32)
+    cue_language: str | None = Field(default=None, max_length=16)
 
     @field_validator("session_id")
     @classmethod
@@ -87,6 +87,7 @@ class RevisionData(BaseModel):
     transcript_id: str
     job_id: str | None = None
     user_prompt: str | None = None
+    cue_language: str | None = None
     status: int
     status_name: str
     error_code: str | None = None
@@ -105,6 +106,7 @@ class RevisionData(BaseModel):
         transcript_id: str,
         job_id: str | None,
         user_prompt: str | None,
+        cue_language: str | None,
         status: int,
         error_code: str | None,
         error_message: str | None,
@@ -119,6 +121,7 @@ class RevisionData(BaseModel):
             transcript_id=transcript_id,
             job_id=job_id,
             user_prompt=user_prompt,
+            cue_language=cue_language,
             status=status,
             status_name=status_code_to_name(status),
             error_code=error_code,

@@ -148,7 +148,7 @@ CREATE TABLE IF NOT EXISTS public.asr_recognitions (
     job_id                    VARCHAR(32),                         -- Async job id.
     object_key                TEXT NOT NULL,                       -- Uploaded audio object key.
     audio_url                 TEXT NOT NULL,                       -- Provider-readable audio URL.
-    x_language                VARCHAR(16),                         -- Recognition language tag.
+    target_language           VARCHAR(16),                         -- ASR target language tag.
     x_provider                VARCHAR(32) NOT NULL,                -- ASR provider name.
     x_status                  SMALLINT NOT NULL DEFAULT 0,         -- 0 pending, 1 submitted, 2 processing, 3 completed, 4 failed.
     x_provider_request_id     VARCHAR(128),                        -- Provider request id.
@@ -186,7 +186,7 @@ CREATE TABLE IF NOT EXISTS public.session_sessions (
     session_id             VARCHAR(32) PRIMARY KEY,                -- Session id, uuid hex.
     title                  VARCHAR(200) NOT NULL,                  -- Display title.
     x_description          TEXT,                                   -- Optional description.
-    x_language             VARCHAR(16),                            -- Session language tag.
+    target_language        VARCHAR(16),                            -- Learning target language tag.
     x_type                 SMALLINT NOT NULL DEFAULT 1,            -- 1 recording session, 2 text/script session.
     asset_object_key       TEXT UNIQUE,                            -- Uploaded audio object key.
     current_transcript_id  VARCHAR(32) UNIQUE,                     -- Current transcript id.
@@ -213,6 +213,7 @@ CREATE TABLE IF NOT EXISTS public.revision_revisions (
     transcript_id   VARCHAR(32) NOT NULL,                          -- Source transcript id.
     job_id          VARCHAR(32),                                   -- Current revision_generation job id.
     user_prompt     TEXT,                                          -- User revision prompt.
+    cue_language    VARCHAR(16),                                   -- Delivery CUE language tag.
     x_status        SMALLINT NOT NULL DEFAULT 0,                   -- 0 pending, 1 generating, 2 completed, 3 failed.
     error_code      VARCHAR(64),                                   -- Stable failure code.
     error_message   TEXT,                                          -- Failure detail.
@@ -267,7 +268,8 @@ CREATE TABLE IF NOT EXISTS public.script_generations (
     x_provider         VARCHAR(32) NOT NULL,                       -- Script generator provider.
     title              VARCHAR(200) NOT NULL,                      -- Requested session title.
     x_description      TEXT,                                       -- Requested session description.
-    x_language         VARCHAR(16),                                -- Requested language tag.
+    target_language    VARCHAR(16),                                -- Requested spoken target language tag.
+    cue_language       VARCHAR(16),                                -- Requested delivery CUE language tag.
     prompt             TEXT NOT NULL,                              -- User scenario prompt.
     turn_count         INTEGER NOT NULL,                           -- Target conversation turn count.
     speaker_count      INTEGER NOT NULL,                           -- Target speaker count.

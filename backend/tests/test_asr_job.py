@@ -63,7 +63,7 @@ def test_asr_job_submits_then_completes_transcript() -> None:
     data = asr_service.create_recognition(
         object_key="conversation/u/audio.m4a",
         audio_url="https://example.com/audio.m4a",
-        language="en-US",
+        target_language="en-US",
     )
 
     running = job_service.run_job(job_id=data.job.job_id, worker_id="test-worker")
@@ -86,7 +86,7 @@ def test_asr_job_marks_recognition_and_transcript_failed() -> None:
     data = asr_service.create_recognition(
         object_key="conversation/u/audio.m4a",
         audio_url="https://example.com/audio.m4a",
-        language="en-US",
+        target_language="en-US",
     )
 
     running = job_service.run_job(job_id=data.job.job_id, worker_id="test-worker")

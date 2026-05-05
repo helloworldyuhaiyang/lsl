@@ -15,7 +15,7 @@ class SessionModel(Base):
     session_id: Mapped[str] = mapped_column(UUIDHexString(), primary_key=True)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column("x_description", Text, nullable=True)
-    language: Mapped[str | None] = mapped_column("x_language", String(16), nullable=True)
+    target_language: Mapped[str | None] = mapped_column(String(16), nullable=True)
     f_type: Mapped[int] = mapped_column("x_type", SmallInteger, nullable=False, server_default=text("1"))
     asset_object_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     current_transcript_id: Mapped[str | None] = mapped_column(UUIDHexString(), nullable=True)

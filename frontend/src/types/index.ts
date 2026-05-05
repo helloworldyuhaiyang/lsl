@@ -36,6 +36,7 @@ export interface Session {
   duration?: number;
   status: SessionStatus;
   type: SessionType;
+  targetLanguage?: string;
   createdAt: string;
   audioUrl?: string;
   transcript?: TranscriptItem[];

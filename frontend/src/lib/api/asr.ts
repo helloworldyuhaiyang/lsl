@@ -16,7 +16,7 @@ export async function createAsrRecognition(payload: CreateAsrRecognitionRequest)
     body: JSON.stringify({
       object_key: payload.objectKey,
       audio_url: payload.audioUrl,
-      language: payload.language,
+      target_language: payload.targetLanguage,
     }),
   })
   return response.data

@@ -27,6 +27,7 @@ class UtterancesRevisionModel(Base):
     # Active generic job for the current revise run; newer runs replace this value.
     job_id: Mapped[str | None] = mapped_column(UUIDHexString(), nullable=True)
     user_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cue_language: Mapped[str | None] = mapped_column(String(16), nullable=True)
     status: Mapped[int] = mapped_column("x_status", SmallInteger, nullable=False, server_default=text("0"))
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)

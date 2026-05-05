@@ -46,7 +46,7 @@ class AsrService:
         *,
         object_key: str,
         audio_url: str,
-        language: str | None,
+        target_language: str | None,
     ) -> CreateAsrRecognitionData:
         normalized_object_key = object_key.strip().lstrip("/")
         if not normalized_object_key:
@@ -58,7 +58,7 @@ class AsrService:
         transcript = self._transcript_service.create_pending_transcript(
             source_type="asr",
             source_entity_id=None,
-            language=language,
+            language=target_language,
         )
         recognition_id = uuid.uuid4().hex
         row = self._repository.create_recognition(
@@ -66,7 +66,7 @@ class AsrService:
             transcript_id=transcript.transcript_id,
             object_key=normalized_object_key,
             audio_url=normalized_audio_url,
-            language=language,
+            target_language=target_language,
             provider=self._provider_name(),
         )
         recognition = AsrRecognitionData.from_row(row)
@@ -122,7 +122,7 @@ class AsrService:
                 AsrSubmitRequest(
                     recognition_id=recognition.recognition_id,
                     audio_url=recognition.audio_url,
-                    language=recognition.language,
+                    language=recognition.target_language,
                 )
             )
         except NotImplementedError as exc:

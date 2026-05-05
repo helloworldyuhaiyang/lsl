@@ -45,7 +45,7 @@ class SessionService:
             session_id=session_id,
             title=payload.title,
             description=payload.description,
-            language=payload.language,
+            target_language=payload.target_language,
             f_type=payload.f_type,
             asset_object_key=asset_object_key,
             current_transcript_id=current_transcript_id,

@@ -18,7 +18,7 @@ class ApiResponse(BaseModel, Generic[T]):
 class CreateSessionRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=4000)
-    language: str | None = Field(default=None, max_length=16)
+    target_language: str | None = Field(default=None, max_length=16)
     f_type: int = Field(default=1, ge=1, le=2)
     asset_object_key: str | None = Field(default=None, max_length=1024)
     current_transcript_id: str | None = Field(default=None, max_length=64)
@@ -59,7 +59,7 @@ class CreateSessionRequest(BaseModel):
 class UpdateSessionRequest(BaseModel):
     title: str | None = Field(default=None, max_length=200)
     description: str | None = Field(default=None, max_length=4000)
-    language: str | None = Field(default=None, max_length=16)
+    target_language: str | None = Field(default=None, max_length=16)
     f_type: int | None = Field(default=None, ge=1, le=2)
     asset_object_key: str | None = Field(default=None, max_length=1024)
     current_transcript_id: str | None = Field(default=None, max_length=64)
@@ -105,7 +105,7 @@ class SessionSchema(BaseModel):
     session_id: str
     title: str
     description: str | None = None
-    language: str | None = None
+    target_language: str | None = None
     f_type: int
     asset_object_key: str | None = None
     current_transcript_id: str | None = None

@@ -22,7 +22,8 @@ class ApiResponse(BaseModel, Generic[T]):
 class GenerateScriptSessionRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=4000)
-    language: str | None = Field(default="en-US", max_length=16)
+    target_language: str | None = Field(default="en-US", max_length=16)
+    cue_language: str | None = Field(default=None, max_length=16)
     prompt: str = Field(..., min_length=1, max_length=4000)
     turn_count: int = Field(default=8, ge=2, le=24)
     speaker_count: int = Field(default=2, ge=2, le=4)
@@ -46,7 +47,7 @@ class GenerateScriptSessionRequest(BaseModel):
         normalized = value.strip()
         return normalized or None
 
-    @field_validator("language")
+    @field_validator("target_language", "cue_language")
     @classmethod
     def normalize_language(cls, value: str | None) -> str | None:
         if value is None:
@@ -97,7 +98,8 @@ class ScriptGenerationData(BaseModel):
     provider: str
     title: str
     description: str | None = None
-    language: str | None = None
+    target_language: str | None = None
+    cue_language: str | None = None
     prompt: str
     turn_count: int
     speaker_count: int

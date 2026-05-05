@@ -1,6 +1,7 @@
 import type { TtsSpeakerItem } from '@/types/api';
 import { getVoiceDisplayName, getVoiceSubtitle } from '@/lib/voice';
 import { cn } from '@/lib/utils';
+import { useI18n } from '@/i18n';
 
 interface VoiceAvatarProps {
   voice?: TtsSpeakerItem | null;
@@ -10,8 +11,10 @@ interface VoiceAvatarProps {
 }
 
 export function VoiceAvatar({ voice, fallbackLabel = '?', className, locale }: VoiceAvatarProps) {
-  const label = getVoiceDisplayName(voice, locale) || fallbackLabel;
-  const title = [label, getVoiceSubtitle(voice, locale)].filter(Boolean).join(' - ');
+  const { language } = useI18n();
+  const resolvedLocale = locale || language;
+  const label = getVoiceDisplayName(voice, resolvedLocale) || fallbackLabel;
+  const title = [label, getVoiceSubtitle(voice, resolvedLocale)].filter(Boolean).join(' - ');
   const color = voice?.avatar?.color || '#94A3B8';
   const initials = voice?.avatar?.initials || Array.from(label).slice(0, 2).join('');
 

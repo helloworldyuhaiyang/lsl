@@ -26,8 +26,9 @@ import { useI18n } from '@/i18n';
 export function CreateSession() {
   const navigate = useNavigate();
   const { dispatch, refreshSessions } = useApp();
-  const { t, language } = useI18n();
+  const { t, language: uiLanguage } = useI18n();
   const [mode, setMode] = useState<'audio' | 'script'>('audio');
+  const [targetLanguage, setTargetLanguage] = useState('en-US');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -107,12 +108,12 @@ export function CreateSession() {
         const recognition = await createAsrRecognition({
           objectKey: uploadInfo.object_key,
           audioUrl: uploadInfo.asset_url,
-          language: 'en',
+          targetLanguage,
         });
         const item = await createSession({
           title: sessionName,
           description: sessionDescription || selectedFile.name,
-          language: 'en',
+          targetLanguage,
           fType: 1,
           assetObjectKey: uploadInfo.object_key,
           currentTranscriptId: recognition.transcript.transcript_id,
@@ -124,7 +125,8 @@ export function CreateSession() {
         const result = await generateScriptSession({
           title: sessionName,
           description: sessionDescription,
-          language,
+          targetLanguage,
+          cueLanguage: uiLanguage,
           prompt: scenarioPrompt,
           turnCount: Number(turnCount),
           speakerCount: Number(speakerCount),
@@ -151,7 +153,7 @@ export function CreateSession() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [sessionName, mode, clearErrors, selectedFile, scenarioPrompt, t, sessionDescription, dispatch, navigate, turnCount, speakerCount, difficulty, cueStyle, mustInclude, refreshSessions, language]);
+  }, [sessionName, mode, clearErrors, selectedFile, scenarioPrompt, t, sessionDescription, dispatch, navigate, targetLanguage, turnCount, speakerCount, difficulty, cueStyle, mustInclude, refreshSessions, uiLanguage]);
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -212,6 +214,17 @@ export function CreateSession() {
             className="mt-1.5 text-[13px] border-slate-200 focus:border-indigo-300 resize-none"
             rows={2}
           />
+        </div>
+
+        <div>
+          <Label className="text-[12px] font-semibold text-slate-700">{t('create.targetLanguage')}</Label>
+          <Select value={targetLanguage} onValueChange={setTargetLanguage}>
+            <SelectTrigger className="mt-1.5 h-10 text-[13px] border-slate-200"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="en-US">{t('create.targetLanguage.english')}</SelectItem>
+              <SelectItem value="zh-CN">{t('create.targetLanguage.chinese')}</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {mode === 'audio' ? (

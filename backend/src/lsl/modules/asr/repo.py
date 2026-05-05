@@ -33,7 +33,7 @@ class AsrRepository:
         transcript_id: str,
         object_key: str,
         audio_url: str,
-        language: str | None,
+        target_language: str | None,
         provider: str,
     ) -> dict[str, Any]:
         normalized_recognition_id = self._require_uuid(recognition_id, field_name="recognition_id")
@@ -42,7 +42,7 @@ class AsrRepository:
             transcript_id=self._require_uuid(transcript_id, field_name="transcript_id"),
             object_key=object_key,
             audio_url=audio_url,
-            language=language,
+            target_language=target_language,
             provider=provider,
             status=int(AsrRecognitionStatus.PENDING),
         )
@@ -206,7 +206,7 @@ class AsrRepository:
             "job_id": model.job_id,
             "object_key": model.object_key,
             "audio_url": model.audio_url,
-            "language": model.language,
+            "target_language": model.target_language,
             "provider": model.provider,
             "status": status,
             "status_name": asr_recognition_status_to_name(status),

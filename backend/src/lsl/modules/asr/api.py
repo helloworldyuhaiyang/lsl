@@ -32,7 +32,7 @@ def create_recognition(
         data = asr_service.create_recognition(
             object_key=payload.object_key,
             audio_url=payload.audio_url,
-            language=payload.language,
+            target_language=payload.target_language,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

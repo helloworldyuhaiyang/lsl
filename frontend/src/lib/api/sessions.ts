@@ -23,7 +23,7 @@ export async function createSession(payload: CreateSessionRequest): Promise<Sess
     body: JSON.stringify({
       title: payload.title,
       description: payload.description,
-      language: payload.language,
+      target_language: payload.targetLanguage,
       f_type: payload.fType,
       asset_object_key: payload.assetObjectKey,
       current_transcript_id: payload.currentTranscriptId,

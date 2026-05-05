@@ -67,6 +67,7 @@ class RevisionRepository:
         user_prompt: str | None,
         status: int,
         items: list[GeneratedRevisionItem],
+        cue_language: str | None = None,
         preserve_existing_drafts: bool = True,
         error_code: str | None = None,
         error_message: str | None = None,
@@ -99,6 +100,7 @@ class RevisionRepository:
 
                 model.transcript_id = normalized_transcript_id
                 model.user_prompt = user_prompt
+                model.cue_language = cue_language
                 model.status = int(status)
                 model.error_code = error_code
                 model.error_message = error_message

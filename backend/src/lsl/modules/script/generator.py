@@ -32,7 +32,7 @@ class FakeScriptGenerator:
 
     def generate(self, req: ScriptGenerateRequest) -> GeneratedScript:
         speakers = [f"user-{index + 1}" for index in range(req.speaker_count)]
-        if _is_chinese_language(req.language):
+        if _is_chinese_language(req.target_language):
             base_texts = [
                 "嘿，你现在方便吗？",
                 "当然，你需要什么？",
@@ -42,16 +42,6 @@ class FakeScriptGenerator:
                 "那就保持简短，说清楚重点。",
                 "有道理，我再试一次。",
                 "来吧，我在听。",
-            ]
-            base_cues = [
-                "轻松自然地开口",
-                "随意但友好地回应",
-                "带点认真地说明来意",
-                "平稳地配合对方",
-                "略带期待地补充",
-                "平静地给建议",
-                "重新组织后更自信地说",
-                "简短地鼓励对方继续",
             ]
         else:
             base_texts = [
@@ -64,6 +54,18 @@ class FakeScriptGenerator:
                 "That makes sense. Let me try again.",
                 "Go ahead. I'm listening.",
             ]
+        if _is_chinese_language(req.cue_language or req.target_language):
+            base_cues = [
+                "轻松自然地开口",
+                "随意但友好地回应",
+                "带点认真地说明来意",
+                "平稳地配合对方",
+                "略带期待地补充",
+                "平静地给建议",
+                "重新组织后更自信地说",
+                "简短地鼓励对方继续",
+            ]
+        else:
             base_cues = [
                 "Open in a relaxed, natural tone",
                 "Reply casually but warmly",
@@ -131,9 +133,10 @@ class LlmScriptGenerator:
             yield from self.generate(req).utterances
 
     def _build_messages(self, *, req: ScriptGenerateRequest, speaker_names: list[str]) -> list[dict[str, str]]:
-        language_label = _language_label(req.language)
-        cue_example = _cue_example(req.language)
-        text_example = _text_example(req.language)
+        language_label = _language_label(req.target_language)
+        cue_language_label = _language_label(req.cue_language or req.target_language)
+        cue_example = _cue_example(req.cue_language or req.target_language)
+        text_example = _text_example(req.target_language)
         system_prompt = (
             f"You create cue-driven {language_label} speaking practice scripts.\n"
             "Return JSON only.\n"
@@ -147,7 +150,7 @@ class LlmScriptGenerator:
             f"- Use only these speakers: {', '.join(speaker_names)}.\n"
             f"- Target about {req.turn_count} utterances.\n"
             f"- Every utterance must include a non-empty cue and a non-empty spoken {language_label} text.\n"
-            f"- cue must be concise {language_label} guidance describing delivery, tone, emotion, rhythm, or subtext.\n"
+            f"- cue must be concise {cue_language_label} guidance describing delivery, tone, emotion, rhythm, or subtext.\n"
             "- Do not include square brackets in the cue field.\n"
             f"- text must be spoken {language_label} only and must not include cue markers.\n"
             "- Keep the dialogue natural, practical, and suitable for TTS playback.\n"
@@ -157,7 +160,8 @@ class LlmScriptGenerator:
         user_payload = {
             "title": req.title,
             "description": req.description,
-            "language": req.language,
+            "target_language": req.target_language,
+            "cue_language": req.cue_language,
             "prompt": req.prompt,
             "turn_count": req.turn_count,
             "speaker_count": req.speaker_count,
@@ -179,9 +183,10 @@ class LlmScriptGenerator:
         ]
 
     def _build_stream_messages(self, *, req: ScriptGenerateRequest, speaker_names: list[str]) -> list[dict[str, str]]:
-        language_label = _language_label(req.language)
-        cue_example = _cue_example(req.language)
-        text_example = _text_example(req.language)
+        language_label = _language_label(req.target_language)
+        cue_language_label = _language_label(req.cue_language or req.target_language)
+        cue_example = _cue_example(req.cue_language or req.target_language)
+        text_example = _text_example(req.target_language)
         system_prompt = (
             f"You create cue-driven {language_label} speaking practice scripts.\n"
             "Return newline-delimited JSON only. Do not wrap the response in markdown.\n"
@@ -191,7 +196,7 @@ class LlmScriptGenerator:
             f"- Use only these speakers: {', '.join(speaker_names)}.\n"
             f"- Return exactly {req.turn_count} lines.\n"
             f"- Every line must include a non-empty cue and a non-empty spoken {language_label} text.\n"
-            f"- cue must be concise {language_label} guidance describing delivery, tone, emotion, rhythm, or subtext.\n"
+            f"- cue must be concise {cue_language_label} guidance describing delivery, tone, emotion, rhythm, or subtext.\n"
             "- Do not include square brackets in the cue field.\n"
             f"- text must be spoken {language_label} only and must not include cue markers.\n"
             "- Keep the dialogue natural, practical, and suitable for TTS playback.\n"
@@ -201,7 +206,8 @@ class LlmScriptGenerator:
         user_payload = {
             "title": req.title,
             "description": req.description,
-            "language": req.language,
+            "target_language": req.target_language,
+            "cue_language": req.cue_language,
             "prompt": req.prompt,
             "turn_count": req.turn_count,
             "speaker_count": req.speaker_count,

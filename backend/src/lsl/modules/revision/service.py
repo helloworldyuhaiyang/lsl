@@ -89,6 +89,7 @@ class RevisionService:
             user_prompt=user_prompt,
             status=int(RevisionStatus.GENERATING),
             items=[],
+            cue_language=cue_language,
             preserve_existing_drafts=False,
             error_code=None,
             error_message=None,
@@ -105,7 +106,6 @@ class RevisionService:
                 "session_id": session_id,
                 "transcript_id": transcript_id,
                 "revision_id": revision.revision_id,
-                "cue_language": cue_language,
             },
         )
 
@@ -128,6 +128,7 @@ class RevisionService:
         transcript_id: str,
         user_prompt: str | None,
         items: list[GeneratedRevisionItem],
+        cue_language: str | None = None,
     ) -> RevisionData:
         session_data = self._session_service.get_session(session_id, auto_refresh=False)
         current_transcript_id = session_data.session.current_transcript_id
@@ -142,6 +143,7 @@ class RevisionService:
             user_prompt=user_prompt,
             status=int(RevisionStatus.COMPLETED),
             items=items,
+            cue_language=cue_language,
             preserve_existing_drafts=False,
             error_code=None,
             error_message=None,
@@ -166,7 +168,6 @@ class RevisionService:
         session_id: str,
         transcript_id: str,
         job_id: str,
-        cue_language: str | None = None,
     ) -> JobRunResult:
         # Revision job flow 5/5: a claimed revision_generation job runs here.
         revision = self._repository.get_revision_by_session_id(session_id)
@@ -193,7 +194,7 @@ class RevisionService:
             user_prompt=user_prompt,
             utterances=prompt_utterances,
             target_language=transcript.language,
-            cue_language=cue_language,
+            cue_language=revision.cue_language,
         )
 
         try:
@@ -223,6 +224,7 @@ class RevisionService:
                     user_prompt=user_prompt,
                     status=int(RevisionStatus.GENERATING),
                     items=current_items,
+                    cue_language=revision.cue_language,
                     preserve_existing_drafts=False,
                     error_code=None,
                     error_message=None,
@@ -239,6 +241,7 @@ class RevisionService:
                 user_prompt=user_prompt,
                 status=int(RevisionStatus.COMPLETED),
                 items=current_items,
+                cue_language=revision.cue_language,
                 preserve_existing_drafts=False,
                 error_code=None,
                 error_message=None,
@@ -254,6 +257,7 @@ class RevisionService:
                     user_prompt=user_prompt,
                     status=int(RevisionStatus.FAILED),
                     items=current_items,
+                    cue_language=revision.cue_language,
                     preserve_existing_drafts=False,
                     error_code="revision_generation_failed",
                     error_message=str(exc),
@@ -415,6 +419,7 @@ class RevisionService:
             transcript_id=str(model.transcript_id),
             job_id=str(model.job_id) if model.job_id is not None else None,
             user_prompt=model.user_prompt,
+            cue_language=model.cue_language,
             status=int(model.status),
             error_code=model.error_code,
             error_message=model.error_message,
@@ -458,7 +463,6 @@ class RevisionJobHandler:
         # JobService calls this handler for jobs whose job_type is revision_generation.
         session_id = str(job.payload.get("session_id") or "").strip()
         transcript_id = str(job.payload.get("transcript_id") or "").strip()
-        cue_language = str(job.payload.get("cue_language") or "").strip() or None
         if not session_id or not transcript_id:
             return JobRunResult(
                 status=JobStatus.FAILED,
@@ -469,5 +473,4 @@ class RevisionJobHandler:
             session_id=session_id,
             transcript_id=transcript_id,
             job_id=job.job_id,
-            cue_language=cue_language,
         )

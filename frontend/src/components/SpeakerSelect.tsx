@@ -20,7 +20,7 @@ interface SpeakerSelectProps {
 }
 
 export function SpeakerSelect({ speakers, mappings, onMappingChange, voices = [] }: SpeakerSelectProps) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const getVoiceIdForSpeaker = (speaker: string) => {
     return mappings.find(m => m.speaker === speaker)?.voice || voices[0]?.speaker_id || '';
   };
@@ -39,7 +39,7 @@ export function SpeakerSelect({ speakers, mappings, onMappingChange, voices = []
           return (
           <div key={speaker} className="flex items-center gap-3 bg-slate-50 rounded-lg p-2.5">
             <div className="flex items-center justify-center w-8">
-              <VoiceAvatar voice={selectedVoice} fallbackLabel={speaker} />
+              <VoiceAvatar voice={selectedVoice} fallbackLabel={speaker} locale={language} />
             </div>
             <Select
               value={getVoiceIdForSpeaker(speaker)}
@@ -49,11 +49,14 @@ export function SpeakerSelect({ speakers, mappings, onMappingChange, voices = []
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {voices.map(voice => (
-                  <SelectItem key={voice.speaker_id} value={voice.speaker_id} className="text-[12px]">
-                    {getVoiceDisplayName(voice)}{getVoiceSubtitle(voice) ? ` (${getVoiceSubtitle(voice)})` : ''}
-                  </SelectItem>
-                ))}
+                {voices.map(voice => {
+                  const subtitle = getVoiceSubtitle(voice, language);
+                  return (
+                    <SelectItem key={voice.speaker_id} value={voice.speaker_id} className="text-[12px]">
+                      {getVoiceDisplayName(voice, language)}{subtitle ? ` (${subtitle})` : ''}
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           </div>

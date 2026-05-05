@@ -22,7 +22,7 @@ class AsrRecognitionModel(Base):
     job_id: Mapped[str | None] = mapped_column(UUIDHexString(), nullable=True)
     object_key: Mapped[str] = mapped_column(Text, nullable=False)
     audio_url: Mapped[str] = mapped_column(Text, nullable=False)
-    language: Mapped[str | None] = mapped_column("x_language", String(16), nullable=True)
+    target_language: Mapped[str | None] = mapped_column(String(16), nullable=True)
     provider: Mapped[str] = mapped_column("x_provider", String(32), nullable=False)
     status: Mapped[int] = mapped_column("x_status", SmallInteger, nullable=False, server_default=text("0"))
     provider_request_id: Mapped[str | None] = mapped_column("x_provider_request_id", String(128), nullable=True)
