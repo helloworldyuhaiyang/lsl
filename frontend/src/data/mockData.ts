@@ -36,7 +36,7 @@ export const mockSessions: Session[] = [
     title: '私教2',
     duration: 75,
     status: 'completed',
-    type: 'text',
+    type: 'ai_script',
     createdAt: '2026-04-29T22:29:26Z',
     transcript: mockTranscript,
     revision: mockRevision,
@@ -51,7 +51,7 @@ export const mockSessions: Session[] = [
     title: '私教体验课',
     duration: 60,
     status: 'completed',
-    type: 'text',
+    type: 'ai_script',
     createdAt: '2026-04-29T20:15:00Z',
   },
   {
@@ -68,7 +68,7 @@ export const mockSessions: Session[] = [
     title: 'LSL 自我介绍',
     duration: 60,
     status: 'completed',
-    type: 'text',
+    type: 'ai_script',
     createdAt: '2026-04-25T10:00:00Z',
   },
   {
@@ -76,7 +76,7 @@ export const mockSessions: Session[] = [
     title: '学校费用',
     duration: 60,
     status: 'completed',
-    type: 'text',
+    type: 'ai_script',
     createdAt: '2026-04-25T09:00:00Z',
   },
   {
@@ -84,7 +84,7 @@ export const mockSessions: Session[] = [
     title: 'offer+退费',
     duration: 60,
     status: 'completed',
-    type: 'text',
+    type: 'ai_script',
     createdAt: '2026-04-25T08:00:00Z',
   },
   {
@@ -92,7 +92,7 @@ export const mockSessions: Session[] = [
     title: 'offer+退费',
     duration: 60,
     status: 'completed',
-    type: 'text',
+    type: 'ai_script',
     createdAt: '2026-04-25T07:00:00Z',
   },
   {
@@ -100,7 +100,7 @@ export const mockSessions: Session[] = [
     title: 'offer 详解',
     duration: 60,
     status: 'completed',
-    type: 'text',
+    type: 'ai_script',
     createdAt: '2026-04-24T16:00:00Z',
   },
   {

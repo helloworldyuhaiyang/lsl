@@ -1,5 +1,5 @@
 export type SessionStatus = 'pending' | 'processing' | 'completed' | 'failed';
-export type SessionType = 'audio' | 'text';
+export type SessionType = 'audio' | 'ai_script';
 export type Difficulty = 'Beginner' | 'Intermediate' | 'Advanced';
 
 export interface TranscriptItem {

@@ -185,7 +185,7 @@ export function Revise() {
           }
         }
 
-        if (!hasRevision && nextSession.type === 'text') {
+        if (!hasRevision && nextSession.type === 'ai_script') {
           preparingScript = nextSession.status === 'pending' || nextSession.status === 'processing';
 
           if (scriptGenerationId) {
@@ -695,7 +695,7 @@ export function Revise() {
   }, []);
 
   const speakers = useMemo(() => [...new Set(revision.map(r => r.speaker))], [revision]);
-  const isScriptGenerationRoute = revision.length === 0 && session?.type === 'text' && (isPreparingScript || !!scriptJobId || !!scriptGenerationId);
+  const isScriptGenerationRoute = revision.length === 0 && session?.type === 'ai_script' && (isPreparingScript || !!scriptJobId || !!scriptGenerationId);
   const isWaitingForScript = isScriptGenerationRoute && !error;
   const shouldShowRevisionControls = !isScriptGenerationRoute;
   const translationNeedsUpdate = revisionTranslation.needsUpdate || dirtyTranslationItemIds.size > 0;
@@ -903,7 +903,7 @@ export function Revise() {
               translationStale={translationItemDirty || translationItem?.status_name === 'stale'}
               showTranslation={showAllTranslations}
               onRetryTranslation={() => void handleUpdateTranslation(item.id)}
-              showAssessment={session.type !== 'text'}
+              showAssessment={session.type !== 'ai_script'}
             />
           );
         }) : (

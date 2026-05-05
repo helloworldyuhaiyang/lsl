@@ -39,7 +39,7 @@ export function mapSessionItem(item: SessionItem): Session {
     description: entity.description ?? item.asset?.filename ?? undefined,
     duration: item.transcript?.duration_sec ?? undefined,
     status: inferSessionStatus(item),
-    type: entity.f_type === 2 ? 'text' : 'audio',
+    type: entity.f_type === 2 ? 'ai_script' : 'audio',
     targetLanguage: entity.target_language ?? undefined,
     createdAt: entity.created_at,
     audioUrl: item.asset?.asset_url ?? undefined,

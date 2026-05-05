@@ -30,11 +30,11 @@ logger = logging.getLogger(__name__)
 
 _CODE_FENCE_JSON_RE = re.compile(r"```(?:json)?\s*(.+?)\s*```", re.DOTALL | re.IGNORECASE)
 _SPLIT_TEXT_RE = re.compile(r"[,/，、\n]+")
-_MAX_ISSUE_TAGS = 4
-_SEGMENT_TARGET_UTTERANCE_COUNT = 24
-_SEGMENT_HARD_MAX_UTTERANCE_COUNT = 32
-_SEGMENT_CONTEXT_UTTERANCE_COUNT = 2
-_SEGMENT_MAX_WORKERS = 4
+_MAX_ISSUE_TAGS = 4  # 每条 revise 建议最多保留的问题标签数，避免单条卡片标签过多。
+_SEGMENT_TARGET_UTTERANCE_COUNT = 24  # 强制拆分大段时，每个子段目标 utterance 数。
+_SEGMENT_HARD_MAX_UTTERANCE_COUNT = 32  # LLM 规划出的 segment 超过该大小就必须再切小。
+_SEGMENT_CONTEXT_UTTERANCE_COUNT = 2  # 每段 revise 前后额外带多少条上下文给模型参考。
+_SEGMENT_MAX_WORKERS = 4  # 同一个 revision job 内最多并发多少个 segment revise 请求。
 
 _SEGMENT_PLAN_SYSTEM_PROMPT = """You are planning revision batches for a spoken-English transcript.
 
@@ -165,13 +165,14 @@ class LLMRevisionGenerator:
         if not req.utterances:
             return
 
-        # 先让大模型总结分段
+        # 先对整段 transcript 做一次分段规划；这一步完成前不会产出任何 revise item。
         segments = self._plan_segments(
             transcript_id=req.transcript_id,
             utterances=req.utterances,
             user_prompt=req.user_prompt,
         )
-        # 再让大模型按段并发 revise
+        # 再按 segment 并发 revise；yield 粒度是 segment，不是单条 item。
+        # 某段完整 JSON 返回后，service 才能把这一批 items 增量写库。
         for segment_suggestions in self._generate_segmented_revisions(
             transcript_id=req.transcript_id,
             utterances=req.utterances,
@@ -215,6 +216,7 @@ class LLMRevisionGenerator:
             return
 
         utterance_index_by_seq = {int(item.utterance_seq): index for index, item in enumerate(utterances)}
+        # 同一个 revision job 内的段并发受 _SEGMENT_MAX_WORKERS 和实际 segment 数共同限制。
         max_workers = max(1, min(_SEGMENT_MAX_WORKERS, len(segments)))
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -231,6 +233,7 @@ class LLMRevisionGenerator:
                 ): segment
                 for segment in segments
             }
+            # as_completed 会先返回最快完成的段，因此前端能先看到已完成 segment 的结果。
             for future in as_completed(futures):
                 segment = futures[future]
                 try:
@@ -256,6 +259,7 @@ class LLMRevisionGenerator:
         if start_index is None or end_index is None or start_index > end_index:
             raise RuntimeError(f"Invalid segment bounds: {segment.start_seq}-{segment.end_seq}")
 
+        # target_utterances 是当前段真正要 revise 的内容；前后文只帮助模型理解，不要求返回。
         target_utterances = utterances[start_index : end_index + 1]
         context_before = utterances[max(0, start_index - _SEGMENT_CONTEXT_UTTERANCE_COUNT) : start_index]
         context_after = utterances[end_index + 1 : end_index + 1 + _SEGMENT_CONTEXT_UTTERANCE_COUNT]
@@ -525,6 +529,7 @@ class LLMRevisionGenerator:
         next_index = 1
         for segment in segments:
             segment_size = int(segment.end_seq) - int(segment.start_seq) + 1
+            # 对 LLM 分段结果做保护性二次拆分，避免单个 revise 请求过大、首次结果过慢。
             if segment_size <= _SEGMENT_HARD_MAX_UTTERANCE_COUNT:
                 normalized_segments.append(
                     RevisionSegment(

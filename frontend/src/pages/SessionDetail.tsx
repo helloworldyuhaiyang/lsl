@@ -209,7 +209,7 @@ export function SessionDetail() {
       {(!transcript || transcript.length === 0) && session.status !== 'failed' && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
           <p className="text-[13px] text-slate-500">
-            {session.type === 'text' ? t('session.generatingScriptTranscript') : t('session.transcriptionProcessing')}
+            {session.type === 'ai_script' ? t('session.generatingScriptTranscript') : t('session.transcriptionProcessing')}
           </p>
         </div>
       )}
