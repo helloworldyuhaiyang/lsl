@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from time import perf_counter
 from typing import TYPE_CHECKING
 
 from lsl.modules.job.service import JobService
@@ -170,6 +171,13 @@ class RevisionService:
         job_id: str,
     ) -> JobRunResult:
         # Revision job flow 5/5: a claimed revision_generation job runs here.
+        started_perf = perf_counter()
+        logger.info(
+            "Revision generation job started session_id=%s transcript_id=%s job_id=%s",
+            session_id,
+            transcript_id,
+            job_id,
+        )
         revision = self._repository.get_revision_by_session_id(session_id)
         if revision is None:
             return JobRunResult(status=JobStatus.FAILED, error_code="REVISION_NOT_FOUND", error_message="revision not found")
@@ -186,6 +194,14 @@ class RevisionService:
         user_prompt = revision.user_prompt
         transcript = self._transcript_service.get_transcript(transcript_id=transcript_id, include_raw=False)
         utterances = transcript.utterances
+        logger.info(
+            "Revision generation transcript loaded session_id=%s transcript_id=%s job_id=%s utterance_count=%s elapsed_ms=%s",
+            session_id,
+            transcript_id,
+            job_id,
+            len(utterances),
+            int((perf_counter() - started_perf) * 1000),
+        )
         current_items = self._generated_items_from_model(revision)
         prompt_utterances = self._build_prompt_utterances(utterances)
         utterance_by_seq = {int(item.seq): item for item in utterances}
@@ -198,7 +214,8 @@ class RevisionService:
         )
 
         try:
-            # The generator yields segment batches; every batch is saved so GET /revisions
+            first_batch_logged = False
+            # The generator yields item batches; every batch is saved so GET /revisions
             # can show partial results while the job is still generating.
             for segment_suggestions in self._generator.generate_progressively(req):
                 if not self._is_active_revision_job(session_id=session_id, job_id=job_id):
@@ -229,6 +246,27 @@ class RevisionService:
                     error_code=None,
                     error_message=None,
                 )
+                if not first_batch_logged:
+                    first_batch_logged = True
+                    logger.info(
+                        "Revision generation first items saved session_id=%s transcript_id=%s job_id=%s batch_count=%s total_items=%s elapsed_ms=%s",
+                        session_id,
+                        transcript_id,
+                        job_id,
+                        len(generated_segment_items),
+                        len(current_items),
+                        int((perf_counter() - started_perf) * 1000),
+                    )
+                else:
+                    logger.info(
+                        "Revision generation items saved session_id=%s transcript_id=%s job_id=%s batch_count=%s total_items=%s elapsed_ms=%s",
+                        session_id,
+                        transcript_id,
+                        job_id,
+                        len(generated_segment_items),
+                        len(current_items),
+                        int((perf_counter() - started_perf) * 1000),
+                    )
 
             # Returning COMPLETED lets JobService mark job_jobs.status as completed.
             if not self._is_active_revision_job(session_id=session_id, job_id=job_id):
@@ -247,6 +285,14 @@ class RevisionService:
                 error_message=None,
             )
             self._enqueue_revision_translation(session_id=session_id)
+            logger.info(
+                "Revision generation job completed session_id=%s transcript_id=%s job_id=%s total_items=%s elapsed_ms=%s",
+                session_id,
+                transcript_id,
+                job_id,
+                len(current_items),
+                int((perf_counter() - started_perf) * 1000),
+            )
             return JobRunResult(status=JobStatus.COMPLETED, progress=100)
         except Exception as exc:
             logger.exception("Revision generation job failed session_id=%s transcript_id=%s job_id=%s", session_id, transcript_id, job_id)

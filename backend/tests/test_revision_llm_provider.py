@@ -47,36 +47,39 @@ def test_generate_normalizes_llm_response(monkeypatch) -> None:
             RevisionSegment(segment_index=1, start_seq=1, end_seq=2, title="课堂反馈", summary="两句连续表达")
         ],
     )
-    monkeypatch.setattr(
-        generator,
-        "_request_chat_completion",
-        lambda *, transcript_id, request_name, messages: """
-```json
-{
-  "items": [
-    {
-      "source_seqs": ["1"],
-      "suggested_text": "i really enjoyed this class",
-      "score": "91",
-      "issue_tags": "不够自然，搭配问题",
-      "explanations": ["改成更地道的口语表达", "保留原本积极语气"]
-    },
-    {
-      "utterance_seq": 2,
-      "suggested_text": "i went there last weekend",
-      "score": 54,
-      "issue_tags": ["语法错误", "不够自然", "语法错误"],
-      "explanations": "修正时态/更符合日常口语"
-    },
-    {
-      "utterance_seq": 99,
-      "suggested_text": "should be ignored",
-      "score": 80
-    }
-  ]
-}
-```""",
-    )
+    def fake_stream(*, transcript_id, request_name, messages):
+        yield "\n".join(
+            [
+                json.dumps(
+                    {
+                        "source_seqs": ["1"],
+                        "suggested_text": "i really enjoyed this class",
+                        "score": "91",
+                        "issue_tags": "不够自然，搭配问题",
+                        "explanations": ["改成更地道的口语表达", "保留原本积极语气"],
+                    }
+                ),
+                json.dumps(
+                    {
+                        "utterance_seq": 2,
+                        "suggested_text": "i went there last weekend",
+                        "score": 54,
+                        "issue_tags": ["语法错误", "不够自然", "语法错误"],
+                        "explanations": "修正时态/更符合日常口语",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "utterance_seq": 99,
+                        "suggested_text": "should be ignored",
+                        "score": 80,
+                    }
+                ),
+                "",
+            ]
+        )
+
+    monkeypatch.setattr(generator, "_request_chat_completion_stream", fake_stream)
 
     result = generator.generate(req)
 
@@ -106,6 +109,34 @@ def test_get_client_ignores_proxy_env(monkeypatch) -> None:
     assert client is generator._get_client()
 
 
+def test_short_transcript_skips_segment_plan(monkeypatch) -> None:
+    generator = LLMRevisionGenerator(_build_settings())
+    req = RevisionGenerateRequest(
+        transcript_id="task-short",
+        user_prompt=None,
+        utterances=[
+            RevisionPromptUtterance(utterance_seq=0, speaker="student", text="hello"),
+            RevisionPromptUtterance(utterance_seq=1, speaker="student", text="thanks"),
+        ],
+    )
+
+    def fail_plan_segments(*, transcript_id, utterances, user_prompt):
+        raise AssertionError("segment_plan should be skipped for short transcripts")
+
+    def fake_stream(*, transcript_id, request_name, messages):
+        yield (
+            '{"source_seqs":[0],"suggested_text":"Hello.","score":95}\n'
+            '{"source_seqs":[1],"suggested_text":"Thanks.","score":95}\n'
+        )
+
+    monkeypatch.setattr(generator, "_plan_segments", fail_plan_segments)
+    monkeypatch.setattr(generator, "_request_chat_completion_stream", fake_stream)
+
+    result = generator.generate(req)
+
+    assert [item.source_seqs for item in result] == [[0], [1]]
+
+
 def test_generate_includes_context_around_target_segment(monkeypatch) -> None:
     generator = LLMRevisionGenerator(_build_settings())
     req = RevisionGenerateRequest(
@@ -120,33 +151,30 @@ def test_generate_includes_context_around_target_segment(monkeypatch) -> None:
     )
     captured_payloads: list[dict[str, object]] = []
 
-    monkeypatch.setattr(
-        generator,
-        "_plan_segments",
-        lambda *, transcript_id, utterances, user_prompt: [
-            RevisionSegment(segment_index=1, start_seq=1, end_seq=2, title="学习反馈", summary="用户表达看法")
-        ],
-    )
-
-    def fake_request_chat_completion(*, transcript_id, request_name, messages):
+    def fake_stream(*, transcript_id, request_name, messages):
         if request_name.startswith("segment_revision"):
             user_message = next(item for item in messages if item["role"] == "user")
             content = user_message["content"]
             json_start = content.index("{")
             captured_payloads.append(json.loads(content[json_start:]))
-            return """
-{
-  "items": [
-    {"source_seqs": [1], "suggested_text": "I like this.", "score": 92},
-    {"source_seqs": [2], "suggested_text": "It is useful.", "score": 95}
-  ]
-}
-"""
+            yield (
+                '{"source_seqs":[1],"suggested_text":"I like this.","score":92}\n'
+                '{"source_seqs":[2],"suggested_text":"It is useful.","score":95}\n'
+            )
+            return
         raise AssertionError(f"Unexpected request_name: {request_name}")
 
-    monkeypatch.setattr(generator, "_request_chat_completion", fake_request_chat_completion)
+    monkeypatch.setattr(generator, "_request_chat_completion_stream", fake_stream)
 
-    result = generator.generate(req)
+    result = generator._generate_single_segment_revision(
+        transcript_id=req.transcript_id,
+        utterances=req.utterances,
+        user_prompt=req.user_prompt,
+        target_language=req.target_language,
+        cue_language=req.cue_language,
+        segment=RevisionSegment(segment_index=1, start_seq=1, end_seq=2, title="学习反馈", summary="用户表达看法"),
+        utterance_index_by_seq={int(item.utterance_seq): index for index, item in enumerate(req.utterances)},
+    )
 
     assert [item.source_seqs for item in result] == [[1], [2]]
     assert len(captured_payloads) == 1
@@ -180,21 +208,16 @@ def test_revision_prompt_includes_existing_cue_additions(monkeypatch) -> None:
         ],
     )
 
-    def fake_request_chat_completion(*, transcript_id, request_name, messages):
+    def fake_stream(*, transcript_id, request_name, messages):
         if request_name.startswith("segment_revision"):
             user_message = next(item for item in messages if item["role"] == "user")
             content = user_message["content"]
             captured_payloads.append(json.loads(content[content.index("{"):]))
-            return """
-{
-  "items": [
-    {"source_seqs": [0], "suggested_text": "[Open naturally] Hello.", "score": 95}
-  ]
-}
-"""
+            yield '{"source_seqs":[0],"suggested_text":"[Open naturally] Hello.","score":95}\n'
+            return
         raise AssertionError(f"Unexpected request_name: {request_name}")
 
-    monkeypatch.setattr(generator, "_request_chat_completion", fake_request_chat_completion)
+    monkeypatch.setattr(generator, "_request_chat_completion_stream", fake_stream)
 
     result = generator.generate(req)
 

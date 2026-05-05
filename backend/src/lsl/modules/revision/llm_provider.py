@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 import logging
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from math import ceil
 from pathlib import Path
+from queue import Empty, Queue
 from time import perf_counter
 from typing import Any
 
@@ -31,12 +31,13 @@ logger = logging.getLogger(__name__)
 _CODE_FENCE_JSON_RE = re.compile(r"```(?:json)?\s*(.+?)\s*```", re.DOTALL | re.IGNORECASE)
 _SPLIT_TEXT_RE = re.compile(r"[,/，、\n]+")
 _MAX_ISSUE_TAGS = 4  # 每条 revise 建议最多保留的问题标签数，避免单条卡片标签过多。
-_SEGMENT_TARGET_UTTERANCE_COUNT = 24  # 强制拆分大段时，每个子段目标 utterance 数。
-_SEGMENT_HARD_MAX_UTTERANCE_COUNT = 32  # LLM 规划出的 segment 超过该大小就必须再切小。
+_SEGMENT_HARD_MAX_UTTERANCE_COUNT = 32  # 提示 LLM 规划 segment 时不要超过的 utterance 数上限。
 _SEGMENT_CONTEXT_UTTERANCE_COUNT = 2  # 每段 revise 前后额外带多少条上下文给模型参考。
 _SEGMENT_MAX_WORKERS = 4  # 同一个 revision job 内最多并发多少个 segment revise 请求。
+_SEGMENT_SUBMIT_STAGGER_SECONDS = 2.0  # 每次启动下一个 segment revise 请求前的最小间隔秒数。
 
-_SEGMENT_PLAN_SYSTEM_PROMPT = """You are planning revision batches for a spoken-English transcript.
+_SEGMENT_PLAN_SYSTEM_PROMPT = (
+"""You are planning revision batches for a transcript.
 
 Your task is to divide the transcript into contiguous topic-based sections before sentence-level revision.
 
@@ -46,9 +47,12 @@ Important rules:
 - Segments must be contiguous by utterance_seq, with no gaps and no overlaps.
 - Prefer split points where the topic, activity, or discussion phase changes.
 - Keep each segment reasonably small for downstream revision.
+"""
+f"- Each segment must contain no more than {_SEGMENT_HARD_MAX_UTTERANCE_COUNT} utterances.\n"
+"""
 - Most segments should contain about 16 to 28 target utterances.
 - Never merge unrelated topics just to reduce the number of segments.
-- Give each segment a short Chinese title and a short Chinese summary.
+- Give each segment a short title and a short summary.
 
 Output schema:
 {
@@ -57,16 +61,17 @@ Output schema:
       "segment_index": 1,
       "start_seq": 0,
       "end_seq": 23,
-      "title": "寒暄与近况",
-      "summary": "内容: 双方通过语音软件，先打招呼，随后聊到今天是否忙、工作安排等。结果: speaker2 今天的工作内容1)完成软件的bug 修复.2)和客户开会讨论需求.3)整理会议纪要. speaker1 今天的工作内容1)完成了一个项目的测试.2)和同事讨论了项目进度.3)准备了明天的会议材料."
+      "title": "Greeting and Status Check",
+      "summary": "Content: Both speakers use a voice chat app to say hello, then discuss whether they are busy, work arrangements, etc. Result: speaker2's work today: 1) fixed software bugs; 2) discussed customer requirements with customers; 3) summarized meeting minutes. speaker1's work today: 1) completed a project test; 2) discussed project progress with colleagues; 3) prepared materials for tomorrow's meeting."
     }
   ]
 }
 """
+)
 
 _SEGMENT_REVISION_SYSTEM_PROMPT_TEMPLATE = """You are an expert {spoken_language} speaking coach for oral {spoken_language} classes.
 
-Your task is to revise only the target utterances and return a JSON object only.
+Your task is to revise only the target utterances and return NDJSON only.
 
 Goals for each output item:
 1. Rewrite the original text or utterance span into fluent, natural spoken {spoken_language}.
@@ -91,22 +96,14 @@ Important rules:
 - Prefer one natural spoken sentence. Two short sentences are acceptable when needed.
 - issue_tags should be one comma-separated Chinese string such as "不够自然, 语法错误".
 - explanations should be one concise Chinese string.
-- Use strict JSON that can be parsed by Python json.loads.
-- Do not include trailing commas before } or ].
-- Return JSON only. No markdown. No extra text.
+- Use strict JSON objects that can be parsed by Python json.loads.
+- Return one complete JSON object per line.
+- Each line must be one revised item. Do not wrap items in an array or an object.
+- Do not include trailing commas before }.
+- Return NDJSON only. No markdown. No extra text.
 
-Output schema:
-{
-  "items": [
-    {
-      "source_seqs": [1],
-      "suggested_text": "{suggested_text_example}",
-      "score": 88,
-      "issue_tags": "不够自然, 语法错误",
-      "explanations": "把表达改得更符合日常口语，并根据聊天上下文把时态调整正确。"
-    }
-  ]
-}
+Output schema, one JSON object per line:
+{"source_seqs":[1],"suggested_text":"{suggested_text_example}","score":88,"issue_tags":"不够自然, 语法错误","explanations":"把表达改得更符合日常口语，并根据聊天上下文把时态调整正确。"}
 """
 
 
@@ -165,14 +162,28 @@ class LLMRevisionGenerator:
         if not req.utterances:
             return
 
-        # 先对整段 transcript 做一次分段规划；这一步完成前不会产出任何 revise item。
-        segments = self._plan_segments(
+        started_perf = perf_counter()
+        logger.info(
+            "Revision generation started transcript_id=%s utterance_count=%s provider=%s",
+            req.transcript_id,
+            len(req.utterances),
+            self.provider_name,
+        )
+        # 短 transcript 直接作为一个 segment，避免额外的 segment_plan LLM 固定等待。
+        # 只有超过 _SEGMENT_HARD_MAX_UTTERANCE_COUNT 时，才先让 LLM 做 topic-based 分段规划。
+        segments = self._resolve_segments(
             transcript_id=req.transcript_id,
             utterances=req.utterances,
             user_prompt=req.user_prompt,
         )
-        # 再按 segment 并发 revise；yield 粒度是 segment，不是单条 item。
-        # 某段完整 JSON 返回后，service 才能把这一批 items 增量写库。
+        logger.info(
+            "Revision segment plan ready transcript_id=%s segment_count=%s elapsed_ms=%s",
+            req.transcript_id,
+            len(segments),
+            int((perf_counter() - started_perf) * 1000),
+        )
+        # 再按 segment 并发 revise；yield 粒度是 item batch，通常每解析出一个 NDJSON item 就 yield。
+        # 这样 service 不需要等某段完整 JSON 全部结束，就能把已完成 items 增量写库。
         for segment_suggestions in self._generate_segmented_revisions(
             transcript_id=req.transcript_id,
             utterances=req.utterances,
@@ -182,6 +193,35 @@ class LLMRevisionGenerator:
             segments=segments,
         ):
             yield segment_suggestions
+
+    def _resolve_segments(
+        self,
+        *,
+        transcript_id: str,
+        utterances: list[RevisionPromptUtterance],
+        user_prompt: str | None,
+    ) -> list[RevisionSegment]:
+        if len(utterances) <= _SEGMENT_HARD_MAX_UTTERANCE_COUNT:
+            segment = RevisionSegment(
+                segment_index=1,
+                start_seq=int(utterances[0].utterance_seq),
+                end_seq=int(utterances[-1].utterance_seq),
+                title="Full transcript",
+                summary="Transcript is short enough to revise as one segment.",
+            )
+            logger.info(
+                "Revision segment plan skipped transcript_id=%s utterance_count=%s hard_max=%s",
+                transcript_id,
+                len(utterances),
+                _SEGMENT_HARD_MAX_UTTERANCE_COUNT,
+            )
+            return [segment]
+
+        return self._plan_segments(
+            transcript_id=transcript_id,
+            utterances=utterances,
+            user_prompt=user_prompt,
+        )
 
     def _plan_segments(
         self,
@@ -200,7 +240,13 @@ class LLMRevisionGenerator:
             ),
         )
         segments = self._parse_segment_plan_response(content=content, utterances=utterances)
-        return self._split_oversized_segments(segments)
+        logger.info(
+            "Revision segment plan parsed transcript_id=%s segment_count=%s utterance_count=%s",
+            transcript_id,
+            len(segments),
+            len(utterances),
+        )
+        return segments
 
     def _generate_segmented_revisions(
         self,
@@ -218,11 +264,25 @@ class LLMRevisionGenerator:
         utterance_index_by_seq = {int(item.utterance_seq): index for index, item in enumerate(utterances)}
         # 同一个 revision job 内的段并发受 _SEGMENT_MAX_WORKERS 和实际 segment 数共同限制。
         max_workers = max(1, min(_SEGMENT_MAX_WORKERS, len(segments)))
+        logger.info(
+            "Revision segment revisions starting transcript_id=%s segment_count=%s max_workers=%s",
+            transcript_id,
+            len(segments),
+            max_workers,
+        )
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(
-                    self._generate_single_segment_revision,
+        event_queue: Queue[tuple[str, RevisionSegment, RevisionSuggestion | Exception | None]] = Queue()
+        segment_iter = iter(segments)
+        active_count = 0
+        submitted_count = 0
+        completed_count = 0
+        all_segments_submitted = False
+        next_submit_at = 0.0
+        executor = ThreadPoolExecutor(max_workers=max_workers)
+
+        def run_segment(segment: RevisionSegment) -> None:
+            try:
+                for suggestion in self._generate_single_segment_revision_progressively(
                     transcript_id=transcript_id,
                     utterances=utterances,
                     user_prompt=user_prompt,
@@ -230,18 +290,86 @@ class LLMRevisionGenerator:
                     cue_language=cue_language,
                     segment=segment,
                     utterance_index_by_seq=utterance_index_by_seq,
-                ): segment
-                for segment in segments
-            }
-            # as_completed 会先返回最快完成的段，因此前端能先看到已完成 segment 的结果。
-            for future in as_completed(futures):
-                segment = futures[future]
+                ):
+                    event_queue.put(("item", segment, suggestion))
+                event_queue.put(("done", segment, None))
+            except Exception as exc:
+                event_queue.put(("error", segment, exc))
+
+        def submit_next_segment() -> bool:
+            nonlocal active_count, submitted_count, all_segments_submitted, next_submit_at
+            try:
+                segment = next(segment_iter)
+            except StopIteration:
+                all_segments_submitted = True
+                return False
+
+            submitted_count += 1
+            active_count += 1
+            if submitted_count >= len(segments):
+                all_segments_submitted = True
+            next_submit_at = perf_counter() + _SEGMENT_SUBMIT_STAGGER_SECONDS
+            logger.info(
+                "Revision segment submitted transcript_id=%s segment_index=%s seq_range=%s-%s submitted=%s/%s next_submit_delay_seconds=%s",
+                transcript_id,
+                segment.segment_index,
+                segment.start_seq,
+                segment.end_seq,
+                submitted_count,
+                len(segments),
+                _SEGMENT_SUBMIT_STAGGER_SECONDS,
+            )
+            executor.submit(run_segment, segment)
+            return True
+
+        try:
+            submit_next_segment()
+
+            while active_count > 0 or not all_segments_submitted:
+                now = perf_counter()
+                if not all_segments_submitted and active_count < max_workers and now >= next_submit_at:
+                    submit_next_segment()
+                    continue
+
+                timeout = None
+                if not all_segments_submitted and active_count < max_workers:
+                    timeout = max(0.0, next_submit_at - now)
+
                 try:
-                    yield future.result()
-                except Exception as exc:
-                    raise RuntimeError(
-                        f"Segment revision failed for seq range {segment.start_seq}-{segment.end_seq}: {exc}"
-                    ) from exc
+                    event_name, segment, payload = event_queue.get(timeout=timeout)
+                except Empty:
+                    continue
+
+                if event_name == "item":
+                    if not isinstance(payload, RevisionSuggestion):
+                        raise RuntimeError("Invalid revision segment item event")
+                    yield [payload]
+                    continue
+
+                active_count -= 1
+                if event_name == "done":
+                    completed_count += 1
+                    logger.info(
+                        "Revision segment completed transcript_id=%s segment_index=%s seq_range=%s-%s completed=%s/%s",
+                        transcript_id,
+                        segment.segment_index,
+                        segment.start_seq,
+                        segment.end_seq,
+                        completed_count,
+                        len(segments),
+                    )
+                    continue
+
+                if event_name == "error":
+                    if isinstance(payload, Exception):
+                        raise RuntimeError(
+                            f"Segment revision failed for seq range {segment.start_seq}-{segment.end_seq}: {payload}"
+                        ) from payload
+                    raise RuntimeError(f"Segment revision failed for seq range {segment.start_seq}-{segment.end_seq}")
+
+                raise RuntimeError(f"Unexpected revision segment event: {event_name}")
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
 
     def _generate_single_segment_revision(
         self,
@@ -254,6 +382,29 @@ class LLMRevisionGenerator:
         segment: RevisionSegment,
         utterance_index_by_seq: dict[int, int],
     ) -> list[RevisionSuggestion]:
+        return list(
+            self._generate_single_segment_revision_progressively(
+                transcript_id=transcript_id,
+                utterances=utterances,
+                user_prompt=user_prompt,
+                target_language=target_language,
+                cue_language=cue_language,
+                segment=segment,
+                utterance_index_by_seq=utterance_index_by_seq,
+            )
+        )
+
+    def _generate_single_segment_revision_progressively(
+        self,
+        *,
+        transcript_id: str,
+        utterances: list[RevisionPromptUtterance],
+        user_prompt: str | None,
+        target_language: str | None,
+        cue_language: str | None,
+        segment: RevisionSegment,
+        utterance_index_by_seq: dict[int, int],
+    ):
         start_index = utterance_index_by_seq.get(int(segment.start_seq))
         end_index = utterance_index_by_seq.get(int(segment.end_seq))
         if start_index is None or end_index is None or start_index > end_index:
@@ -265,21 +416,83 @@ class LLMRevisionGenerator:
         context_after = utterances[end_index + 1 : end_index + 1 + _SEGMENT_CONTEXT_UTTERANCE_COUNT]
 
         request_name = f"segment_revision[{segment.segment_index}][{segment.start_seq}-{segment.end_seq}]"
-        content = self._request_chat_completion(
+        messages = self._build_segment_revision_messages(
+            transcript_id=transcript_id,
+            segment=segment,
+            user_prompt=user_prompt,
+            target_language=target_language,
+            cue_language=cue_language,
+            context_before=context_before,
+            target_utterances=target_utterances,
+            context_after=context_after,
+        )
+        utterance_by_seq = {int(item.utterance_seq): item for item in target_utterances}
+        suggestions: list[RevisionSuggestion] = []
+        seen_source_seqs: set[int] = set()
+        buffer = ""
+        line_count = 0
+        first_item_logged = False
+        started_perf = perf_counter()
+
+        logger.info(
+            "Revision segment stream parse started transcript_id=%s request_name=%s target_count=%s context_before=%s context_after=%s",
+            transcript_id,
+            request_name,
+            len(target_utterances),
+            len(context_before),
+            len(context_after),
+        )
+
+        for delta in self._request_chat_completion_stream(
             transcript_id=transcript_id,
             request_name=request_name,
-            messages=self._build_segment_revision_messages(
-                transcript_id=transcript_id,
-                segment=segment,
-                user_prompt=user_prompt,
-                target_language=target_language,
-                cue_language=cue_language,
-                context_before=context_before,
-                target_utterances=target_utterances,
-                context_after=context_after,
-            )
+            messages=messages,
+        ):
+            buffer += delta
+            while "\n" in buffer:
+                line, buffer = buffer.split("\n", 1)
+                line_count += 1
+                for suggestion in self._parse_revision_stream_line(line=line, utterance_by_seq=utterance_by_seq):
+                    self._ensure_no_stream_overlap(suggestion=suggestion, seen_source_seqs=seen_source_seqs)
+                    suggestions.append(suggestion)
+                    if not first_item_logged:
+                        first_item_logged = True
+                        logger.info(
+                            "Revision segment first valid item parsed transcript_id=%s request_name=%s elapsed_ms=%s lines=%s source_seqs=%s",
+                            transcript_id,
+                            request_name,
+                            int((perf_counter() - started_perf) * 1000),
+                            line_count,
+                            suggestion.source_seqs,
+                        )
+                    yield suggestion
+
+        if buffer.strip():
+            line_count += 1
+            for suggestion in self._parse_revision_stream_line(line=buffer, utterance_by_seq=utterance_by_seq):
+                self._ensure_no_stream_overlap(suggestion=suggestion, seen_source_seqs=seen_source_seqs)
+                suggestions.append(suggestion)
+                if not first_item_logged:
+                    first_item_logged = True
+                    logger.info(
+                        "Revision segment first valid item parsed transcript_id=%s request_name=%s elapsed_ms=%s lines=%s source_seqs=%s",
+                        transcript_id,
+                        request_name,
+                        int((perf_counter() - started_perf) * 1000),
+                        line_count,
+                        suggestion.source_seqs,
+                    )
+                yield suggestion
+
+        self._validate_revision_suggestions(suggestions=suggestions, utterances=target_utterances)
+        logger.info(
+            "Revision segment stream parse finished transcript_id=%s request_name=%s item_count=%s lines=%s elapsed_ms=%s",
+            transcript_id,
+            request_name,
+            len(suggestions),
+            line_count,
+            int((perf_counter() - started_perf) * 1000),
         )
-        return self._parse_revision_response(content=content, utterances=target_utterances)
 
     def _request_chat_completion(
         self,
@@ -359,6 +572,134 @@ class LLMRevisionGenerator:
                     self._model,
                     finished_at.isoformat(),
                     duration_ms,
+                    error_message,
+                )
+
+    def _request_chat_completion_stream(
+        self,
+        *,
+        transcript_id: str,
+        request_name: str,
+        messages: list[ChatCompletionMessageParam],
+    ):
+        client = self._get_client()
+        started_at = datetime.now(timezone.utc)
+        started_perf = perf_counter()
+        logger.info(
+            "LLM stream request started transcript_id=%s request_name=%s model=%s started_at=%s",
+            transcript_id,
+            request_name,
+            self._model,
+            started_at.isoformat(),
+        )
+
+        content_parts: list[str] = []
+        error_message: str | None = None
+        finish_reason: str | None = None
+        chunk_count = 0
+        content_chunk_count = 0
+        first_chunk_logged = False
+        first_content_logged = False
+        try:
+            stream = client.chat.completions.create(
+                model=self._model,
+                temperature=0.2,
+                messages=messages,
+                timeout=self._timeout,
+                stream=True,
+                reasoning_effort="minimal",
+                # 火山的扩展参数放这里，disabled 对应关闭深度思考
+                extra_body={
+                    "thinking": {"type": "disabled"},
+                },
+            )
+            logger.info(
+                "LLM stream opened transcript_id=%s request_name=%s model=%s elapsed_ms=%s",
+                transcript_id,
+                request_name,
+                self._model,
+                int((perf_counter() - started_perf) * 1000),
+            )
+
+            for chunk in stream:
+                chunk_count += 1
+                if not first_chunk_logged:
+                    first_chunk_logged = True
+                    logger.info(
+                        "LLM stream first chunk received transcript_id=%s request_name=%s model=%s elapsed_ms=%s",
+                        transcript_id,
+                        request_name,
+                        self._model,
+                        int((perf_counter() - started_perf) * 1000),
+                    )
+                if not chunk.choices:
+                    continue
+
+                choice = chunk.choices[0]
+                chunk_finish_reason = getattr(choice, "finish_reason", None)
+                if chunk_finish_reason is not None:
+                    finish_reason = chunk_finish_reason
+
+                delta = getattr(choice, "delta", None)
+                content = getattr(delta, "content", None) if delta is not None else None
+                if not content:
+                    continue
+
+                content_chunk_count += 1
+                if not first_content_logged:
+                    first_content_logged = True
+                    logger.info(
+                        "LLM stream first content chunk received transcript_id=%s request_name=%s model=%s elapsed_ms=%s chars=%s",
+                        transcript_id,
+                        request_name,
+                        self._model,
+                        int((perf_counter() - started_perf) * 1000),
+                        len(content),
+                    )
+
+                content_parts.append(content)
+                yield content
+
+            if finish_reason not in (None, "stop"):
+                raise RuntimeError(f"LLM stream stopped with finish_reason={finish_reason}")
+        except Exception as exc:
+            error_message = str(exc)
+            raise
+        finally:
+            finished_at = datetime.now(timezone.utc)
+            duration_ms = int((perf_counter() - started_perf) * 1000)
+            self._append_debug_dump(
+                transcript_id=transcript_id,
+                request_name=request_name,
+                messages=messages,
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_ms=duration_ms,
+                response_content="".join(content_parts),
+                error_message=error_message,
+                finish_reason=finish_reason,
+            )
+            if error_message is None:
+                logger.info(
+                    "LLM stream finished transcript_id=%s request_name=%s model=%s duration_ms=%s chunks=%s content_chunks=%s chars=%s finish_reason=%s",
+                    transcript_id,
+                    request_name,
+                    self._model,
+                    duration_ms,
+                    chunk_count,
+                    content_chunk_count,
+                    sum(len(part) for part in content_parts),
+                    finish_reason or "",
+                )
+            else:
+                logger.error(
+                    "LLM stream failed transcript_id=%s request_name=%s model=%s duration_ms=%s chunks=%s content_chunks=%s error=%s",
+                    transcript_id,
+                    request_name,
+                    self._model,
+                    duration_ms,
+                    chunk_count,
+                    content_chunk_count,
                     error_message,
                 )
 
@@ -524,46 +865,6 @@ class LLMRevisionGenerator:
             raise RuntimeError("LLM segment plan does not fully cover utterance_seq without gaps or overlaps")
         return final_segments
 
-    def _split_oversized_segments(self, segments: list[RevisionSegment]) -> list[RevisionSegment]:
-        normalized_segments: list[RevisionSegment] = []
-        next_index = 1
-        for segment in segments:
-            segment_size = int(segment.end_seq) - int(segment.start_seq) + 1
-            # 对 LLM 分段结果做保护性二次拆分，避免单个 revise 请求过大、首次结果过慢。
-            if segment_size <= _SEGMENT_HARD_MAX_UTTERANCE_COUNT:
-                normalized_segments.append(
-                    RevisionSegment(
-                        segment_index=next_index,
-                        start_seq=int(segment.start_seq),
-                        end_seq=int(segment.end_seq),
-                        title=segment.title,
-                        summary=segment.summary,
-                    )
-                )
-                next_index += 1
-                continue
-
-            part_count = ceil(segment_size / _SEGMENT_TARGET_UTTERANCE_COUNT)
-            current_start = int(segment.start_seq)
-            for part_index in range(1, part_count + 1):
-                current_end = min(
-                    int(segment.end_seq),
-                    current_start + _SEGMENT_TARGET_UTTERANCE_COUNT - 1,
-                )
-                suffix = f" (part {part_index}/{part_count})"
-                normalized_segments.append(
-                    RevisionSegment(
-                        segment_index=next_index,
-                        start_seq=current_start,
-                        end_seq=current_end,
-                        title=f"{segment.title}{suffix}" if segment.title else f"Segment {next_index}",
-                        summary=segment.summary,
-                    )
-                )
-                next_index += 1
-                current_start = current_end + 1
-        return normalized_segments
-
     def _parse_revision_response(
         self,
         *,
@@ -584,6 +885,30 @@ class LLMRevisionGenerator:
             if suggestion is not None:
                 suggestions.append(suggestion)
         return self._validate_revision_suggestions(suggestions=suggestions, utterances=utterances)
+
+    def _parse_revision_stream_line(
+        self,
+        *,
+        line: str,
+        utterance_by_seq: dict[int, RevisionPromptUtterance],
+    ) -> list[RevisionSuggestion]:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("```"):
+            return []
+
+        parsed = self._loads_json(stripped)
+        raw_items = self._extract_items(parsed)
+        if not raw_items and isinstance(parsed, dict):
+            raw_items = [parsed]
+
+        suggestions: list[RevisionSuggestion] = []
+        for raw_item in raw_items:
+            if not isinstance(raw_item, dict):
+                continue
+            suggestion = self._normalize_suggestion(raw_item=raw_item, utterance_by_seq=utterance_by_seq)
+            if suggestion is not None:
+                suggestions.append(suggestion)
+        return suggestions
 
     def _normalize_suggestion(
         self,
@@ -617,6 +942,19 @@ class LLMRevisionGenerator:
             issue_tags=", ".join(issue_tags_list),
             explanations=explanations_text,
         )
+
+    @staticmethod
+    def _ensure_no_stream_overlap(
+        *,
+        suggestion: RevisionSuggestion,
+        seen_source_seqs: set[int],
+    ) -> None:
+        source_seqs = {int(seq) for seq in suggestion.source_seqs}
+        overlapping_source_seqs = sorted(source_seqs.intersection(seen_source_seqs))
+        if overlapping_source_seqs:
+            joined = ", ".join(str(seq) for seq in overlapping_source_seqs)
+            raise RuntimeError(f"LLM stream returned overlapping source_seqs: {joined}")
+        seen_source_seqs.update(source_seqs)
 
     def _get_client(self) -> OpenAI:
         if self._client is not None:

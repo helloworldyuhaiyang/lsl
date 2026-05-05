@@ -275,14 +275,14 @@ class VolcTtsProvider:
             "Content-Type": "application/json",
             "Connection": "keep-alive",
         }
-        logger.info(
+        logger.debug(
             "Volc TTS request url=%s headers=%s payload=%s",
             self._url,
             json.dumps(debug_headers, ensure_ascii=False),
             json.dumps(payload, ensure_ascii=False),
         )
         request_started_at = time.monotonic()
-        logger.info(
+        logger.debug(
             "Volc TTS request started session_id=%s request_id=%s speaker=%s format=%s timeout_s=%s text_length=%s cue_count=%s",
             req.session_id,
             request_id,

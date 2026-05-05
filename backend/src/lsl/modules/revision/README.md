@@ -39,7 +39,7 @@ REVISION_LLM_DEBUG_FILE=./revision_debug.log
 说明：
 
 - `REVISION_PROVIDER=fake` 时，返回固定调试 revise 文案，便于前后端联调。
-- `REVISION_PROVIDER=llm` 时，调用大模型执行“先总结分段，再按段并发 revise”。
+- `REVISION_PROVIDER=llm` 时，调用大模型执行“先总结分段，再按段并发流式 revise”。
 - 当前实现不再回退本地规则生成 `suggested_text / score`，这些字段必须由 LLM 返回。
 - LLM 返回的 JSON 会先走 `json.loads`，失败后再走 `json-repair`。
 
@@ -81,7 +81,7 @@ REVISION_LLM_DEBUG_FILE=./revision_debug.log
 
 在 `generating` 期间：
 
-- 已完成的 segment 会返回真实 revise span
+- 已解析完成的 item 会返回真实 revise span
 - 未完成的部分不返回旧占位内容，前端用 loading/partial result 表示生成中
 
 ### 3) `PATCH /revisions/items/{item_id}`
@@ -142,9 +142,9 @@ REVISION_LLM_DEBUG_FILE=./revision_debug.log
 当前 `llm_provider.py` 的主流程：
 
 1. 读取整段 transcript。
-2. 先调用一次 LLM 生成章节总结和分段计划。
-3. 每段带少量前后文并发调用 LLM 执行 revise。
-4. LLM 对每段返回 `items[].source_seqs + suggested_text + score + issue_tags + explanations`。
+2. transcript 不超过 32 条 utterance 时直接作为一个 segment；超过 32 条才调用 LLM 生成章节总结和分段计划。
+3. 每段带少量前后文并发调用 LLM 执行 revise；segment 请求按 2 秒间隔依次提交，降低平台并发限流风险。
+4. revise 阶段使用 NDJSON 流式输出；LLM 每行返回一个 item：`source_seqs + suggested_text + score + issue_tags + explanations`。
 5. `suggested_text` 是完整脚本；如果包含 cue，应直接放进脚本里，用 `[]` 包起来。
 6. 后端校验：
    - `source_seqs` 是否连续
@@ -152,7 +152,7 @@ REVISION_LLM_DEBUG_FILE=./revision_debug.log
    - 是否有 gaps / overlaps
    - 是否跨 speaker 合并
    - `suggested_text` 是否为空
-7. `RevisionJobHandler` 每完成一段就增量写回数据库。
+7. `RevisionJobHandler` 每解析出一批 item 就增量写回数据库。
 8. 全部完成后把 revision 状态置为 `completed`，job 状态置为 `completed`；失败则 revision/job 都置为 `failed`。
 
 提示词里只会把 `addions` 里的 `emotion` 和 `emotion_degree` 发给模型，其他附加字段不会进入 revise prompt。
