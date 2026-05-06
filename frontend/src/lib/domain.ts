@@ -67,6 +67,10 @@ function mapRevisionItem(item: RevisionItemResponse): RevisionItem {
   return {
     id: item.item_id,
     speaker: item.speaker || 'speaker',
+    sourceSeqStart: item.source_seq_start,
+    sourceSeqEnd: item.source_seq_end,
+    sourceSeqCount: item.source_seq_count,
+    sourceSeqs: item.source_seqs,
     startTime: normalizeSeconds(item.start_time),
     endTime: normalizeSeconds(item.end_time),
     cue: parsed.cue,

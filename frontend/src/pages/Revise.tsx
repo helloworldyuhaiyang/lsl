@@ -18,9 +18,10 @@ import { getSession } from '@/lib/api/sessions';
 import { ApiRequestError } from '@/lib/api/client';
 import { getJob } from '@/lib/api/jobs';
 import { getScriptGenerationPreview } from '@/lib/api/scripts';
+import { getTranscript } from '@/lib/api/transcripts';
 import { createRevision, getRevision, updateRevisionItem } from '@/lib/api/revisions';
 import { createTtsSynthesis, generateTtsItemAudio, getTtsSettings, getTtsSpeakers, getTtsSynthesis, updateTtsSettings } from '@/lib/api/tts';
-import { applyTtsSettings, applyTtsSynthesis, mapRevision, mapSessionItem } from '@/lib/domain';
+import { applyTtsSettings, applyTtsSynthesis, mapRevision, mapSessionItem, mapTranscript } from '@/lib/domain';
 import { getVoiceForSpeaker } from '@/lib/voice';
 import type { ScriptGenerationPreviewItemResponse, TtsSynthesisResponse } from '@/types/api';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -32,6 +33,8 @@ const TTS_PARAM_RANGES = {
   speechRate: { min: -50, max: 100, step: 1, defaultValue: 0 },
   loudnessRate: { min: -50, max: 100, step: 1, defaultValue: 0 },
 };
+
+const REVISION_PROGRESS_SECTION_SIZE = 32;
 
 function clampTtsParam(value: number, range: { min: number; max: number; step: number; defaultValue: number }): number {
   if (!Number.isFinite(value)) return range.defaultValue;
@@ -54,6 +57,8 @@ export function Revise() {
 
   const [revision, setRevision] = useState<RevisionItem[]>([]);
   const [revisionId, setRevisionId] = useState<string | null>(null);
+  const [revisionTranscriptId, setRevisionTranscriptId] = useState<string | null>(null);
+  const [revisionTranscript, setRevisionTranscript] = useState<ReturnType<typeof mapTranscript>>([]);
   const [userPrompt, setUserPrompt] = useState('');
   const [isRevising, setIsRevising] = useState(false);
   const [isSynthesizing, setIsSynthesizing] = useState(false);
@@ -84,8 +89,12 @@ export function Revise() {
     sourceType: 'revision',
     sourceEntityId: revisionId,
     sessionId: id,
-    enabled: !!revisionId && revision.length > 0,
+    enabled: !!revisionId && revision.length > 0 && !isRevising,
   });
+  const revisionProgress = useMemo(
+    () => buildRevisionProgress(revisionTranscript, revision),
+    [revisionTranscript, revision],
+  );
 
   useEffect(() => {
     draftSaveTimersRef.current.forEach((timer) => window.clearTimeout(timer));
@@ -95,6 +104,30 @@ export function Revise() {
     setDirtyTranslationItemIds(new Set());
     setSyncingTranslationItemIds(new Set());
   }, [revisionId]);
+
+  useEffect(() => {
+    if (!revisionTranscriptId) {
+      setRevisionTranscript([]);
+      return;
+    }
+
+    let cancelled = false;
+    getTranscript(revisionTranscriptId)
+      .then((data) => {
+        if (!cancelled) {
+          setRevisionTranscript(mapTranscript(data));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRevisionTranscript([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [revisionTranscriptId]);
 
   useEffect(() => {
     if (session) {
@@ -144,6 +177,7 @@ export function Revise() {
         try {
           const revisionData = await getRevision(sessionId);
           setRevisionId(revisionData.revision_id);
+          setRevisionTranscriptId(revisionData.transcript_id);
           nextSession = { ...nextSession, revision: mapRevision(revisionData), userPrompt: revisionData.user_prompt ?? undefined };
           hasRevision = true;
           revisionGenerating = isRevisionGenerating(revisionData.status_name);
@@ -159,6 +193,7 @@ export function Revise() {
           try {
             const revisionData = await createRevision({ sessionId, userPrompt: '', force: false, cueLanguage: language });
             setRevisionId(revisionData.revision_id);
+            setRevisionTranscriptId(revisionData.transcript_id);
             nextSession = { ...nextSession, revision: mapRevision(revisionData), userPrompt: revisionData.user_prompt ?? undefined };
             hasRevision = true;
             revisionGenerating = isRevisionGenerating(revisionData.status_name);
@@ -432,6 +467,7 @@ export function Revise() {
     try {
       let data = await createRevision({ sessionId: id, userPrompt, force: true, cueLanguage: language });
       setRevisionId(data.revision_id);
+      setRevisionTranscriptId(data.transcript_id);
       let nextRevision = mapRevision(data);
       setRevision(nextRevision);
       if (session) {
@@ -443,6 +479,7 @@ export function Revise() {
         await wait(1500);
         data = await getRevision(id);
         setRevisionId(data.revision_id);
+        setRevisionTranscriptId(data.transcript_id);
         nextRevision = mapRevision(data);
         setRevision(nextRevision);
         if (session) {
@@ -746,7 +783,9 @@ export function Revise() {
           {isWaitingForScript
             ? t('revise.scriptGenerating')
             : isRevising
-              ? t('revise.spansGenerated', { count: revision.length })
+              ? revisionProgress && revision.length > 0
+                ? t('revise.progressSummary', { covered: revisionProgress.coveredUtterances, total: revisionProgress.totalUtterances })
+                : t('revise.analyzingSections')
               : t('revise.utterancesReady', { count: revision.length })}
         </p>
       </div>
@@ -878,7 +917,16 @@ export function Revise() {
       {/* Revision Cards */}
       {shouldShowRevisionControls && (
       <div>
-        {revision.length > 0 ? revision.map(item => {
+        {revision.length > 0 ? (
+          <>
+            {isRevising && (
+              <RevisionProgressPanel
+                progress={revisionProgress}
+                itemCount={revision.length}
+                t={t}
+              />
+            )}
+            {revision.map(item => {
           const translationItem = revisionTranslation.itemsByKey.get(item.id);
           const translationItemDirty = dirtyTranslationItemIds.has(item.id);
           const translationItemSyncing = syncingTranslationItemIds.has(item.id);
@@ -906,19 +954,85 @@ export function Revise() {
               showAssessment={session.type !== 'ai_script'}
             />
           );
-        }) : (
+            })}
+          </>
+        ) : (
           <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
             {isRevising ? (
-              <div className="flex flex-col items-center gap-3">
-                <Loader2 className="h-5 w-5 animate-spin text-indigo-500" />
-                <p className="text-[13px] text-slate-500">{t('revise.revisingTranscript')}</p>
-              </div>
+              <RevisionProgressPanel progress={null} itemCount={0} t={t} />
             ) : (
               <p className="text-[13px] text-slate-400">{t('revise.noRevision')}</p>
             )}
           </div>
         )}
       </div>
+      )}
+    </div>
+  );
+}
+
+function RevisionProgressPanel({
+  progress,
+  itemCount,
+  t,
+}: {
+  progress: RevisionProgress | null;
+  itemCount: number;
+  t: ReturnType<typeof useI18n>['t'];
+}) {
+  if (!progress || itemCount === 0) {
+    return (
+      <div className="rounded-xl border border-indigo-100 bg-indigo-50/70 px-4 py-4 text-center">
+        <div className="mx-auto mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-white text-indigo-500">
+          <Loader2 className="h-4 w-4 animate-spin" />
+        </div>
+        <p className="text-[13px] font-semibold text-slate-800">{t('revise.analyzingSections')}</p>
+        <p className="mt-1 text-[12px] text-slate-500">{t('revise.preparingSuggestions')}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-4 rounded-lg border border-indigo-100 bg-indigo-50/70 px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[12px] font-semibold text-slate-800">
+            {progress.sections.length > 1 && progress.activeSection
+              ? t('revise.progressSection', { current: progress.activeSection.index, total: progress.sections.length })
+              : t('revise.revisingTranscript')}
+          </p>
+          <p className="mt-0.5 text-[11px] text-slate-500">
+            {t('revise.progressItems', { items: itemCount, covered: progress.coveredUtterances, total: progress.totalUtterances })}
+          </p>
+        </div>
+        <span className="shrink-0 text-[12px] font-bold text-indigo-600">{progress.percent}%</span>
+      </div>
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white">
+        <div
+          className="h-full rounded-full bg-indigo-500 transition-all duration-300"
+          style={{ width: `${progress.percent}%` }}
+        />
+      </div>
+      {progress.sections.length > 1 && (
+        <div className="mt-2 flex gap-1">
+          {progress.sections.map((section) => (
+            <div
+              key={section.index}
+              className={`h-1.5 flex-1 rounded-full transition-colors ${
+                section.status === 'completed'
+                  ? 'bg-indigo-500'
+                  : section.status === 'generating'
+                    ? 'bg-indigo-300'
+                    : 'bg-white'
+              }`}
+              title={t('revise.progressSectionRange', {
+                current: section.index,
+                start: section.startSeq,
+                end: section.endSeq,
+              })}
+            />
+          ))}
+        </div>
       )}
     </div>
   );
@@ -934,4 +1048,81 @@ function isRevisionGenerating(statusName: string): boolean {
 
 function isSynthesisRunning(synthesis: TtsSynthesisResponse): boolean {
   return synthesis.status_name === 'pending' || synthesis.status_name === 'generating';
+}
+
+type RevisionProgressSection = {
+  index: number;
+  startSeq: number;
+  endSeq: number;
+  totalUtterances: number;
+  coveredUtterances: number;
+  status: 'waiting' | 'generating' | 'completed';
+};
+
+type RevisionProgress = {
+  totalUtterances: number;
+  coveredUtterances: number;
+  percent: number;
+  sections: RevisionProgressSection[];
+  activeSection?: RevisionProgressSection;
+};
+
+function buildRevisionProgress(
+  transcript: ReturnType<typeof mapTranscript>,
+  revision: RevisionItem[],
+): RevisionProgress | null {
+  const transcriptSeqs = transcript
+    .map((item) => Number(item.id))
+    .filter((seq) => Number.isInteger(seq))
+    .sort((left, right) => left - right);
+
+  if (transcriptSeqs.length === 0) return null;
+
+  const coveredSeqs = new Set<number>();
+  revision.forEach((item) => {
+    const seqs = item.sourceSeqs.length > 0
+      ? item.sourceSeqs
+      : buildSeqRange(item.sourceSeqStart, item.sourceSeqEnd);
+    seqs.forEach((seq) => coveredSeqs.add(Number(seq)));
+  });
+
+  const sections: RevisionProgressSection[] = [];
+  for (let startIndex = 0; startIndex < transcriptSeqs.length; startIndex += REVISION_PROGRESS_SECTION_SIZE) {
+    const sectionSeqs = transcriptSeqs.slice(startIndex, startIndex + REVISION_PROGRESS_SECTION_SIZE);
+    const coveredUtterances = sectionSeqs.filter((seq) => coveredSeqs.has(seq)).length;
+    const status: RevisionProgressSection['status'] =
+      coveredUtterances >= sectionSeqs.length
+        ? 'completed'
+        : coveredUtterances > 0
+          ? 'generating'
+          : 'waiting';
+
+    sections.push({
+      index: sections.length + 1,
+      startSeq: sectionSeqs[0],
+      endSeq: sectionSeqs[sectionSeqs.length - 1],
+      totalUtterances: sectionSeqs.length,
+      coveredUtterances,
+      status,
+    });
+  }
+
+  const coveredUtterances = transcriptSeqs.filter((seq) => coveredSeqs.has(seq)).length;
+  const activeSection =
+    sections.find((section) => section.status === 'generating')
+    ?? sections.find((section) => section.status === 'waiting')
+    ?? sections[sections.length - 1];
+
+  return {
+    totalUtterances: transcriptSeqs.length,
+    coveredUtterances,
+    percent: Math.min(100, Math.round((coveredUtterances / transcriptSeqs.length) * 100)),
+    sections,
+    activeSection,
+  };
+}
+
+function buildSeqRange(startSeq: number, endSeq: number): number[] {
+  if (!Number.isFinite(startSeq) || !Number.isFinite(endSeq) || startSeq > endSeq) return [];
+  return Array.from({ length: endSeq - startSeq + 1 }, (_, index) => startSeq + index);
 }

@@ -128,6 +128,12 @@ export const zhCN = {
   'revise.synthesizing': '合成中...',
   'revise.synthesizeAll': '合成全部',
   'revise.revisingTranscript': '正在修订转写...',
+  'revise.analyzingSections': '正在分析章节信息...',
+  'revise.preparingSuggestions': '准备生成修改建议',
+  'revise.progressSummary': '已修订 {{covered}}/{{total}} 条话语...',
+  'revise.progressSection': '正在优化第 {{current}}/{{total}} 段',
+  'revise.progressItems': '已生成 {{items}} 条建议 · 覆盖 {{covered}}/{{total}} 条话语',
+  'revise.progressSectionRange': '第 {{current}} 段 · #{{start}}-{{end}}',
   'revise.noRevision': '暂无修订数据。',
 
   'revisionCard.scoreDetail': '评分详情',

@@ -13,6 +13,10 @@ export interface TranscriptItem {
 export interface RevisionItem {
   id: string;
   speaker: string;
+  sourceSeqStart: number;
+  sourceSeqEnd: number;
+  sourceSeqCount: number;
+  sourceSeqs: number[];
   startTime: number;
   endTime: number;
   cue: string;

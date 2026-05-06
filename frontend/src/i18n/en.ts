@@ -128,6 +128,12 @@ export const en = {
   'revise.synthesizing': 'Synthesizing...',
   'revise.synthesizeAll': 'Synthesize All',
   'revise.revisingTranscript': 'Revising transcript...',
+  'revise.analyzingSections': 'Analyzing section information...',
+  'revise.preparingSuggestions': 'Preparing revision suggestions',
+  'revise.progressSummary': '{{covered}}/{{total}} utterances revised...',
+  'revise.progressSection': 'Optimizing section {{current}}/{{total}}',
+  'revise.progressItems': '{{items}} suggestions generated · {{covered}}/{{total}} utterances covered',
+  'revise.progressSectionRange': 'Section {{current}} · #{{start}}-{{end}}',
   'revise.noRevision': 'No revision data available.',
 
   'revisionCard.scoreDetail': 'Score Detail',

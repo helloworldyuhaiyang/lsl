@@ -66,6 +66,9 @@ class _VolcSpeakerRow:
 
 
 _VOLC_TTS_2_SOURCE_ROWS: list[tuple[str, str, str, str, str, str, str, str]] = [
+    ("多语种", "Tim", "蒂姆", "Tim", "en_male_tim_uranus_bigtts", "美式英语", "情感变化、指令遵循、ASMR", ""),
+    ("多语种", "Dacey", "黛西", "Dacey", "en_female_dacey_uranus_bigtts", "美式英语", "情感变化、指令遵循、ASMR", ""),
+    ("多语种", "Stokie", "斯托奇", "Stokie", "en_female_stokie_uranus_bigtts", "美式英语", "情感变化、指令遵循、ASMR", ""),
     ("通用场景", "Vivi 2.0", "Vivi", "Vivi", "zh_female_vv_uranus_bigtts", "中文、日文、印尼、墨西哥西班牙语", "情感变化、指令遵循、ASMR", ""),
     ("通用场景", "小何 2.0", "小何", "Xiaohe", "zh_female_xiaohe_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
     ("视频配音", "猴哥 2.0", "猴哥", "Monkey King", "zh_male_sunwukong_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
@@ -91,9 +94,6 @@ _VOLC_TTS_2_SOURCE_ROWS: list[tuple[str, str, str, str, str, str, str, str]] = [
     ("通用场景", "魅力女友 2.0", "魅力女友", "Charming Girlfriend", "zh_female_meilinvyou_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
     ("视频配音", "流畅女声 2.0", "流畅女声", "Fluent Female Voice", "zh_female_liuchangnv_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
     ("视频配音", "儒雅逸辰 2.0", "儒雅逸辰", "Refined Yichen", "zh_male_ruyayichen_uranus_bigtts", "中文", "情感变化、指令遵循、ASMR", ""),
-    ("多语种", "Tim", "蒂姆", "Tim", "en_male_tim_uranus_bigtts", "美式英语", "情感变化、指令遵循、ASMR", ""),
-    ("多语种", "Dacey", "黛西", "Dacey", "en_female_dacey_uranus_bigtts", "美式英语", "情感变化、指令遵循、ASMR", ""),
-    ("多语种", "Stokie", "斯托奇", "Stokie", "en_female_stokie_uranus_bigtts", "美式英语", "情感变化、指令遵循、ASMR", ""),
     ("有声阅读", "儿童绘本", "儿童绘本", "Children's Picture Book", "zh_female_xueayi_saturn_bigtts", "中文", "指令遵循", "剪映"),
     ("视频配音", "大壹", "大壹", "Dayi", "zh_male_dayi_saturn_bigtts", "中文", "指令遵循", "剪映"),
     ("视频配音", "黑猫侦探社咪仔", "黑猫侦探社咪仔", "Mizai Detective", "zh_female_mizai_saturn_bigtts", "中文", "指令遵循", "剪映"),
