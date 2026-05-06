@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { Play, Pause, SkipBack, SkipForward, ArrowLeft, ListRestart, Repeat, Repeat1, Volume2 } from 'lucide-react';
+import { useParams } from 'react-router-dom';
+import { Play, Pause, SkipBack, SkipForward, ListRestart, Repeat, Repeat1, Volume2 } from 'lucide-react';
 import { formatTime } from '@/utils/formatTime';
 import { useApp } from '@/context/AppContext';
 import type { RevisionItem, SpeakerMapping } from '@/types';
 import type { TtsSpeakerItem } from '@/types/api';
+import { SessionFlowNav } from '@/components/SessionFlowNav';
 import { VoiceAvatar } from '@/components/VoiceAvatar';
 import { NotFound } from './NotFound';
 import { parseCueText } from '@/utils/cueParser';
@@ -435,16 +436,16 @@ export function Listening() {
       {/* Hidden audio element */}
       <audio ref={audioRef} preload="metadata" />
 
-      {/* Breadcrumb */}
-      <Link to={`/session/${session.id}/revise`} className="inline-flex items-center gap-1.5 text-[12px] text-slate-500 hover:text-indigo-600 transition-colors">
-        <ArrowLeft className="w-3.5 h-3.5" />
-        {t('common.revise')}
-      </Link>
+      <SessionFlowNav
+        sessionId={session.id}
+        currentStep="listen"
+        canRevise={true}
+        canListen={true}
+      />
 
       {/* Header - hidden on mobile to save space */}
       <div className="hidden sm:block">
-        <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider">{t('listening.step')}</span>
-        <div className="mt-1 flex items-start justify-between gap-3">
+        <div className="flex items-start justify-between gap-3">
           <div>
             <h1 className="text-[22px] font-bold text-slate-900 tracking-tight">{t('listening.title')}</h1>
             <p className="text-[13px] text-slate-500 mt-0.5">{t('listening.subtitle')}</p>
@@ -463,22 +464,14 @@ export function Listening() {
       {/* Mobile mini header */}
       <div className="sm:hidden flex items-center justify-between">
         <h1 className="text-[16px] font-bold text-slate-800">{t('listening.mobileTitle')}</h1>
-        <div className="flex items-center gap-2">
-          <TranslationButton
-            active={translationMode !== 'english'}
-            isTranslating={revisionTranslation.isTranslating}
-            failed={revisionTranslation.translation?.status_name === 'failed' || revisionTranslation.hasStuckItems}
-            needsUpdate={revisionTranslation.needsUpdate}
-            onClick={() => {
-              if (revisionTranslation.translation?.status_name === 'failed' || revisionTranslation.needsUpdate || revisionTranslation.hasStuckItems) {
-                void revisionTranslation.retry();
-                return;
-              }
-              setTranslationMode((current) => current === 'english' ? 'peek' : 'english');
-            }}
-          />
-          <span className="text-[11px] text-slate-400">{t('listening.sentences', { count: revision.length })}</span>
-        </div>
+        <TranslationModeControls
+          mode={translationMode}
+          isTranslating={revisionTranslation.isTranslating}
+          needsUpdate={revisionTranslation.needsUpdate}
+          failed={revisionTranslation.translation?.status_name === 'failed' || revisionTranslation.hasStuckItems}
+          onModeChange={setTranslationMode}
+          onRetry={() => void revisionTranslation.retry()}
+        />
       </div>
 
       {/* Subtitle Cards */}

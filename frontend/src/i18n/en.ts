@@ -101,17 +101,17 @@ export const en = {
   'fileUpload.support': 'MP3, WAV, M4A up to 100MB',
 
   'session.loading': 'Loading session...',
-  'session.goToRevise': 'Go to Revise',
-  'session.stepSession': 'Session',
-  'session.stepRevise': 'Revise',
-  'session.stepListening': 'Listening',
   'session.generatingScriptTranscript': 'Generating script transcript...',
   'session.transcriptionProcessing': 'Transcription is still processing...',
   'session.transcript': 'Transcript',
-  'session.utterances': '{{count}} utterances',
+
+  'sessionFlow.label': 'Session workflow',
+  'sessionFlow.backToSessions': 'All sessions',
+  'sessionFlow.overview': 'Overview',
+  'sessionFlow.revise': 'Revise',
+  'sessionFlow.listen': 'Listen',
 
   'revise.loading': 'Loading revision...',
-  'revise.step': 'Step 2',
   'revise.title': 'Revise',
   'revise.scriptGenerating': 'Generating script transcript...',
   'revise.spansGenerated': '{{count}} revised spans generated...',
@@ -140,6 +140,7 @@ export const en = {
   'revise.progressSummary': '{{covered}}/{{total}} utterances revised...',
   'revise.progressSection': 'Optimizing section {{current}}/{{total}}',
   'revise.progressItems': '{{items}} suggestions generated · {{covered}}/{{total}} utterances covered',
+  'revise.revisionSectionProgress': '{{generated}}/{{total}} utterances · {{items}} suggestions generated',
   'revise.progressSectionRange': 'Section {{current}} · #{{start}}-{{end}}',
   'revise.noRevision': 'No revision data available.',
 
@@ -158,7 +159,6 @@ export const en = {
   'translation.short': 'Translation',
 
   'listening.loading': 'Loading listening practice...',
-  'listening.step': 'Step 3',
   'listening.title': 'Listening Practice',
   'listening.mobileTitle': 'Listening',
   'listening.subtitle': 'Follow along with the audio and review each sentence',

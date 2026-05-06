@@ -8,12 +8,19 @@ from lsl.modules.job.service import JobService
 from lsl.modules.job.types import JobData, JobRunResult, JobStatus
 from lsl.modules.revision.model import UtterancesRevisionItemModel, UtterancesRevisionModel
 from lsl.modules.revision.repo import RevisionRepository
-from lsl.modules.revision.schema import RevisionData, RevisionItemData, UpdateRevisionItemRequest
+from lsl.modules.revision.schema import (
+    RevisionData,
+    RevisionItemData,
+    RevisionPlanSectionData,
+    RevisionPreviewData,
+    UpdateRevisionItemRequest,
+)
 from lsl.modules.revision.types import (
     GeneratedRevisionItem,
     RevisionGenerateRequest,
     RevisionGenerator,
     RevisionPromptUtterance,
+    RevisionSection,
     RevisionStatus,
     RevisionSuggestion,
 )
@@ -53,6 +60,10 @@ class RevisionService:
         if model is None:
             raise ValueError("revision not found")
         return self._to_revision_data(model)
+
+    def get_revision_preview(self, *, session_id: str) -> RevisionPreviewData:
+        revision = self.get_revision(session_id=session_id)
+        return RevisionPreviewData(revision=revision, items=revision.items)
 
     def create_revision(
         self,
@@ -94,6 +105,7 @@ class RevisionService:
             preserve_existing_drafts=False,
             error_code=None,
             error_message=None,
+            plan_sections=[],
         )
         revision = self._to_revision_data(model)
 
@@ -148,6 +160,7 @@ class RevisionService:
             preserve_existing_drafts=False,
             error_code=None,
             error_message=None,
+            plan_sections=[],
         )
         model = self._repository.set_job_id(session_id=session_id, job_id=None)
         self._enqueue_revision_translation(session_id=session_id)
@@ -215,24 +228,40 @@ class RevisionService:
 
         try:
             first_batch_logged = False
+            plan_sections = self._resolve_plan_sections(req)
+            if not self._is_active_revision_job(session_id=session_id, job_id=job_id):
+                logger.info("Revision job superseded before plan save session_id=%s transcript_id=%s job_id=%s", session_id, transcript_id, job_id)
+                return JobRunResult(status=JobStatus.CANCELED, error_message="revision job superseded")
+
+            serialized_plan_sections = [self._serialize_section(section) for section in plan_sections]
+            self._repository.save_plan_sections(session_id=session_id, sections=serialized_plan_sections)
+            logger.info(
+                "Revision section plan saved session_id=%s transcript_id=%s job_id=%s sections=%s elapsed_ms=%s",
+                session_id,
+                transcript_id,
+                job_id,
+                len(serialized_plan_sections),
+                int((perf_counter() - started_perf) * 1000),
+            )
+
             # The generator yields item batches; every batch is saved so GET /revisions
             # can show partial results while the job is still generating.
-            for segment_suggestions in self._generator.generate_progressively(req):
+            for section_suggestions in self._generate_from_plan_progressively(req=req, sections=plan_sections):
                 if not self._is_active_revision_job(session_id=session_id, job_id=job_id):
                     logger.info("Revision job superseded session_id=%s transcript_id=%s job_id=%s", session_id, transcript_id, job_id)
                     return JobRunResult(status=JobStatus.CANCELED, error_message="revision job superseded")
 
-                generated_segment_items = [
+                generated_section_items = [
                     self._build_generated_revision_item(
                         transcript_id=transcript_id,
                         utterance_by_seq=utterance_by_seq,
                         suggestion=suggestion,
                     )
-                    for suggestion in segment_suggestions
+                    for suggestion in section_suggestions
                 ]
                 current_items = self._merge_generated_items(
                     current_items=current_items,
-                    incoming_items=generated_segment_items,
+                    incoming_items=generated_section_items,
                 )
 
                 self._repository.save_revision(
@@ -253,7 +282,7 @@ class RevisionService:
                         session_id,
                         transcript_id,
                         job_id,
-                        len(generated_segment_items),
+                        len(generated_section_items),
                         len(current_items),
                         int((perf_counter() - started_perf) * 1000),
                     )
@@ -263,7 +292,7 @@ class RevisionService:
                         session_id,
                         transcript_id,
                         job_id,
-                        len(generated_segment_items),
+                        len(generated_section_items),
                         len(current_items),
                         int((perf_counter() - started_perf) * 1000),
                     )
@@ -422,6 +451,92 @@ class RevisionService:
                 filtered[key] = value
         return filtered
 
+    def _resolve_plan_sections(self, req: RevisionGenerateRequest) -> list[RevisionSection]:
+        planner = getattr(self._generator, "plan_sections", None)
+        if callable(planner):
+            sections = planner(req) or []
+        else:
+            sections = self._build_default_sections(req.utterances)
+        return self._normalize_sections(sections=sections, utterances=req.utterances)
+
+    def _generate_from_plan_progressively(
+        self,
+        *,
+        req: RevisionGenerateRequest,
+        sections: list[RevisionSection],
+    ):
+        generator = getattr(self._generator, "generate_from_plan_progressively", None)
+        if callable(generator):
+            yield from generator(req, sections)
+            return
+        yield from self._generator.generate_progressively(req)
+
+    @staticmethod
+    def _normalize_sections(
+        *,
+        sections: list[RevisionSection],
+        utterances: list[RevisionPromptUtterance],
+    ) -> list[RevisionSection]:
+        utterance_seqs = [int(item.utterance_seq) for item in utterances]
+        if not utterance_seqs:
+            return []
+        utterance_seq_set = set(utterance_seqs)
+
+        normalized: list[RevisionSection] = []
+        for section in sorted(sections, key=lambda item: (int(item.start_seq), int(item.end_seq))):
+            start_seq = int(section.start_seq)
+            end_seq = int(section.end_seq)
+            if start_seq > end_seq:
+                continue
+            section_seqs = list(range(start_seq, end_seq + 1))
+            if any(seq not in utterance_seq_set for seq in section_seqs):
+                continue
+            normalized.append(
+                RevisionSection(
+                    section_index=len(normalized) + 1,
+                    start_seq=start_seq,
+                    end_seq=end_seq,
+                    title=section.title.strip() or f"Section {len(normalized) + 1}",
+                    summary=section.summary.strip(),
+                )
+            )
+
+        covered_seqs = [
+            seq
+            for section in normalized
+            for seq in range(int(section.start_seq), int(section.end_seq) + 1)
+        ]
+        if covered_seqs != utterance_seqs:
+            return RevisionService._build_default_sections(utterances)
+        return normalized
+
+    @staticmethod
+    def _build_default_sections(utterances: list[RevisionPromptUtterance]) -> list[RevisionSection]:
+        if not utterances:
+            return []
+        return [
+            RevisionSection(
+                section_index=1,
+                start_seq=int(utterances[0].utterance_seq),
+                end_seq=int(utterances[-1].utterance_seq),
+                title="Full transcript",
+                summary="Transcript is revised as one section.",
+            )
+        ]
+
+    @staticmethod
+    def _serialize_section(section: RevisionSection) -> dict[str, object]:
+        start_seq = int(section.start_seq)
+        end_seq = int(section.end_seq)
+        return {
+            "section_index": int(section.section_index),
+            "title": section.title,
+            "summary": section.summary,
+            "start_seq": start_seq,
+            "end_seq": end_seq,
+            "target_utterance_count": max(0, end_seq - start_seq + 1),
+        }
+
     def _is_active_revision_job(self, *, session_id: str, job_id: str) -> bool:
         model = self._repository.get_revision_by_session_id(session_id)
         return model is not None and str(model.job_id or "") == job_id
@@ -470,10 +585,25 @@ class RevisionService:
             error_code=model.error_code,
             error_message=model.error_message,
             item_count=int(model.item_count),
+            plan_sections=self._to_revision_plan_sections(model.plan_sections_json),
             created_at=model.created_at,
             updated_at=model.updated_at,
             items=items,
         )
+
+    @staticmethod
+    def _to_revision_plan_sections(value: object) -> list[RevisionPlanSectionData]:
+        if not isinstance(value, list):
+            return []
+        sections: list[RevisionPlanSectionData] = []
+        for raw_section in value:
+            if not isinstance(raw_section, dict):
+                continue
+            try:
+                sections.append(RevisionPlanSectionData(**raw_section))
+            except Exception:
+                continue
+        return sorted(sections, key=lambda item: int(item.section_index))
 
     @staticmethod
     def _to_revision_item_data(model: UtterancesRevisionItemModel) -> RevisionItemData:

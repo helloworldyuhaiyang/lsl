@@ -98,7 +98,6 @@ export function RevisionCard({
           <span className="text-[11px] text-slate-400 font-mono">
             {formatTime(item.startTime)} - {formatTime(item.endTime)}
           </span>
-          <span className="text-[10px] text-slate-400 font-mono">#{item.id}</span>
         </div>
         <div className="flex items-center gap-2">
           <TranslationButton

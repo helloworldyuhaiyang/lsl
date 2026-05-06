@@ -58,8 +58,8 @@ class RevisionGenerateRequest:
 
 
 @dataclass(frozen=True, slots=True)
-class RevisionSegment:
-    segment_index: int
+class RevisionSection:
+    section_index: int
     start_seq: int
     end_seq: int
     title: str = ""
@@ -73,6 +73,16 @@ class RevisionGenerator(Protocol):
         ...
 
     def generate_progressively(self, req: RevisionGenerateRequest) -> Iterator[list["RevisionSuggestion"]]:
+        ...
+
+    def plan_sections(self, req: RevisionGenerateRequest) -> list[RevisionSection]:
+        ...
+
+    def generate_from_plan_progressively(
+        self,
+        req: RevisionGenerateRequest,
+        sections: list[RevisionSection],
+    ) -> Iterator[list["RevisionSuggestion"]]:
         ...
 
 

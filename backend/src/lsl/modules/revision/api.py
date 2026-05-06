@@ -9,6 +9,7 @@ from lsl.modules.revision.schema import (
     CreateRevisionRequest,
     RevisionData,
     RevisionItemData,
+    RevisionPreviewData,
     UpdateRevisionItemRequest,
 )
 from lsl.modules.revision.service import RevisionService
@@ -57,6 +58,20 @@ def get_revision(
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return ApiResponse(data=revision)
+
+
+@router.get("/preview", response_model=ApiResponse[RevisionPreviewData])
+def get_revision_preview(
+    session_id: str,
+    revision_service: RevisionService = Depends(get_revision_service),
+):
+    try:
+        preview = revision_service.get_revision_preview(session_id=session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return ApiResponse(data=preview)
 
 
 @router.patch("/items/{item_id}", response_model=ApiResponse[RevisionItemData])

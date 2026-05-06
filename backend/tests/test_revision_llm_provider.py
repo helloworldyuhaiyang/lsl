@@ -8,7 +8,7 @@ from lsl.modules.revision.llm_provider import LLMRevisionGenerator
 from lsl.modules.revision.types import (
     RevisionGenerateRequest,
     RevisionPromptUtterance,
-    RevisionSegment,
+    RevisionSection,
 )
 
 
@@ -42,9 +42,9 @@ def test_generate_normalizes_llm_response(monkeypatch) -> None:
 
     monkeypatch.setattr(
         generator,
-        "_plan_segments",
+        "_plan_sections",
         lambda *, transcript_id, utterances, user_prompt: [
-            RevisionSegment(segment_index=1, start_seq=1, end_seq=2, title="课堂反馈", summary="两句连续表达")
+            RevisionSection(section_index=1, start_seq=1, end_seq=2, title="课堂反馈", summary="两句连续表达")
         ],
     )
     def fake_stream(*, transcript_id, request_name, messages):
@@ -109,7 +109,7 @@ def test_get_client_ignores_proxy_env(monkeypatch) -> None:
     assert client is generator._get_client()
 
 
-def test_short_transcript_skips_segment_plan(monkeypatch) -> None:
+def test_short_transcript_skips_section_plan(monkeypatch) -> None:
     generator = LLMRevisionGenerator(_build_settings())
     req = RevisionGenerateRequest(
         transcript_id="task-short",
@@ -120,8 +120,8 @@ def test_short_transcript_skips_segment_plan(monkeypatch) -> None:
         ],
     )
 
-    def fail_plan_segments(*, transcript_id, utterances, user_prompt):
-        raise AssertionError("segment_plan should be skipped for short transcripts")
+    def fail_plan_sections(*, transcript_id, utterances, user_prompt):
+        raise AssertionError("section_plan should be skipped for short transcripts")
 
     def fake_stream(*, transcript_id, request_name, messages):
         yield (
@@ -129,7 +129,7 @@ def test_short_transcript_skips_segment_plan(monkeypatch) -> None:
             '{"source_seqs":[1],"suggested_text":"Thanks.","score":95}\n'
         )
 
-    monkeypatch.setattr(generator, "_plan_segments", fail_plan_segments)
+    monkeypatch.setattr(generator, "_plan_sections", fail_plan_sections)
     monkeypatch.setattr(generator, "_request_chat_completion_stream", fake_stream)
 
     result = generator.generate(req)
@@ -137,7 +137,7 @@ def test_short_transcript_skips_segment_plan(monkeypatch) -> None:
     assert [item.source_seqs for item in result] == [[0], [1]]
 
 
-def test_generate_includes_context_around_target_segment(monkeypatch) -> None:
+def test_generate_includes_context_around_target_section(monkeypatch) -> None:
     generator = LLMRevisionGenerator(_build_settings())
     req = RevisionGenerateRequest(
         transcript_id="task-2",
@@ -152,7 +152,7 @@ def test_generate_includes_context_around_target_segment(monkeypatch) -> None:
     captured_payloads: list[dict[str, object]] = []
 
     def fake_stream(*, transcript_id, request_name, messages):
-        if request_name.startswith("segment_revision"):
+        if request_name.startswith("section_revision"):
             user_message = next(item for item in messages if item["role"] == "user")
             content = user_message["content"]
             json_start = content.index("{")
@@ -166,13 +166,13 @@ def test_generate_includes_context_around_target_segment(monkeypatch) -> None:
 
     monkeypatch.setattr(generator, "_request_chat_completion_stream", fake_stream)
 
-    result = generator._generate_single_segment_revision(
+    result = generator._generate_single_section_revision(
         transcript_id=req.transcript_id,
         utterances=req.utterances,
         user_prompt=req.user_prompt,
         target_language=req.target_language,
         cue_language=req.cue_language,
-        segment=RevisionSegment(segment_index=1, start_seq=1, end_seq=2, title="学习反馈", summary="用户表达看法"),
+        section=RevisionSection(section_index=1, start_seq=1, end_seq=2, title="学习反馈", summary="用户表达看法"),
         utterance_index_by_seq={int(item.utterance_seq): index for index, item in enumerate(req.utterances)},
     )
 
@@ -202,14 +202,14 @@ def test_revision_prompt_includes_existing_cue_additions(monkeypatch) -> None:
 
     monkeypatch.setattr(
         generator,
-        "_plan_segments",
+        "_plan_sections",
         lambda *, transcript_id, utterances, user_prompt: [
-            RevisionSegment(segment_index=1, start_seq=0, end_seq=0, title="Greeting", summary="One greeting")
+            RevisionSection(section_index=1, start_seq=0, end_seq=0, title="Greeting", summary="One greeting")
         ],
     )
 
     def fake_stream(*, transcript_id, request_name, messages):
-        if request_name.startswith("segment_revision"):
+        if request_name.startswith("section_revision"):
             user_message = next(item for item in messages if item["role"] == "user")
             content = user_message["content"]
             captured_payloads.append(json.loads(content[content.index("{"):]))
@@ -229,9 +229,9 @@ def test_revision_prompt_includes_existing_cue_additions(monkeypatch) -> None:
 def test_revision_prompt_uses_target_language_for_cues() -> None:
     generator = LLMRevisionGenerator(_build_settings())
 
-    english_messages = generator._build_segment_revision_messages(
+    english_messages = generator._build_section_revision_messages(
         transcript_id="task-en",
-        segment=RevisionSegment(segment_index=1, start_seq=0, end_seq=0),
+        section=RevisionSection(section_index=1, start_seq=0, end_seq=0),
         user_prompt=None,
         target_language="en-US",
         cue_language=None,
@@ -247,9 +247,9 @@ def test_revision_prompt_uses_target_language_for_cues() -> None:
     assert "translate or rewrite that CUE into English" in english_system
     assert "[Open with relaxed, natural curiosity]" in english_system
 
-    chinese_messages = generator._build_segment_revision_messages(
+    chinese_messages = generator._build_section_revision_messages(
         transcript_id="task-zh",
-        segment=RevisionSegment(segment_index=1, start_seq=0, end_seq=0),
+        section=RevisionSection(section_index=1, start_seq=0, end_seq=0),
         user_prompt=None,
         target_language="zh-CN",
         cue_language=None,
@@ -264,9 +264,9 @@ def test_revision_prompt_uses_target_language_for_cues() -> None:
     assert "translate or rewrite that CUE into Simplified Chinese" in chinese_system
     assert "[用轻松自然的语气开口]" in chinese_system
 
-    mixed_messages = generator._build_segment_revision_messages(
+    mixed_messages = generator._build_section_revision_messages(
         transcript_id="task-en-cue-zh",
-        segment=RevisionSegment(segment_index=1, start_seq=0, end_seq=0),
+        section=RevisionSection(section_index=1, start_seq=0, end_seq=0),
         user_prompt=None,
         target_language="en-US",
         cue_language="zh-CN",
@@ -294,7 +294,7 @@ def test_append_debug_dump_writes_request_and_response(tmp_path) -> None:
             REVISION_LLM_DEBUG_FILE=str(debug_file),
         )
     )
-    messages = generator._build_segment_plan_messages(
+    messages = generator._build_section_plan_messages(
         transcript_id="task-debug",
         utterances=[
             RevisionPromptUtterance(
@@ -308,20 +308,20 @@ def test_append_debug_dump_writes_request_and_response(tmp_path) -> None:
 
     generator._append_debug_dump(
         transcript_id="task-debug",
-        request_name="segment_plan",
+        request_name="section_plan",
         messages=messages,
         started_at=datetime(2026, 3, 8, 10, 0, tzinfo=timezone.utc),
         finished_at=datetime(2026, 3, 8, 10, 0, 1, tzinfo=timezone.utc),
         duration_ms=1000,
-        response_content='{"segments":[]}',
+        response_content='{"sections":[]}',
         error_message=None,
         finish_reason="stop",
     )
 
     dump_text = debug_file.read_text(encoding="utf-8")
-    assert "request_name: segment_plan" in dump_text
+    assert "request_name: section_plan" in dump_text
     assert "transcript_id: task-debug" in dump_text
     assert '"role": "system"' in dump_text
     assert '"role": "user"' in dump_text
-    assert '{"segments":[]}' in dump_text
+    assert '{"sections":[]}' in dump_text
     assert "finish_reason: stop" in dump_text

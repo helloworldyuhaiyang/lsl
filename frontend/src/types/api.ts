@@ -235,6 +235,15 @@ export interface RevisionItemResponse {
   updated_at: string
 }
 
+export interface RevisionPlanSectionResponse {
+  section_index: number
+  title: string
+  summary: string
+  start_seq: number
+  end_seq: number
+  target_utterance_count: number
+}
+
 export interface RevisionResponse {
   revision_id: string
   session_id: string
@@ -247,8 +256,14 @@ export interface RevisionResponse {
   error_code?: string | null
   error_message?: string | null
   item_count: number
+  plan_sections: RevisionPlanSectionResponse[]
   created_at: string
   updated_at: string
+  items: RevisionItemResponse[]
+}
+
+export interface RevisionPreviewResponse {
+  revision: RevisionResponse
   items: RevisionItemResponse[]
 }
 

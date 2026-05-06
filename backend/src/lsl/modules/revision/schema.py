@@ -81,6 +81,15 @@ class RevisionItemData(BaseModel):
     updated_at: datetime
 
 
+class RevisionPlanSectionData(BaseModel):
+    section_index: int
+    title: str = ""
+    summary: str = ""
+    start_seq: int
+    end_seq: int
+    target_utterance_count: int
+
+
 class RevisionData(BaseModel):
     revision_id: str
     session_id: str
@@ -93,6 +102,7 @@ class RevisionData(BaseModel):
     error_code: str | None = None
     error_message: str | None = None
     item_count: int
+    plan_sections: list[RevisionPlanSectionData] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
     items: list[RevisionItemData]
@@ -111,6 +121,7 @@ class RevisionData(BaseModel):
         error_code: str | None,
         error_message: str | None,
         item_count: int,
+        plan_sections: list[RevisionPlanSectionData],
         created_at: datetime,
         updated_at: datetime,
         items: list[RevisionItemData],
@@ -127,7 +138,13 @@ class RevisionData(BaseModel):
             error_code=error_code,
             error_message=error_message,
             item_count=item_count,
+            plan_sections=plan_sections,
             created_at=created_at,
             updated_at=updated_at,
             items=items,
         )
+
+
+class RevisionPreviewData(BaseModel):
+    revision: RevisionData
+    items: list[RevisionItemData]

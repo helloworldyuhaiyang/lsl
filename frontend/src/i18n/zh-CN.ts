@@ -101,17 +101,17 @@ export const zhCN = {
   'fileUpload.support': '支持 MP3、WAV、M4A，最大 100MB',
 
   'session.loading': '正在加载会话...',
-  'session.goToRevise': '前往修订',
-  'session.stepSession': '会话',
-  'session.stepRevise': '修订',
-  'session.stepListening': '听力',
   'session.generatingScriptTranscript': '正在生成脚本转写...',
   'session.transcriptionProcessing': '转写仍在处理中...',
   'session.transcript': '转写文本',
-  'session.utterances': '{{count}} 条话语',
+
+  'sessionFlow.label': '会话流程',
+  'sessionFlow.backToSessions': '全部会话',
+  'sessionFlow.overview': '概览',
+  'sessionFlow.revise': '修订',
+  'sessionFlow.listen': '练听力',
 
   'revise.loading': '正在加载修订...',
-  'revise.step': '第 2 步',
   'revise.title': '修订',
   'revise.scriptGenerating': '正在生成脚本转写...',
   'revise.spansGenerated': '已生成 {{count}} 个修订片段...',
@@ -140,6 +140,7 @@ export const zhCN = {
   'revise.progressSummary': '已修订 {{covered}}/{{total}} 条话语...',
   'revise.progressSection': '正在优化第 {{current}}/{{total}} 段',
   'revise.progressItems': '已生成 {{items}} 条建议 · 覆盖 {{covered}}/{{total}} 条话语',
+  'revise.revisionSectionProgress': '{{generated}}/{{total}} 条话语 · 已生成 {{items}} 条建议',
   'revise.progressSectionRange': '第 {{current}} 段 · #{{start}}-{{end}}',
   'revise.noRevision': '暂无修订数据。',
 
@@ -158,7 +159,6 @@ export const zhCN = {
   'translation.short': '译文',
 
   'listening.loading': '正在加载听力练习...',
-  'listening.step': '第 3 步',
   'listening.title': '听力练习',
   'listening.mobileTitle': '听力',
   'listening.subtitle': '跟随音频练习，并复查每一句',

@@ -28,6 +28,12 @@ class UtterancesRevisionModel(Base):
     job_id: Mapped[str | None] = mapped_column(UUIDHexString(), nullable=True)
     user_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     cue_language: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    plan_sections_json: Mapped[list[dict]] = mapped_column(
+        JSONString(),
+        nullable=False,
+        default=list,
+        server_default=text("'[]'"),
+    )
     status: Mapped[int] = mapped_column("x_status", SmallInteger, nullable=False, server_default=text("0"))
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)

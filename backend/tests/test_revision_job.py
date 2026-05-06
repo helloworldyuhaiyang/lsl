@@ -106,6 +106,7 @@ def test_revision_generation_job_updates_revision_items() -> None:
     assert created.status_name == "generating"
     assert created.job_id is not None
     assert created.items == []
+    assert created.plan_sections == []
 
     completed = job_service.run_job(job_id=created.job_id, worker_id="test-worker")
     assert completed.status == int(JobStatus.COMPLETED)
@@ -113,6 +114,15 @@ def test_revision_generation_job_updates_revision_items() -> None:
     revision = revision_service.get_revision(session_id=session.session.session_id)
     assert revision.status_name == "completed"
     assert [item.suggested_text for item in revision.items] == ["Hello there.", "Nice to meet you."]
+    assert len(revision.plan_sections) == 1
+    assert revision.plan_sections[0].section_index == 1
+    assert revision.plan_sections[0].start_seq == 0
+    assert revision.plan_sections[0].end_seq == 1
+    assert revision.plan_sections[0].target_utterance_count == 2
+
+    preview = revision_service.get_revision_preview(session_id=session.session.session_id)
+    assert preview.revision.revision_id == revision.revision_id
+    assert [item.suggested_text for item in preview.items] == ["Hello there.", "Nice to meet you."]
 
 
 def test_revision_prompt_additions_preserve_cue() -> None:

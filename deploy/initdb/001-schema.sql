@@ -214,6 +214,7 @@ CREATE TABLE IF NOT EXISTS public.revision_revisions (
     job_id          VARCHAR(32),                                   -- Current revision_generation job id.
     user_prompt     TEXT,                                          -- User revision prompt.
     cue_language    VARCHAR(16),                                   -- Delivery CUE language tag.
+    plan_sections_json TEXT NOT NULL DEFAULT '[]',                 -- Planned revision sections JSON array.
     x_status        SMALLINT NOT NULL DEFAULT 0,                   -- 0 pending, 1 generating, 2 completed, 3 failed.
     error_code      VARCHAR(64),                                   -- Stable failure code.
     error_message   TEXT,                                          -- Failure detail.

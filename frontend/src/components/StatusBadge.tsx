@@ -38,11 +38,11 @@ export function StatusBadge({ status, showIcon = true }: StatusBadgeProps) {
 
   return (
     <span className={cn(
-      'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border',
+      'inline-flex max-w-full items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold leading-none whitespace-nowrap sm:gap-1.5 sm:px-2.5 sm:text-[11px]',
       config.className
     )}>
-      {showIcon && <Icon className={cn('w-3 h-3', status === 'processing' && 'animate-spin')} />}
-      {t(config.labelKey)}
+      {showIcon && <Icon className={cn('h-3 w-3 shrink-0', status === 'processing' && 'animate-spin')} />}
+      <span className="min-w-0 truncate">{t(config.labelKey)}</span>
     </span>
   );
 }

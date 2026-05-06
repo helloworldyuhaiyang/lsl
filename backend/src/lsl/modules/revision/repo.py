@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from contextlib import contextmanager
-from typing import Iterator
+from typing import Any, Iterator
 
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -71,6 +71,7 @@ class RevisionRepository:
         preserve_existing_drafts: bool = True,
         error_code: str | None = None,
         error_message: str | None = None,
+        plan_sections: list[dict[str, Any]] | None = None,
     ) -> UtterancesRevisionModel:
         normalized_session_id = self._require_uuid(session_id, field_name="session_id")
         normalized_transcript_id = self._require_uuid(transcript_id, field_name="transcript_id")
@@ -101,6 +102,8 @@ class RevisionRepository:
                 model.transcript_id = normalized_transcript_id
                 model.user_prompt = user_prompt
                 model.cue_language = cue_language
+                if plan_sections is not None:
+                    model.plan_sections_json = self._normalize_plan_sections(plan_sections)
                 model.status = int(status)
                 model.error_code = error_code
                 model.error_message = error_message
@@ -176,6 +179,32 @@ class RevisionRepository:
                 return model
         except SQLAlchemyError as exc:  # pragma: no cover
             raise RuntimeError(f"Failed to save revision: {exc}") from exc
+
+    def save_plan_sections(
+        self,
+        *,
+        session_id: str,
+        sections: list[dict[str, Any]],
+    ) -> UtterancesRevisionModel:
+        normalized_session_id = self._require_uuid(session_id, field_name="session_id")
+        try:
+            with self._session_scope() as db:
+                stmt = (
+                    select(UtterancesRevisionModel)
+                    .options(selectinload(UtterancesRevisionModel.items))
+                    .where(UtterancesRevisionModel.session_id == normalized_session_id)
+                    .limit(1)
+                )
+                model = db.execute(stmt).scalar_one_or_none()
+                if model is None:
+                    raise RuntimeError("Revision not found")
+                model.plan_sections_json = self._normalize_plan_sections(sections)
+                db.commit()
+                db.refresh(model)
+                _ = list(model.items)
+                return model
+        except SQLAlchemyError as exc:  # pragma: no cover
+            raise RuntimeError(f"Failed to save revision plan sections: {exc}") from exc
 
     def set_job_id(self, *, session_id: str, job_id: str | None) -> UtterancesRevisionModel:
         normalized_session_id = self._require_uuid(session_id, field_name="session_id")
@@ -268,3 +297,33 @@ class RevisionRepository:
                 raise RuntimeError("Revision item source_seq_end does not match source_seqs")
             if int(item.source_seq_count) != len(ordered_source_seqs):
                 raise RuntimeError("Revision item source_seq_count does not match source_seqs")
+
+    @staticmethod
+    def _normalize_plan_sections(value: Any) -> list[dict[str, Any]]:
+        if not isinstance(value, list):
+            return []
+
+        sections: list[dict[str, Any]] = []
+        for raw_section in value:
+            if not isinstance(raw_section, dict):
+                continue
+            try:
+                section_index = int(raw_section.get("section_index"))
+                start_seq = int(raw_section.get("start_seq"))
+                end_seq = int(raw_section.get("end_seq"))
+                target_utterance_count = int(raw_section.get("target_utterance_count"))
+            except (TypeError, ValueError):
+                continue
+            if section_index <= 0 or start_seq > end_seq or target_utterance_count <= 0:
+                continue
+            sections.append(
+                {
+                    "section_index": section_index,
+                    "title": str(raw_section.get("title") or "").strip(),
+                    "summary": str(raw_section.get("summary") or "").strip(),
+                    "start_seq": start_seq,
+                    "end_seq": end_seq,
+                    "target_utterance_count": target_utterance_count,
+                }
+            )
+        return sorted(sections, key=lambda item: int(item["section_index"]))

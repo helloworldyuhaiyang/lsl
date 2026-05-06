@@ -37,15 +37,15 @@ export function SpeakerSelect({ speakers, mappings, onMappingChange, voices = []
         {speakers.map(speaker => {
           const selectedVoice = getVoiceForSpeaker(speaker, mappings, voices);
           return (
-          <div key={speaker} className="flex items-center gap-3 bg-slate-50 rounded-lg p-2.5">
-            <div className="flex items-center justify-center w-8">
+          <div key={speaker} className="flex min-w-0 items-center gap-2.5 rounded-lg bg-slate-50 p-2.5 sm:gap-3">
+            <div className="flex w-8 shrink-0 items-center justify-center">
               <VoiceAvatar voice={selectedVoice} fallbackLabel={speaker} locale={language} />
             </div>
             <Select
               value={getVoiceIdForSpeaker(speaker)}
               onValueChange={(value) => onMappingChange(speaker, value)}
             >
-              <SelectTrigger className="flex-1 h-8 text-[12px] border-slate-200 bg-white">
+              <SelectTrigger className="h-8 min-w-0 flex-1 overflow-hidden border-slate-200 bg-white text-[12px] [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:truncate">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

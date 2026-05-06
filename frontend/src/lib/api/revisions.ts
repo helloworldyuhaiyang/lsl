@@ -1,5 +1,5 @@
 import { requestJson } from '@/lib/api/client'
-import type { CreateRevisionRequest, RevisionItemResponse, RevisionResponse, UpdateRevisionItemRequest } from '@/types/api'
+import type { CreateRevisionRequest, RevisionItemResponse, RevisionPreviewResponse, RevisionResponse, UpdateRevisionItemRequest } from '@/types/api'
 
 interface ApiResponse<T> {
   code: number
@@ -9,6 +9,16 @@ interface ApiResponse<T> {
 
 export async function getRevision(sessionId: string): Promise<RevisionResponse> {
   const response = await requestJson<ApiResponse<RevisionResponse>>('/revisions', {
+    query: {
+      session_id: sessionId,
+    },
+  })
+
+  return response.data
+}
+
+export async function getRevisionPreview(sessionId: string): Promise<RevisionPreviewResponse> {
+  const response = await requestJson<ApiResponse<RevisionPreviewResponse>>('/revisions/preview', {
     query: {
       session_id: sessionId,
     },

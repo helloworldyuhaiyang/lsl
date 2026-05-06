@@ -48,15 +48,62 @@ export function SessionTable({ sessions }: SessionTableProps) {
         </button>
       </div>
 
+      {/* Mobile list */}
+      <div className="space-y-2 sm:hidden">
+        {filteredSessions.map((session) => (
+          <Link
+            key={session.id}
+            to={`/session/${session.id}`}
+            className="block rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition-colors hover:bg-slate-50"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                  session.type === 'audio' ? 'bg-violet-50 text-violet-500' : 'bg-sky-50 text-sky-500'
+                }`}>
+                  {session.type === 'audio' ? <FileAudio className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-[13px] font-medium text-slate-800">{session.title}</p>
+                  {session.description && (
+                    <p className="truncate text-[11px] text-slate-400">{session.description}</p>
+                  )}
+                </div>
+              </div>
+              <div className="shrink-0">
+                <StatusBadge status={session.status} />
+              </div>
+            </div>
+            <div className="mt-3 flex items-center gap-2 text-[11px] text-slate-500">
+              <span className={`rounded-md px-2 py-0.5 font-medium ${
+                session.type === 'audio'
+                  ? 'bg-violet-50 text-violet-600'
+                  : 'bg-sky-50 text-sky-600'
+              }`}>
+                {session.type === 'audio' ? t('common.audio') : t('common.script')}
+              </span>
+              <span className="tabular-nums">{formatDuration(session.duration)}</span>
+              <span className="h-1 w-1 rounded-full bg-slate-300" />
+              <span>{formatDate(session.createdAt)}</span>
+            </div>
+          </Link>
+        ))}
+      </div>
+      {filteredSessions.length === 0 && (
+        <div className="rounded-lg border border-slate-200 bg-white py-12 text-center shadow-sm sm:hidden">
+          <p className="text-[14px] text-slate-400">{t('sessionTable.noSessions')}</p>
+        </div>
+      )}
+
       {/* Table */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+      <div className="hidden bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm sm:block">
         <table className="w-full">
           <thead>
             <tr className="border-b border-slate-100 bg-slate-50/50">
               <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-3 px-5">{t('common.session')}</th>
               <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-3 px-4 w-[100px]">{t('common.type')}</th>
               <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-3 px-4 w-[100px]">{t('common.duration')}</th>
-              <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-3 px-4 w-[120px]">{t('common.status')}</th>
+              <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-3 px-4 w-[132px]">{t('common.status')}</th>
               <th className="text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider py-3 px-4 w-[100px]">{t('common.created')}</th>
               <th className="py-3 px-4 w-[60px]"></th>
             </tr>
@@ -97,7 +144,9 @@ export function SessionTable({ sessions }: SessionTableProps) {
                   <Link to={`/session/${session.id}`}>{formatDuration(session.duration)}</Link>
                 </td>
                 <td className="py-3.5 px-4">
-                  <Link to={`/session/${session.id}`}><StatusBadge status={session.status} /></Link>
+                  <Link to={`/session/${session.id}`} className="block max-w-full overflow-hidden">
+                    <StatusBadge status={session.status} />
+                  </Link>
                 </td>
                 <td className="py-3.5 px-4 text-[12px] text-slate-500">
                   <Link to={`/session/${session.id}`}>{formatDate(session.createdAt)}</Link>
