@@ -48,71 +48,119 @@ def _get_env_str(name: str, default: str) -> str:
 
 @dataclass(frozen=True)
 class Settings:
-    # 存储相关
+    # 文件存储 provider；运行服务时需配置为 fake 或 oss。
     STORAGE_PROVIDER: str = ""
+    # 资源读取基础 URL，会与 object_key 拼成最终访问地址；可填 OSS bucket 域名或 CDN 域名。
     ASSET_BASE_URL: str = ""
+    # 服务端上传文件到对象存储时的 HTTP 超时时间，单位秒。
     ASSET_PUT_TIMEOUT: float = 120.0
+
+    # 数据库连接地址。默认使用 SQLite；PostgreSQL 使用 postgresql://...。
     DATABASE_URL: str = "sqlite:///./data/lsl.sqlite3"
+    # PostgreSQL 连接池最小连接数；SQLite 不使用连接池。
     DB_POOL_MIN_SIZE: int = 1
+    # PostgreSQL 连接池最大连接数；必须大于等于 DB_POOL_MIN_SIZE。
     DB_POOL_MAX_SIZE: int = 10
+    # PostgreSQL 连接池获取连接的超时时间，单位秒。
     DB_POOL_TIMEOUT: float = 30.0
+
+    # 是否在 FastAPI lifespan 中启动后台 job runner。
     JOB_RUNNER_ENABLED: bool = True
-    JOB_RUNNER_INTERVAL_SECONDS: float = 2.0
+    # job runner 轮询 due jobs 的间隔，单位秒。
+    JOB_RUNNER_INTERVAL_SECONDS: float = 1.0
+    # 每轮最多 claim 的 job 数。
     JOB_RUNNER_BATCH_SIZE: int = 10
+    # job runner 同时执行 job 的最大线程数。
     JOB_RUNNER_MAX_WORKERS: int = 4
 
-    # OSS
+    # 阿里云 OSS region，例如 cn-hangzhou。
     OSS_REGION: str = "cn-hangzhou"
+    # 阿里云 OSS bucket 名称。
     OSS_BUCKET: str = ""
+    # 阿里云 OSS AccessKey ID；只用于服务端生成预签名上传地址。
     OSS_ACCESS_KEY_ID: str = ""
+    # 阿里云 OSS AccessKey Secret；不要写入日志。
     OSS_ACCESS_KEY_SECRET: str = ""
 
-    # ASR
+    # ASR provider。本地可用 noop/fake；真实识别使用 volc。
     ASR_PROVIDER: str = "noop"
+    # 火山 ASR App Key。
     VOLC_APP_KEY: str = ""
+    # 火山 ASR Access Key。
     VOLC_ACCESS_KEY: str = ""
+    # 火山 ASR resource id。
     VOLC_RESOURCE_ID: str = "volc.bigasr.auc"
+    # 火山 ASR submit 接口地址。
     VOLC_SUBMIT_URL: str = "https://openspeech-direct.zijieapi.com/api/v3/auc/bigmodel/submit"
+    # 火山 ASR query 接口地址。
     VOLC_QUERY_URL: str = "https://openspeech-direct.zijieapi.com/api/v3/auc/bigmodel/query"
+    # 火山 ASR 模型名。
     VOLC_MODEL_NAME: str = "bigmodel"
+    # 火山 ASR 请求使用的用户标识。
     VOLC_UID: str = "lsl_user"
-    VOLC_HTTP_TIMEOUT: float = 15.0
+    # 火山 ASR HTTP 超时时间，单位秒。
+    VOLC_HTTP_TIMEOUT: float = 90.0
 
-    # Revision / LLM
+    # Revision provider。本地联调用 fake；真实改写使用 llm。
     REVISION_PROVIDER: str = "fake"
+    # Revision LLM API Key。
     REVISION_LLM_API_KEY: str = ""
+    # Revision LLM OpenAI-compatible base URL。
     REVISION_LLM_BASE_URL: str = "https://ark.cn-beijing.volces.com/api/v3"
+    # Revision LLM 模型名。
     REVISION_LLM_MODEL: str = "doubao-1-5-pro-32k-250115"
-    REVISION_LLM_HTTP_TIMEOUT: float = 60.0
+    # Revision LLM HTTP 超时时间，单位秒。
+    REVISION_LLM_HTTP_TIMEOUT: float = 90.0
+    # Revision LLM 调试输出文件路径；空值表示不落盘。
     REVISION_LLM_DEBUG_FILE: str = ""
 
-    # AI Script / LLM
+    # AI Script provider。本地联调用 fake；默认使用 llm 生成 CUE 脚本。
     SCRIPT_PROVIDER: str = "llm"
+    # Script LLM API Key；未配置时复用 Revision LLM API Key。
     SCRIPT_LLM_API_KEY: str = ""
+    # Script LLM base URL；未配置时复用 Revision LLM base URL。
     SCRIPT_LLM_BASE_URL: str = "https://ark.cn-beijing.volces.com/api/v3"
+    # Script LLM 模型名；未配置时复用 Revision LLM 模型名。
     SCRIPT_LLM_MODEL: str = "doubao-1-5-pro-32k-250115"
-    SCRIPT_LLM_HTTP_TIMEOUT: float = 60.0
+    # Script LLM HTTP 超时时间，单位秒。
+    SCRIPT_LLM_HTTP_TIMEOUT: float = 90.0
 
-    # Translation / LLM
+    # Translation provider。本地联调用 fake；真实翻译使用 llm。
     TRANSLATION_PROVIDER: str = "fake"
+    # Translation LLM API Key；未配置时复用 Revision LLM API Key。
     TRANSLATION_LLM_API_KEY: str = ""
+    # Translation LLM base URL；未配置时复用 Revision LLM base URL。
     TRANSLATION_LLM_BASE_URL: str = "https://ark.cn-beijing.volces.com/api/v3"
+    # Translation LLM 模型名；未配置时复用 Revision LLM 模型名。
     TRANSLATION_LLM_MODEL: str = "doubao-1-5-pro-32k-250115"
-    TRANSLATION_LLM_HTTP_TIMEOUT: float = 60.0
+    # Translation LLM HTTP 超时时间，单位秒。
+    TRANSLATION_LLM_HTTP_TIMEOUT: float = 90.0
+    # 未显式传 target_language 时的默认翻译目标语言。
     TRANSLATION_DEFAULT_TARGET_LANGUAGE: str = "zh-CN"
 
-    # TTS
+    # TTS provider。本地联调用 fake/noop；真实合成使用 volc。
     TTS_PROVIDER: str = "fake"
+    # TTS 单句试听缓存 Redis 地址；Redis 不可用时会回退进程内缓存。
     TTS_REDIS_URL: str = "redis://127.0.0.1:6379/0"
+    # TTS 单句试听缓存 TTL，单位秒。
     TTS_CACHE_TTL_SECONDS: int = 7200
+    # 火山 TTS App ID。
     TTS_VOLC_APP_ID: str = ""
+    # 火山 TTS Access Key。
     TTS_VOLC_ACCESS_KEY: str = ""
+    # 火山 TTS resource id。
     TTS_VOLC_RESOURCE_ID: str = "seed-tts-2.0"
+    # 火山 TTS HTTP 接口地址。
     TTS_VOLC_URL: str = "https://openspeech.bytedance.com/api/v3/tts/unidirectional"
-    TTS_VOLC_HTTP_TIMEOUT: float = 60.0
+    # 火山 TTS HTTP 超时时间，单位秒。
+    TTS_VOLC_HTTP_TIMEOUT: float = 90.0
+    # 默认输出音频格式。
     TTS_DEFAULT_FORMAT: str = "mp3"
+    # 默认情绪强度，火山 V3 取值范围 1 到 5。
     TTS_DEFAULT_EMOTION_SCALE: float = 4.0
+    # 默认语速，火山 V3 取值范围 -50 到 100。
     TTS_DEFAULT_SPEECH_RATE: float = 0.0
+    # 默认音量，火山 V3 取值范围 -50 到 100。
     TTS_DEFAULT_LOUDNESS_RATE: float = 0.0
 
     @classmethod
@@ -124,6 +172,7 @@ class Settings:
         bucket = os.getenv("OSS_BUCKET", cls.OSS_BUCKET).strip()
 
         asset_base_url = os.getenv("ASSET_BASE_URL", cls.ASSET_BASE_URL).strip().rstrip("/")
+        asset_put_timeout = _get_env_float("ASSET_PUT_TIMEOUT", cls.ASSET_PUT_TIMEOUT)
         database_url = _get_env_str("DATABASE_URL", cls.DATABASE_URL)
         db_pool_min_size = _get_env_int("DB_POOL_MIN_SIZE", cls.DB_POOL_MIN_SIZE)
         db_pool_max_size = _get_env_int("DB_POOL_MAX_SIZE", cls.DB_POOL_MAX_SIZE)
@@ -154,6 +203,8 @@ class Settings:
         tts_default_speech_rate = _get_env_float("TTS_DEFAULT_SPEECH_RATE", cls.TTS_DEFAULT_SPEECH_RATE)
         tts_default_loudness_rate = _get_env_float("TTS_DEFAULT_LOUDNESS_RATE", cls.TTS_DEFAULT_LOUDNESS_RATE)
 
+        if asset_put_timeout <= 0:
+            raise ValueError("ASSET_PUT_TIMEOUT must be greater than 0")
         if db_pool_min_size <= 0:
             raise ValueError("DB_POOL_MIN_SIZE must be greater than 0")
         if db_pool_max_size < db_pool_min_size:
@@ -184,7 +235,7 @@ class Settings:
             raise ValueError("TTS_DEFAULT_SPEECH_RATE must be between -50 and 100")
         if not -50 <= tts_default_loudness_rate <= 100:
             raise ValueError("TTS_DEFAULT_LOUDNESS_RATE must be between -50 and 100")
-        
+
         tts_volc_app_id = _get_env_str("TTS_VOLC_APP_ID", cls.TTS_VOLC_APP_ID)
         tts_volc_access_key = _get_env_str("TTS_VOLC_ACCESS_KEY", cls.TTS_VOLC_ACCESS_KEY)
         tts_provider = os.getenv("TTS_PROVIDER", cls.TTS_PROVIDER).strip().lower() or cls.TTS_PROVIDER
@@ -206,6 +257,7 @@ class Settings:
         return cls(
             STORAGE_PROVIDER=provider,
             ASSET_BASE_URL=asset_base_url,
+            ASSET_PUT_TIMEOUT=asset_put_timeout,
             DATABASE_URL=database_url,
             DB_POOL_MIN_SIZE=db_pool_min_size,
             DB_POOL_MAX_SIZE=db_pool_max_size,
