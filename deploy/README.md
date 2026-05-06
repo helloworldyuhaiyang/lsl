@@ -21,16 +21,35 @@ deploy/
 ├── backend.requirements.txt
 ├── docker-compose.yml
 ├── initdb/
-│   ├── 001-schema.sql
-│   ├── 002-rename-x-columns.postgres.sql
-│   ├── 003-add-script-generation-preview.postgres.sql
-│   └── 004-add-revision-job-id.postgres.sql
+│   └── 001-schema.sql
 ├── nginx/
 │   └── default.conf
 └── web.Dockerfile
 ```
 
-## 1. 复制环境变量模板
+## 1. 准备服务器
+
+服务器需要 Linux x86、Docker 和 Docker Compose plugin。Ubuntu 可直接安装：
+
+```bash
+sudo apt update
+sudo apt install -y docker.io docker-compose-plugin git
+sudo systemctl enable --now docker
+```
+
+如果服务器防火墙开启了限制，至少放行 `HTTP_PORT` 对应端口，默认是 `80`。
+
+## 2. 拉取代码
+
+```bash
+git clone <your-repo-url> lsl
+cd lsl
+git checkout <release-branch-or-tag>
+```
+
+如果你是直接把当前工作区上传到服务器，确保服务器上执行命令的位置是仓库根目录。
+
+## 3. 配置环境变量
 
 ```bash
 cd deploy
@@ -38,29 +57,67 @@ cp .env.example .env
 cp app.env.example app.env
 ```
 
-你至少要先改这几项：
+### 3.1 基础运行配置
 
-- `deploy/.env`
-  - `HTTP_PORT`
-  - `POSTGRES_PASSWORD`
-- `deploy/app.env`
-  - `DATABASE_URL`
-  - `STORAGE_PROVIDER`
-  - `ASSET_BASE_URL`
-  - `OSS_BUCKET`
-  - `OSS_ACCESS_KEY_ID`
-  - `OSS_ACCESS_KEY_SECRET`
+先改 `deploy/.env`：
 
-如果你要接真实能力，再改：
+```env
+HTTP_PORT=80
+POSTGRES_PASSWORD=<strong-password>
+```
 
-- `ASR_PROVIDER=volc`
-- `REVISION_PROVIDER=llm`
-- `TTS_PROVIDER=volc`
+再改 `deploy/app.env`，保证数据库密码和 `POSTGRES_PASSWORD` 一致：
 
-## 2. 启动
+```env
+DATABASE_URL=postgresql://lsl:<strong-password>@postgres:5432/lsl
+```
+
+### 3.2 线上能力配置
+
+配置真实 OSS，否则上传链路不可用：
+
+```env
+STORAGE_PROVIDER=oss
+ASSET_BASE_URL=https://your-bucket-or-cdn-domain
+OSS_REGION=cn-hangzhou
+OSS_BUCKET=your-bucket
+OSS_ACCESS_KEY_ID=your-access-key-id
+OSS_ACCESS_KEY_SECRET=your-access-key-secret
+```
+
+配置真实语音识别：
+
+```env
+ASR_PROVIDER=volc
+VOLC_APP_KEY=your-volc-app-key
+VOLC_ACCESS_KEY=your-volc-access-key
+```
+
+配置真实 Revision、AI Script 和 Translation：
+
+```env
+REVISION_PROVIDER=llm
+REVISION_LLM_API_KEY=your-llm-api-key
+REVISION_LLM_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
+REVISION_LLM_MODEL=doubao-seed-2-0-pro-260215
+
+SCRIPT_PROVIDER=llm
+TRANSLATION_PROVIDER=llm
+```
+
+`SCRIPT_LLM_*` 和 `TRANSLATION_LLM_*` 留空时，会复用 `REVISION_LLM_*` 的 key、base URL 和模型。
+
+配置真实 TTS：
+
+```env
+TTS_PROVIDER=volc
+TTS_VOLC_APP_ID=your-volc-tts-app-id
+TTS_VOLC_ACCESS_KEY=your-volc-tts-access-key
+```
+
+## 4. 启动
 
 ```bash
-cd deploy
 docker compose up -d --build
 ```
 
@@ -72,7 +129,7 @@ docker compose logs -f backend
 docker compose logs -f web
 ```
 
-## 3. 验证
+## 5. 验证
 
 健康检查：
 
@@ -92,7 +149,21 @@ API 入口：
 http://<your-server-ip>:<HTTP_PORT>/api/...
 ```
 
-## 4. 数据库初始化
+如果健康检查失败，先看后端日志：
+
+```bash
+docker compose logs --tail=200 backend
+```
+
+常见问题：
+
+- `DATABASE_URL` 密码和 `deploy/.env` 里的 `POSTGRES_PASSWORD` 不一致。
+- `STORAGE_PROVIDER=oss` 但 OSS bucket 或 AK/SK 没配。
+- `SCRIPT_PROVIDER=llm` 但没有配置可用的 LLM key。
+- `ASR_PROVIDER=volc` 或 `TTS_PROVIDER=volc` 但火山凭证没配。
+- 服务器安全组或防火墙没有放行 `HTTP_PORT`。
+
+## 6. 数据库初始化
 
 `postgres` 容器第一次启动时，会自动执行：
 
@@ -109,10 +180,12 @@ docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" < ini
 
 ```bash
 cd deploy
-docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" < initdb/003-add-script-generation-preview.postgres.sql
-docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" < initdb/004-add-revision-job-id.postgres.sql
+docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" < initdb/<migration>.sql
 ```
-## 5. 常用操作
+
+当前仓库只有 `001-schema.sql`，新部署不需要额外执行 migration。
+
+## 7. 常用操作
 
 重建服务：
 
@@ -135,8 +208,18 @@ cd deploy
 docker compose down -v
 ```
 
-## 6. 说明
+查看日志：
+
+```bash
+cd deploy
+docker compose logs -f backend
+docker compose logs -f web
+```
+
+## 8. 说明
 
 - 前端通过同域名 `/api` 访问后端，避免额外处理 CORS。
 - 后端固定单 worker，这和当前项目里 `revision` / `tts` 使用进程内线程池的实现更匹配。
 - 这套文件默认在服务器上直接构建镜像。如果你在 Apple Silicon 本地构建后再推到 Linux x86 服务器，需要额外指定 `linux/amd64`。
+- 当前 compose 只提供 HTTP。正式公网发布建议在外层接云厂商 HTTPS、Cloudflare、Caddy 或 Nginx TLS。
+- `docker compose down -v` 会删除 PostgreSQL 和 Redis 数据卷，线上不要随便执行。
