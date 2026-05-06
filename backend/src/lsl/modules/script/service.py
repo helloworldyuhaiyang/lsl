@@ -17,13 +17,14 @@ from lsl.modules.script.schema import (
     ScriptGenerationPreviewData,
     ScriptGenerationPreviewItemData,
 )
-from lsl.modules.script.types import GeneratedScriptTurn, ScriptGenerateRequest, ScriptGenerator
+from lsl.modules.script.types import GeneratedScriptTurn, ScriptGenerateRequest, ScriptGenerator, ScriptSection
 from lsl.modules.session.schema import CreateSessionRequest, UpdateSessionRequest
 from lsl.modules.session.service import SessionService
 from lsl.modules.transcript.service import TranscriptService
 from lsl.modules.transcript.types import TranscriptUtterance
 
 _WORD_PATTERN = re.compile(r"[A-Za-z0-9']+")
+_SCRIPT_PLAN_TURN_THRESHOLD = 16
 logger = logging.getLogger(__name__)
 
 
@@ -153,7 +154,25 @@ class ScriptService:
         try:
             generated_turns: list[GeneratedScriptTurn] = []
             first_preview_logged = False
-            for turn in self._generator.generate_progressively(req):
+            plan_sections = self._resolve_plan_sections(req)
+            if plan_sections:
+                self._repository.save_plan_sections(
+                    generation_id=generation_id,
+                    sections=[self._serialize_section(section) for section in plan_sections],
+                )
+                logger.info(
+                    "Script generation plan saved generation_id=%s sections=%s elapsed_ms=%s",
+                    generation_id,
+                    len(plan_sections),
+                    int((time.monotonic() - started_at) * 1000),
+                )
+
+            turn_iter = (
+                self._generate_from_plan_progressively(req=req, sections=plan_sections)
+                if plan_sections
+                else self._generator.generate_progressively(req)
+            )
+            for turn in turn_iter:
                 if len(generated_turns) >= generation.turn_count:
                     break
                 normalized_turn = GeneratedScriptTurn(
@@ -207,6 +226,7 @@ class ScriptService:
             raw_result = {
                 "provider": self._generator.provider_name,
                 "prompt": generation.prompt,
+                "stage": "completed",
                 "utterances": [
                     {
                         "speaker": item.speaker,
@@ -277,6 +297,79 @@ class ScriptService:
             return JobRunResult(status=JobStatus.FAILED, error_code="SCRIPT_GENERATION_FAILED", error_message=str(exc))
 
         return JobRunResult(status=JobStatus.COMPLETED, progress=100)
+
+    def _resolve_plan_sections(self, req: ScriptGenerateRequest) -> list[ScriptSection]:
+        if req.turn_count <= _SCRIPT_PLAN_TURN_THRESHOLD:
+            return []
+
+        planner = getattr(self._generator, "plan_sections", None)
+        if callable(planner):
+            sections = planner(req) or []
+        else:
+            sections = self._build_default_sections(turn_count=req.turn_count)
+        return self._normalize_sections(sections=sections, turn_count=req.turn_count)
+
+    def _generate_from_plan_progressively(
+        self,
+        *,
+        req: ScriptGenerateRequest,
+        sections: list[ScriptSection],
+    ):
+        generator = getattr(self._generator, "generate_from_plan_progressively", None)
+        if callable(generator):
+            yield from generator(req, sections)
+            return
+        yield from self._generator.generate_progressively(req)
+
+    @staticmethod
+    def _normalize_sections(*, sections: list[ScriptSection], turn_count: int) -> list[ScriptSection]:
+        normalized: list[ScriptSection] = []
+        remaining_turns = int(turn_count)
+        for section in sections:
+            if remaining_turns <= 0:
+                break
+            target_turn_count = max(1, min(int(section.target_turn_count), remaining_turns))
+            normalized.append(
+                ScriptSection(
+                    section_index=len(normalized) + 1,
+                    title=section.title.strip() or f"Section {len(normalized) + 1}",
+                    summary=section.summary.strip(),
+                    target_turn_count=target_turn_count,
+                )
+            )
+            remaining_turns -= target_turn_count
+
+        if not normalized or remaining_turns != 0:
+            return ScriptService._build_default_sections(turn_count=turn_count)
+        return normalized
+
+    @staticmethod
+    def _build_default_sections(*, turn_count: int) -> list[ScriptSection]:
+        remaining = max(0, int(turn_count))
+        sections: list[ScriptSection] = []
+        while remaining > 0:
+            section_turn_count = min(12, remaining)
+            if remaining > 12 and remaining - section_turn_count < 4:
+                section_turn_count = max(1, remaining // 2)
+            sections.append(
+                ScriptSection(
+                    section_index=len(sections) + 1,
+                    title=f"Section {len(sections) + 1}",
+                    summary="Continue the dialogue naturally and move the scenario forward.",
+                    target_turn_count=section_turn_count,
+                )
+            )
+            remaining -= section_turn_count
+        return sections
+
+    @staticmethod
+    def _serialize_section(section: ScriptSection) -> dict[str, object]:
+        return {
+            "section_index": int(section.section_index),
+            "title": section.title,
+            "summary": section.summary,
+            "target_turn_count": int(section.target_turn_count),
+        }
 
     @staticmethod
     def _build_transcript_utterances(

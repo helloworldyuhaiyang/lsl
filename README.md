@@ -4,6 +4,10 @@
 
 Turn your own recording, or an AI-generated script, into listening material that actually matches what you want to practice.
 
+## Vision
+
+LSL makes every need for expression heard, and brings language learning back to real-life situations in service of each person's concrete communication goals.
+
 ## What LSL Is
 
 LSL is dialogue generation software built around `CUE`. Here, `CUE` means cues, signals, and clues that guide how a conversation should be created and delivered. For example, `[English interview scenario, candidate sounds natural and confident]` is a `CUE`, and it influences both the dialogue content and the way the speakers express themselves.

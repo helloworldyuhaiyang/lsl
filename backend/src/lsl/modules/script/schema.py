@@ -106,6 +106,7 @@ class ScriptGenerationData(BaseModel):
     difficulty: str | None = None
     cue_style: str | None = None
     must_include: list[str]
+    plan_sections: list[dict[str, Any]] = Field(default_factory=list)
     raw_result: dict[str, Any] | None = None
     status: int
     status_name: str

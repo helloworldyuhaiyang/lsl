@@ -277,6 +277,7 @@ CREATE TABLE IF NOT EXISTS public.script_generations (
     cue_style          VARCHAR(200),                               -- Requested cue style.
     must_include_json  TEXT NOT NULL DEFAULT '[]',                 -- Required expressions JSON array.
     preview_items_json TEXT NOT NULL DEFAULT '[]',                 -- Incremental generated utterance preview JSON array.
+    plan_sections_json TEXT NOT NULL DEFAULT '[]',                 -- Planned script sections JSON array.
     raw_result_json    TEXT,                                       -- Raw LLM/generator result JSON.
     x_status           SMALLINT NOT NULL DEFAULT 0,                -- 0 pending, 1 generating, 2 completed, 3 failed.
     error_code         VARCHAR(64),                                -- Stable failure code.

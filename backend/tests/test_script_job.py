@@ -19,7 +19,7 @@ from lsl.modules.revision.types import RevisionGenerateRequest, RevisionGenerato
 from lsl.modules.script.repo import ScriptRepository
 from lsl.modules.script.schema import GenerateScriptSessionRequest
 from lsl.modules.script.service import ScriptJobHandler, ScriptService
-from lsl.modules.script.types import GeneratedScript, GeneratedScriptTurn, ScriptGenerateRequest, ScriptGenerator
+from lsl.modules.script.types import GeneratedScript, GeneratedScriptTurn, ScriptGenerateRequest, ScriptGenerator, ScriptSection
 from lsl.modules.session.repo import SessionRepository
 from lsl.modules.session.service import SessionService
 from lsl.modules.transcript.repo import TranscriptRepository
@@ -41,6 +41,42 @@ class FakeScriptGenerator:
         yield from self.generate(req).utterances
 
 
+class PlannedScriptGenerator:
+    provider_name = "planned-script"
+
+    def generate(self, req: ScriptGenerateRequest) -> GeneratedScript:
+        return GeneratedScript(utterances=list(self.generate_progressively(req)))
+
+    def generate_progressively(self, req: ScriptGenerateRequest) -> Iterator[GeneratedScriptTurn]:
+        for index in range(req.turn_count):
+            yield GeneratedScriptTurn(
+                speaker=f"user-{(index % req.speaker_count) + 1}",
+                cue=f"cue {index}",
+                text=f"Line {index}.",
+            )
+
+    def plan_sections(self, req: ScriptGenerateRequest) -> list[ScriptSection]:
+        return [
+            ScriptSection(section_index=1, title="Opening", summary="Start the scenario.", target_turn_count=10),
+            ScriptSection(section_index=2, title="Follow-up", summary="Develop and close.", target_turn_count=req.turn_count - 10),
+        ]
+
+    def generate_from_plan_progressively(
+        self,
+        req: ScriptGenerateRequest,
+        sections: list[ScriptSection],
+    ) -> Iterator[GeneratedScriptTurn]:
+        index = 0
+        for section in sections:
+            for _ in range(section.target_turn_count):
+                yield GeneratedScriptTurn(
+                    speaker=f"user-{(index % req.speaker_count) + 1}",
+                    cue=f"cue {index}",
+                    text=f"Line {index}.",
+                )
+                index += 1
+
+
 class NoopRevisionGenerator:
     provider_name = "noop"
 
@@ -51,7 +87,7 @@ class NoopRevisionGenerator:
         return iter(())
 
 
-def _build_services() -> tuple[ScriptService, JobService, TranscriptService, RevisionService]:
+def _build_services(generator: ScriptGenerator | None = None) -> tuple[ScriptService, JobService, TranscriptService, RevisionService]:
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, class_=OrmSession)
@@ -72,7 +108,7 @@ def _build_services() -> tuple[ScriptService, JobService, TranscriptService, Rev
     )
     script_service = ScriptService(
         repository=ScriptRepository(factory),
-        generator=FakeScriptGenerator(),
+        generator=generator or FakeScriptGenerator(),
         session_service=session_service,
         transcript_service=transcript_service,
         revision_service=revision_service,
@@ -106,3 +142,30 @@ def test_script_generation_job_creates_transcript_and_revision() -> None:
     revision = revision_service.get_revision(session_id=data.session.session.session_id)
     assert revision.transcript_id == generation.transcript_id
     assert len(revision.items) == 2
+
+
+def test_long_script_generation_saves_plan_sections() -> None:
+    script_service, job_service, transcript_service, _ = _build_services(generator=PlannedScriptGenerator())
+
+    data = script_service.generate_session(
+        GenerateScriptSessionRequest(
+            title="Long practice",
+            prompt="practice a longer scenario",
+            turn_count=20,
+        )
+    )
+
+    completed = job_service.run_job(job_id=data.job.job_id, worker_id="test-worker")
+    assert completed.status == int(JobStatus.COMPLETED)
+
+    generation = script_service.get_generation(generation_id=data.generation.generation_id)
+    assert generation.raw_result is not None
+    assert generation.raw_result["stage"] == "completed"
+    assert "plan_sections" not in generation.raw_result
+    assert [section["title"] for section in generation.plan_sections] == ["Opening", "Follow-up"]
+
+    preview = script_service.get_generation_preview(generation_id=data.generation.generation_id)
+    assert len(preview.items) == 20
+
+    transcript = transcript_service.get_transcript(transcript_id=generation.transcript_id or "")
+    assert len(transcript.utterances) == 20

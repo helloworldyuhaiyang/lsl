@@ -45,6 +45,14 @@ class GeneratedScriptTurn:
 
 
 @dataclass(frozen=True, slots=True)
+class ScriptSection:
+    section_index: int
+    title: str
+    summary: str
+    target_turn_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class GeneratedScript:
     utterances: list[GeneratedScriptTurn]
 
@@ -56,4 +64,14 @@ class ScriptGenerator(Protocol):
         ...
 
     def generate_progressively(self, req: ScriptGenerateRequest) -> Iterator[GeneratedScriptTurn]:
+        ...
+
+    def plan_sections(self, req: ScriptGenerateRequest) -> list[ScriptSection]:
+        ...
+
+    def generate_from_plan_progressively(
+        self,
+        req: ScriptGenerateRequest,
+        sections: list[ScriptSection],
+    ) -> Iterator[GeneratedScriptTurn]:
         ...

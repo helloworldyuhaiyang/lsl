@@ -164,12 +164,31 @@ export interface ScriptGenerationResponse {
   target_language?: string | null
   cue_language?: string | null
   prompt: string
+  turn_count: number
+  speaker_count: number
+  difficulty?: string | null
+  cue_style?: string | null
+  must_include: string[]
+  plan_sections: ScriptGenerationPlanSectionResponse[]
+  raw_result?: ScriptGenerationRawResult | null
   status: number
   status_name: string
   error_code?: string | null
   error_message?: string | null
   created_at: string
   updated_at: string
+}
+
+export interface ScriptGenerationPlanSectionResponse {
+  section_index: number
+  title: string
+  summary: string
+  target_turn_count: number
+}
+
+export interface ScriptGenerationRawResult {
+  stage?: string
+  [key: string]: unknown
 }
 
 export interface ScriptGenerationPreviewItemResponse {

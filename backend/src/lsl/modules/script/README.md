@@ -51,6 +51,14 @@ job 完成后会写入：
 
 job 运行中会持续更新 `preview_items_json`。前端 Revise 等待态可以先展示 preview items，等 job 完成后再切换到正式 revision。
 
+当 `turn_count > 16` 时，job 会先生成章节规划并写入 `plan_sections_json`，再按章节顺序生成脚本内容。AI script 章节生成不并发执行，避免上下文断裂、重复铺垫或话题跳跃。
+
+preview 接口在生成中可返回：
+
+- `generation.raw_result.stage="planning"`：正在生成章节规划
+- `generation.plan_sections`：规划好的章节、摘要和目标轮数
+- `items`：已经生成出的逐轮脚本 preview
+
 ## Cue 约束
 
 - 每条生成 utterance 都必须有 cue

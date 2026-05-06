@@ -94,6 +94,8 @@ class ScriptRepository:
                 model = self._get_required_generation(db, generation_id)
                 model.status = int(ScriptGenerationStatus.GENERATING)
                 model.preview_items_json = []
+                model.plan_sections_json = []
+                model.raw_result_json = {"stage": "planning"}
                 model.error_code = None
                 model.error_message = None
                 db.commit()
@@ -101,6 +103,24 @@ class ScriptRepository:
                 return self._to_row(model)
         except SQLAlchemyError as exc:  # pragma: no cover
             raise RuntimeError(f"Failed to mark script generation running: {exc}") from exc
+
+    def save_plan_sections(
+        self,
+        *,
+        generation_id: str,
+        sections: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        try:
+            with self._session_scope() as db:
+                model = self._get_required_generation(db, generation_id)
+                current_raw_result = model.raw_result_json if isinstance(model.raw_result_json, dict) else {}
+                model.plan_sections_json = self._normalize_plan_sections(sections)
+                model.raw_result_json = {**current_raw_result, "stage": "generating"}
+                db.commit()
+                db.refresh(model)
+                return self._to_row(model)
+        except SQLAlchemyError as exc:  # pragma: no cover
+            raise RuntimeError(f"Failed to save script generation plan sections: {exc}") from exc
 
     def save_preview_item(
         self,
@@ -203,6 +223,7 @@ class ScriptRepository:
             "cue_style": model.cue_style,
             "must_include": list(model.must_include_json or []),
             "preview_items": ScriptRepository._normalize_preview_items(model.preview_items_json),
+            "plan_sections": ScriptRepository._normalize_plan_sections(model.plan_sections_json),
             "raw_result": model.raw_result_json,
             "status": status,
             "status_name": script_generation_status_to_name(status),
@@ -252,3 +273,28 @@ class ScriptRepository:
                 }
             )
         return sorted(items, key=lambda item: int(item["seq"]))
+
+    @staticmethod
+    def _normalize_plan_sections(value: Any) -> list[dict[str, Any]]:
+        if not isinstance(value, list):
+            return []
+        sections: list[dict[str, Any]] = []
+        for raw_section in value:
+            if not isinstance(raw_section, dict):
+                continue
+            try:
+                section_index = int(raw_section.get("section_index"))
+                target_turn_count = int(raw_section.get("target_turn_count"))
+            except (TypeError, ValueError):
+                continue
+            if section_index <= 0 or target_turn_count <= 0:
+                continue
+            sections.append(
+                {
+                    "section_index": section_index,
+                    "title": str(raw_section.get("title") or "").strip(),
+                    "summary": str(raw_section.get("summary") or "").strip(),
+                    "target_turn_count": target_turn_count,
+                }
+            )
+        return sorted(sections, key=lambda item: int(item["section_index"]))

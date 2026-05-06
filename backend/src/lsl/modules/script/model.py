@@ -43,6 +43,12 @@ class ScriptGenerationModel(Base):
         default=list,
         server_default=text("'[]'"),
     )
+    plan_sections_json: Mapped[list[dict]] = mapped_column(
+        JSONString(),
+        nullable=False,
+        default=list,
+        server_default=text("'[]'"),
+    )
     raw_result_json: Mapped[dict | None] = mapped_column(JSONString(), nullable=True)
     status: Mapped[int] = mapped_column("x_status", SmallInteger, nullable=False, server_default=text("0"))
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)

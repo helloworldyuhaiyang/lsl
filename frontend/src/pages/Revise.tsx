@@ -23,7 +23,7 @@ import { createRevision, getRevision, updateRevisionItem } from '@/lib/api/revis
 import { createTtsSynthesis, generateTtsItemAudio, getTtsSettings, getTtsSpeakers, getTtsSynthesis, updateTtsSettings } from '@/lib/api/tts';
 import { applyTtsSettings, applyTtsSynthesis, mapRevision, mapSessionItem, mapTranscript } from '@/lib/domain';
 import { getVoiceForSpeaker } from '@/lib/voice';
-import type { ScriptGenerationPreviewItemResponse, TtsSynthesisResponse } from '@/types/api';
+import type { ScriptGenerationPlanSectionResponse, ScriptGenerationPreviewItemResponse, TtsSynthesisResponse } from '@/types/api';
 import { useTranslation } from '@/hooks/useTranslation';
 import { TranslationButton } from '@/components/translation/TranslationButton';
 import { useI18n } from '@/i18n';
@@ -52,6 +52,8 @@ export function Revise() {
   const [notFound, setNotFound] = useState(false);
   const [isPreparingScript, setIsPreparingScript] = useState(false);
   const [scriptPreviewItems, setScriptPreviewItems] = useState<ScriptGenerationPreviewItemResponse[]>([]);
+  const [scriptPlanSections, setScriptPlanSections] = useState<ScriptGenerationPlanSectionResponse[]>([]);
+  const [scriptTargetTurnCount, setScriptTargetTurnCount] = useState<number | null>(null);
 
   const session = useMemo(() => loadedSession || (id ? getSessionById(id) : undefined), [id, getSessionById, loadedSession]);
 
@@ -94,6 +96,10 @@ export function Revise() {
   const revisionProgress = useMemo(
     () => buildRevisionProgress(revisionTranscript, revision),
     [revisionTranscript, revision],
+  );
+  const scriptProgress = useMemo(
+    () => buildScriptGenerationProgress(scriptPlanSections, scriptPreviewItems, scriptTargetTurnCount),
+    [scriptPlanSections, scriptPreviewItems, scriptTargetTurnCount],
   );
 
   useEffect(() => {
@@ -228,6 +234,8 @@ export function Revise() {
               const preview = await getScriptGenerationPreview(scriptGenerationId);
               if (!cancelled) {
                 setScriptPreviewItems(preview.items);
+                setScriptTargetTurnCount(preview.generation.turn_count);
+                setScriptPlanSections(normalizeScriptPlanSections(preview.generation.plan_sections));
               }
               if (preview.generation.status_name === 'generating' || preview.generation.status_name === 'pending') {
                 preparingScript = true;
@@ -270,6 +278,8 @@ export function Revise() {
         if (!cancelled) {
           if (hasRevision) {
             setScriptPreviewItems([]);
+            setScriptPlanSections([]);
+            setScriptTargetTurnCount(null);
           }
           setIsPreparingScript(!hasRevision && preparingScript);
           setIsRevising(revisionGenerating);
@@ -796,11 +806,64 @@ export function Revise() {
             <Loader2 className="h-5 w-5 animate-spin" />
           </div>
           <div className="text-center">
-            <h3 className="text-[14px] font-bold text-slate-800">{t('revise.generatingScript')}</h3>
+            <h3 className="text-[14px] font-bold text-slate-800">
+              {scriptProgress.isPlanning
+                ? t('revise.scriptPlanning')
+                : scriptProgress.activeSection
+                  ? t('revise.scriptGeneratingSection', { current: scriptProgress.activeSection.index, total: scriptProgress.sections.length })
+                  : t('revise.generatingScript')}
+            </h3>
             <p className="mt-1 text-[12px] text-slate-500">
-              {scriptPreviewItems.length > 0 ? t('revise.turnsGenerated', { count: scriptPreviewItems.length }) : t('revise.preparingFirstRevision')}
+              {scriptProgress.isPlanning
+                ? t('revise.scriptPlanningHelp')
+                : scriptProgress.sections.length > 0
+                  ? t('revise.scriptProgressItems', { generated: scriptPreviewItems.length, total: scriptProgress.totalTurns })
+                  : scriptPreviewItems.length > 0 ? t('revise.turnsGenerated', { count: scriptPreviewItems.length }) : t('revise.preparingFirstRevision')}
             </p>
           </div>
+
+          {scriptProgress.sections.length > 0 && (
+            <div className="mt-6 rounded-lg border border-indigo-100 bg-indigo-50/70 px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[12px] font-semibold text-slate-800">{t('revise.scriptPlanReady')}</span>
+                <span className="text-[12px] font-bold text-indigo-600">{scriptProgress.percent}%</span>
+              </div>
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white">
+                <div
+                  className="h-full rounded-full bg-indigo-500 transition-all duration-300"
+                  style={{ width: `${scriptProgress.percent}%` }}
+                />
+              </div>
+              <div className="mt-4 space-y-2">
+                {scriptProgress.sections.map((section) => (
+                  <div key={section.index} className="rounded-md border border-white/80 bg-white/70 px-3 py-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-[12px] font-semibold text-slate-800">
+                        {section.index}. {section.title || t('revise.scriptSectionFallback')}
+                      </p>
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                        section.status === 'completed'
+                          ? 'bg-emerald-50 text-emerald-600'
+                          : section.status === 'generating'
+                            ? 'bg-indigo-100 text-indigo-600'
+                            : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        {section.status === 'completed'
+                          ? t('status.completed')
+                          : section.status === 'generating'
+                            ? t('status.processing')
+                            : t('status.pending')}
+                      </span>
+                    </div>
+                    {section.summary && <p className="mt-1 text-[11px] leading-relaxed text-slate-500">{section.summary}</p>}
+                    <p className="mt-1 text-[11px] text-slate-400">
+                      {t('revise.scriptSectionProgress', { generated: section.generatedTurns, total: section.targetTurns })}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {scriptPreviewItems.length > 0 && (
             <div className="mt-6 space-y-3">
@@ -1067,6 +1130,24 @@ type RevisionProgress = {
   activeSection?: RevisionProgressSection;
 };
 
+type ScriptProgressSection = {
+  index: number;
+  title: string;
+  summary: string;
+  targetTurns: number;
+  generatedTurns: number;
+  status: 'waiting' | 'generating' | 'completed';
+};
+
+type ScriptGenerationProgress = {
+  totalTurns: number;
+  generatedTurns: number;
+  percent: number;
+  sections: ScriptProgressSection[];
+  activeSection?: ScriptProgressSection;
+  isPlanning: boolean;
+};
+
 function buildRevisionProgress(
   transcript: ReturnType<typeof mapTranscript>,
   revision: RevisionItem[],
@@ -1125,4 +1206,60 @@ function buildRevisionProgress(
 function buildSeqRange(startSeq: number, endSeq: number): number[] {
   if (!Number.isFinite(startSeq) || !Number.isFinite(endSeq) || startSeq > endSeq) return [];
   return Array.from({ length: endSeq - startSeq + 1 }, (_, index) => startSeq + index);
+}
+
+function normalizeScriptPlanSections(
+  sections?: ScriptGenerationPlanSectionResponse[] | null,
+): ScriptGenerationPlanSectionResponse[] {
+  if (!Array.isArray(sections)) return [];
+  return sections
+    .map((section, index) => ({
+      section_index: Number.isFinite(section.section_index) ? section.section_index : index + 1,
+      title: String(section.title || '').trim(),
+      summary: String(section.summary || '').trim(),
+      target_turn_count: Number.isFinite(section.target_turn_count) ? Math.max(1, section.target_turn_count) : 1,
+    }))
+    .sort((left, right) => left.section_index - right.section_index);
+}
+
+function buildScriptGenerationProgress(
+  planSections: ScriptGenerationPlanSectionResponse[],
+  previewItems: ScriptGenerationPreviewItemResponse[],
+  targetTurnCount: number | null,
+): ScriptGenerationProgress {
+  const generatedTurns = previewItems.length;
+  const totalTurnsFromPlan = planSections.reduce((sum, section) => sum + Math.max(0, section.target_turn_count), 0);
+  const totalTurns = targetTurnCount || totalTurnsFromPlan || generatedTurns || 0;
+  let generatedBeforeSection = 0;
+  const sections = planSections.map((section, index) => {
+    const targetTurns = Math.max(1, section.target_turn_count);
+    const generatedInSection = Math.max(0, Math.min(targetTurns, generatedTurns - generatedBeforeSection));
+    const status: ScriptProgressSection['status'] =
+      generatedTurns >= generatedBeforeSection + targetTurns
+        ? 'completed'
+        : generatedTurns >= generatedBeforeSection
+          ? 'generating'
+          : 'waiting';
+    generatedBeforeSection += targetTurns;
+    return {
+      index: index + 1,
+      title: section.title,
+      summary: section.summary,
+      targetTurns,
+      generatedTurns: generatedInSection,
+      status,
+    };
+  });
+  const activeSection =
+    sections.find((section) => section.status === 'generating')
+    ?? (generatedTurns > 0 ? sections.find((section) => section.status === 'waiting') : undefined);
+
+  return {
+    totalTurns,
+    generatedTurns,
+    percent: totalTurns > 0 ? Math.min(100, Math.round((generatedTurns / totalTurns) * 100)) : 0,
+    sections,
+    activeSection,
+    isPlanning: (targetTurnCount ?? 0) > 16 && planSections.length === 0 && generatedTurns === 0,
+  };
 }
