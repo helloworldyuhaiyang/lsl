@@ -130,9 +130,9 @@ class Settings:
     # Translation LLM API Key；未配置时复用 Revision LLM API Key。
     TRANSLATION_LLM_API_KEY: str = ""
     # Translation LLM base URL；未配置时复用 Revision LLM base URL。
-    TRANSLATION_LLM_BASE_URL: str = "https://ark.cn-beijing.volces.com/api/v3"
+    TRANSLATION_LLM_BASE_URL: str = ""
     # Translation LLM 模型名；未配置时复用 Revision LLM 模型名。
-    TRANSLATION_LLM_MODEL: str = "doubao-1-5-pro-32k-250115"
+    TRANSLATION_LLM_MODEL: str = ""
     # Translation LLM HTTP 超时时间，单位秒。
     TRANSLATION_LLM_HTTP_TIMEOUT: float = 90.0
     # 未显式传 target_language 时的默认翻译目标语言。
@@ -243,11 +243,13 @@ class Settings:
         revision_llm_api_key = _get_env_str("REVISION_LLM_API_KEY", cls.REVISION_LLM_API_KEY)
         revision_llm_base_url = _get_env_str("REVISION_LLM_BASE_URL", cls.REVISION_LLM_BASE_URL)
         revision_llm_model = _get_env_str("REVISION_LLM_MODEL", cls.REVISION_LLM_MODEL)
+
         script_provider_default = "llm" if revision_provider == "llm" else cls.SCRIPT_PROVIDER
         script_provider = os.getenv("SCRIPT_PROVIDER", script_provider_default).strip().lower() or script_provider_default
         script_llm_api_key = _get_env_str("SCRIPT_LLM_API_KEY", revision_llm_api_key or cls.SCRIPT_LLM_API_KEY)
         script_llm_base_url = _get_env_str("SCRIPT_LLM_BASE_URL", revision_llm_base_url or cls.SCRIPT_LLM_BASE_URL)
         script_llm_model = _get_env_str("SCRIPT_LLM_MODEL", revision_llm_model or cls.SCRIPT_LLM_MODEL)
+
         translation_provider_default = "llm" if revision_provider == "llm" else cls.TRANSLATION_PROVIDER
         translation_provider = os.getenv("TRANSLATION_PROVIDER", translation_provider_default).strip().lower() or translation_provider_default
         translation_llm_api_key = _get_env_str("TRANSLATION_LLM_API_KEY", revision_llm_api_key or cls.TRANSLATION_LLM_API_KEY)

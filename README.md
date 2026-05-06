@@ -219,32 +219,6 @@ DATABASE_URL=postgresql://<user>:<password>@<host>:5432/lsl
 
 When deploying with `PostgreSQL`, initialize the database with the latest schema SQL first.
 
-Configuration reference:
-
-| Config | Purpose |
-| --- | --- |
-| `DATABASE_URL` | SQL database connection. Defaults to SQLite for local development; use a `postgresql://...` URL for PostgreSQL. |
-| `DB_POOL_*` | PostgreSQL connection pool size and checkout timeout. SQLite does not use these pool settings. |
-| `JOB_RUNNER_*` | Controls the background async job runner for ASR, script generation, revision, translation, and TTS jobs. |
-| `STORAGE_PROVIDER` | Selects the asset storage backend. Use `fake` for local tests or `oss` for Alibaba Cloud OSS. |
-| `ASSET_BASE_URL`, `ASSET_PUT_TIMEOUT` | Builds final asset read URLs and controls server-side asset upload timeout. |
-| `OSS_*` | Alibaba Cloud OSS region, bucket, and credentials used to generate pre-signed upload URLs. |
-| `ASR_PROVIDER`, `VOLC_*` | Selects the ASR backend and configures Volcengine ASR credentials, endpoints, model, UID, and timeout. |
-| `REVISION_PROVIDER`, `REVISION_LLM_*` | Selects the revision generator and configures the OpenAI-compatible LLM used for scoring, rewriting, and CUE generation. |
-| `SCRIPT_PROVIDER`, `SCRIPT_LLM_*` | Selects the AI script generator and its LLM settings. Empty key, base URL, and model reuse `REVISION_LLM_*`. |
-| `TRANSLATION_PROVIDER`, `TRANSLATION_LLM_*`, `TRANSLATION_DEFAULT_TARGET_LANGUAGE` | Selects the translation generator, its LLM settings, and the default target language. Empty key, base URL, and model reuse `REVISION_LLM_*`. |
-| `TTS_PROVIDER`, `TTS_VOLC_*` | Selects the TTS backend and configures Volcengine TTS credentials, endpoint, resource, and timeout. |
-| `TTS_REDIS_URL`, `TTS_CACHE_TTL_SECONDS` | Caches single-item TTS previews. If Redis is unavailable, the backend falls back to in-memory cache. |
-| `TTS_DEFAULT_*` | Default audio format and synthesis controls used when a session has no saved TTS settings. |
-
-Provider notes:
-
-- `STORAGE_PROVIDER=oss` requires `OSS_BUCKET`, `OSS_ACCESS_KEY_ID`, and `OSS_ACCESS_KEY_SECRET`.
-- `ASR_PROVIDER=volc` requires `VOLC_APP_KEY` and `VOLC_ACCESS_KEY`; use `fake` or `noop` for local tests.
-- `REVISION_PROVIDER=llm`, `SCRIPT_PROVIDER=llm`, and `TRANSLATION_PROVIDER=llm` use OpenAI-compatible chat APIs; set `SCRIPT_PROVIDER=fake` if you do not configure an LLM key.
-- `SCRIPT_LLM_*` and `TRANSLATION_LLM_*` reuse `REVISION_LLM_*` key, base URL, and model when left empty.
-- `TTS_PROVIDER=volc` requires `TTS_VOLC_APP_ID` and `TTS_VOLC_ACCESS_KEY`; Redis is optional because TTS falls back to in-memory clip cache.
-
 ### 3. Start the backend
 
 ```bash

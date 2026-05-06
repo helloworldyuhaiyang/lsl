@@ -231,32 +231,6 @@ DATABASE_URL=postgresql://<user>:<password>@<host>:5432/lsl
 
 部署到 `PostgreSQL` 时，请先按当前最新的建表 SQL 初始化数据库。
 
-配置作用说明：
-
-| 配置 | 作用 |
-| --- | --- |
-| `DATABASE_URL` | SQL 数据库连接地址。本地默认用 SQLite；使用 PostgreSQL 时改成 `postgresql://...`。 |
-| `DB_POOL_*` | PostgreSQL 连接池大小和获取连接超时时间。SQLite 不使用这些连接池配置。 |
-| `JOB_RUNNER_*` | 控制后台异步 job runner，用于 ASR、脚本生成、Revision、Translation 和 TTS 任务。 |
-| `STORAGE_PROVIDER` | 选择资源存储后端。本地测试可用 `fake`，真实对象存储用阿里云 `oss`。 |
-| `ASSET_BASE_URL`、`ASSET_PUT_TIMEOUT` | 生成最终资源读取 URL，并控制服务端上传资源到对象存储的超时时间。 |
-| `OSS_*` | 阿里云 OSS 的 region、bucket 和访问凭证，用于生成预签名上传地址。 |
-| `ASR_PROVIDER`、`VOLC_*` | 选择 ASR 后端，并配置火山 ASR 的凭证、接口、模型、UID 和超时时间。 |
-| `REVISION_PROVIDER`、`REVISION_LLM_*` | 选择 Revision 生成器，并配置用于评分、改写和 CUE 生成的 OpenAI-compatible LLM。 |
-| `SCRIPT_PROVIDER`、`SCRIPT_LLM_*` | 选择 AI 脚本生成器和对应 LLM 配置。key、base URL、模型名留空时复用 `REVISION_LLM_*`。 |
-| `TRANSLATION_PROVIDER`、`TRANSLATION_LLM_*`、`TRANSLATION_DEFAULT_TARGET_LANGUAGE` | 选择翻译生成器、对应 LLM 配置和默认目标语言。key、base URL、模型名留空时复用 `REVISION_LLM_*`。 |
-| `TTS_PROVIDER`、`TTS_VOLC_*` | 选择 TTS 后端，并配置火山 TTS 的凭证、接口、resource 和超时时间。 |
-| `TTS_REDIS_URL`、`TTS_CACHE_TTL_SECONDS` | 缓存单句 TTS 试听音频。Redis 不可用时，后端会回退到进程内缓存。 |
-| `TTS_DEFAULT_*` | Session 没有保存 TTS 设置时使用的默认音频格式和合成参数。 |
-
-Provider 说明：
-
-- `STORAGE_PROVIDER=oss` 时，`OSS_BUCKET`、`OSS_ACCESS_KEY_ID` 和 `OSS_ACCESS_KEY_SECRET` 必填。
-- `ASR_PROVIDER=volc` 时，`VOLC_APP_KEY` 和 `VOLC_ACCESS_KEY` 必填；本地测试可用 `fake` 或 `noop`。
-- `REVISION_PROVIDER=llm`、`SCRIPT_PROVIDER=llm` 和 `TRANSLATION_PROVIDER=llm` 使用 OpenAI-compatible chat API；没有配置 LLM key 时，把 `SCRIPT_PROVIDER` 改成 `fake`。
-- `SCRIPT_LLM_*` 和 `TRANSLATION_LLM_*` 留空时，会复用 `REVISION_LLM_*` 的 key、base URL 和模型名。
-- `TTS_PROVIDER=volc` 时，`TTS_VOLC_APP_ID` 和 `TTS_VOLC_ACCESS_KEY` 必填；Redis 不可用时，TTS 会回退到进程内试听缓存。
-
 ### 3. 启动服务
 
 ```bash
