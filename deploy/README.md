@@ -69,7 +69,7 @@ POSTGRES_PASSWORD=<strong-password>
 再改 `deploy/app.env`，保证数据库密码和 `POSTGRES_PASSWORD` 一致：
 
 ```env
-DATABASE_URL=postgresql://lsl:<strong-password>@postgres:5432/lsl
+DATABASE_URL=postgresql://lsl_user:<strong-password>@postgres:5432/lsl
 ```
 
 ### 3.2 线上能力配置

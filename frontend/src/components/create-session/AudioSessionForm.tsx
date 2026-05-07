@@ -17,6 +17,7 @@ import { useApp } from '@/context/AppContext';
 import { createAsrRecognition } from '@/lib/api/asr';
 import { createSession } from '@/lib/api/sessions';
 import { completeUploadedAsset, prepareUploadUrl, uploadToPresignedUrl } from '@/lib/api/upload';
+import { createClientUuid } from '@/lib/clientId';
 import { mapSessionItem } from '@/lib/domain';
 import { useI18n } from '@/i18n';
 
@@ -76,7 +77,7 @@ export function AudioSessionForm({ active }: AudioSessionFormProps) {
       if (!selectedFile) return;
       const upload = {
         category: 'audio',
-        entityId: crypto.randomUUID(),
+        entityId: createClientUuid(),
         filename: selectedFile.name,
         contentType: selectedFile.type || 'audio/mpeg',
       };

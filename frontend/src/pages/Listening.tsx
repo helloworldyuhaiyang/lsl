@@ -35,6 +35,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useI18n } from '@/i18n';
 
 type PlaybackMode = 'once' | 'repeat-all' | 'repeat-one';
+type ListeningTextMode = 'hint' | 'original' | 'bilingual';
 
 const PLAYBACK_MODES = [
   { value: 'once', labelKey: 'listening.playOnce', icon: ListRestart },
@@ -42,8 +43,24 @@ const PLAYBACK_MODES = [
   { value: 'repeat-one', labelKey: 'listening.repeatSentence', icon: Repeat1 },
 ] as const satisfies Array<{ value: PlaybackMode; labelKey: 'listening.playOnce' | 'listening.repeatAll' | 'listening.repeatSentence'; icon: typeof ListRestart }>;
 
+const HINT_WORD_COUNT = 5;
+
+function getSentenceHint(content: string) {
+  const trimmed = content.trim();
+  if (!trimmed) return '';
+
+  const words = trimmed.split(/\s+/);
+  if (words.length > 1) {
+    return words.length <= HINT_WORD_COUNT
+      ? trimmed
+      : `${words.slice(0, HINT_WORD_COUNT).join(' ')}...`;
+  }
+
+  return trimmed.length <= 16 ? trimmed : `${trimmed.slice(0, 16)}...`;
+}
+
 function MobileSubtitleCard({
-  item, index, isActive, voice, onClick, translationText, showTranslation,
+  item, index, isActive, voice, onClick, translationText, mode,
 }: {
   item: RevisionItem;
   index: number;
@@ -51,10 +68,14 @@ function MobileSubtitleCard({
   voice?: TtsSpeakerItem;
   onClick: (time: number) => void;
   translationText?: string | null;
-  showTranslation?: boolean;
+  mode: ListeningTextMode;
 }) {
   const parsed = parseCueText(item.fullText);
   const cardRef = useRef<HTMLDivElement>(null);
+  const isBilingual = mode === 'bilingual';
+  const isHint = mode === 'hint';
+  const isExpanded = isBilingual || isActive;
+  const displayContent = isHint ? getSentenceHint(parsed.content) : parsed.content;
 
   useEffect(() => {
     if (isActive && cardRef.current) {
@@ -89,16 +110,28 @@ function MobileSubtitleCard({
         </span>
       </div>
 
-      <div className="grid grid-rows-[0fr] opacity-0 transition-[grid-template-rows,opacity,margin-top] duration-200 group-hover:mt-2 group-hover:grid-rows-[1fr] group-hover:opacity-100 group-focus-visible:mt-2 group-focus-visible:grid-rows-[1fr] group-focus-visible:opacity-100">
+      <div
+        className={cn(
+          'grid transition-[grid-template-rows,opacity,margin-top] duration-200',
+          isExpanded
+            ? 'mt-2 grid-rows-[1fr] opacity-100'
+            : 'grid-rows-[0fr] opacity-0 sm:group-hover:mt-2 sm:group-hover:grid-rows-[1fr] sm:group-hover:opacity-100 group-focus-visible:mt-2 group-focus-visible:grid-rows-[1fr] group-focus-visible:opacity-100'
+        )}
+      >
         <div className="min-h-0 overflow-hidden">
           <div className="border-t border-slate-100 pt-2">
-            {parsed.cue && (
+            {!isHint && parsed.cue && (
               <span className="inline-block font-mono text-[11px] bg-amber-50 text-amber-700 border border-amber-200 rounded-md px-1.5 py-0.5 font-medium mb-1">
                 [{parsed.cue}]
               </span>
             )}
-            <p className="text-[14px] text-slate-700 leading-relaxed">{parsed.content}</p>
-            {showTranslation && <TranslationLine text={translationText} className="text-[12px]" />}
+            <p className={cn(
+              'text-[14px] leading-relaxed',
+              isHint ? 'font-medium text-slate-600' : 'text-slate-700'
+            )}>
+              {displayContent}
+            </p>
+            {isBilingual && <TranslationLine text={translationText} className="text-[12px]" />}
           </div>
         </div>
       </div>
@@ -115,52 +148,52 @@ function TranslationModeControls({
   onModeChange,
   onRetry,
 }: {
-  mode: 'english' | 'bilingual' | 'peek';
+  mode: ListeningTextMode;
   isTranslating?: boolean;
   needsUpdate?: boolean;
   failed?: boolean;
-  onModeChange: (mode: 'english' | 'bilingual' | 'peek') => void;
+  onModeChange: (mode: ListeningTextMode) => void;
   onRetry: () => void;
 }) {
   const { t } = useI18n();
-
-  if (isTranslating || needsUpdate || failed) {
-    return (
-      <TranslationButton
-        isTranslating={isTranslating}
-        needsUpdate={needsUpdate}
-        failed={failed}
-        onClick={onRetry}
-      />
-    );
-  }
+  const showTranslationAction = isTranslating || needsUpdate || failed;
 
   return (
-    <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1">
-      {[
-        { value: 'english', label: t('listening.mode.original'), tip: t('listening.mode.originalTip') },
-        { value: 'peek', label: t('listening.mode.peek'), tip: t('listening.mode.peekTip') },
-        { value: 'bilingual', label: t('listening.mode.bilingual'), tip: t('listening.mode.bilingualTip') },
-      ].map((item) => (
-        <Tooltip key={item.value}>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={() => onModeChange(item.value as 'english' | 'bilingual' | 'peek')}
-              aria-label={`${item.label}: ${item.tip}`}
-              className={cn(
-                'h-7 rounded-md px-2.5 text-[11px] font-semibold transition-colors',
-                mode === item.value ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:text-slate-700'
-              )}
-            >
-              {item.label}
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top" sideOffset={6}>
-            {item.tip}
-          </TooltipContent>
-        </Tooltip>
-      ))}
+    <div className="inline-flex items-center gap-2">
+      <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1">
+        {[
+          { value: 'hint', label: t('listening.mode.hint'), tip: t('listening.mode.hintTip') },
+          { value: 'original', label: t('listening.mode.original'), tip: t('listening.mode.originalTip') },
+          { value: 'bilingual', label: t('listening.mode.bilingual'), tip: t('listening.mode.bilingualTip') },
+        ].map((item) => (
+          <Tooltip key={item.value}>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={() => onModeChange(item.value as ListeningTextMode)}
+                aria-label={`${item.label}: ${item.tip}`}
+                className={cn(
+                  'h-7 rounded-md px-2.5 text-[11px] font-semibold transition-colors',
+                  mode === item.value ? 'bg-indigo-50 text-indigo-700' : 'text-slate-500 hover:text-slate-700'
+                )}
+              >
+                {item.label}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" sideOffset={6}>
+              {item.tip}
+            </TooltipContent>
+          </Tooltip>
+        ))}
+      </div>
+      {showTranslationAction && (
+        <TranslationButton
+          isTranslating={isTranslating}
+          needsUpdate={needsUpdate}
+          failed={failed}
+          onClick={onRetry}
+        />
+      )}
     </div>
   );
 }
@@ -185,7 +218,7 @@ export function Listening() {
   const [speakerMappings, setSpeakerMappings] = useState<SpeakerMapping[]>([]);
   const [voiceList, setVoiceList] = useState<TtsSpeakerItem[]>([]);
   const [revisionId, setRevisionId] = useState<string | null>(null);
-  const [translationMode, setTranslationMode] = useState<'english' | 'bilingual' | 'peek'>('english');
+  const [translationMode, setTranslationMode] = useState<ListeningTextMode>('hint');
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const activeIndexRef = useRef(-1);
@@ -205,6 +238,15 @@ export function Listening() {
 
   useEffect(() => {
     setDuration(revision.length > 0 ? revision[revision.length - 1].endTime : 0);
+    setActiveIndex((current) => {
+      if (revision.length === 0) {
+        activeIndexRef.current = -1;
+        return -1;
+      }
+      if (current >= 0 && current < revision.length) return current;
+      activeIndexRef.current = 0;
+      return 0;
+    });
   }, [revision]);
 
   useEffect(() => {
@@ -485,7 +527,7 @@ export function Listening() {
             voice={getVoiceForSpeaker(item.speaker, speakerMappings, voiceList)}
             onClick={handleSentenceClick}
             translationText={revisionTranslation.itemsByKey.get(item.id)?.translated_text}
-            showTranslation={translationMode === 'bilingual' || (translationMode === 'peek' && activeIndex === index)}
+            mode={translationMode}
           />
         ))}
       </div>
