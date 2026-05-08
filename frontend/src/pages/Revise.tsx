@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Sparkles, Loader2, Volume2, Wand2 } from 'lucide-react';
 import { RevisionCard } from '@/components/RevisionCard';
@@ -78,6 +78,7 @@ export function Revise() {
   const [showAllTranslations, setShowAllTranslations] = useState(false);
   const [isStartingTranslation, setIsStartingTranslation] = useState(false);
   const [syncingTranslationItemIds, setSyncingTranslationItemIds] = useState<Set<string>>(() => new Set());
+  const userPromptTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const itemAudioRef = useRef<HTMLAudioElement | null>(null);
   const itemAudioUrlRef = useRef<string | null>(null);
   const draftSaveTimersRef = useRef(new Map<string, ReturnType<typeof window.setTimeout>>());
@@ -103,6 +104,17 @@ export function Revise() {
     () => buildScriptGenerationProgress(scriptPlanSections, scriptPreviewItems, scriptTargetTurnCount),
     [scriptPlanSections, scriptPreviewItems, scriptTargetTurnCount],
   );
+
+  const resizeUserPromptTextarea = useCallback(() => {
+    const textarea = userPromptTextareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, []);
+
+  useLayoutEffect(() => {
+    resizeUserPromptTextarea();
+  }, [resizeUserPromptTextarea, userPrompt]);
 
   useEffect(() => {
     draftSaveTimersRef.current.forEach((timer) => window.clearTimeout(timer));
@@ -877,12 +889,13 @@ export function Revise() {
           <h3 className="text-[13px] font-bold text-slate-800">{t('revise.aiRevise')}</h3>
         </div>
         <p className="text-[12px] text-slate-500 mb-3">{t('revise.aiHelp')}</p>
-        <div className="flex gap-3">
+        <div className="flex items-start gap-3">
           <Textarea
+            ref={userPromptTextareaRef}
             value={userPrompt}
             onChange={(e) => setUserPrompt(e.target.value)}
             placeholder={t('revise.aiPlaceholder')}
-            className="flex-1 text-[13px] border-slate-200 resize-none"
+            className="min-h-[72px] flex-1 resize-none overflow-hidden border-slate-200 text-[13px]"
             rows={2}
           />
           <Tooltip>
@@ -892,7 +905,7 @@ export function Revise() {
                   onClick={handleReviseByAI}
                   disabled={isRevising}
                   aria-label={t('revise.aiReviseTooltip')}
-                  className="bg-indigo-500 hover:bg-indigo-600 text-white h-auto px-5 disabled:opacity-60"
+                  className="h-[72px] bg-indigo-500 px-5 text-white hover:bg-indigo-600 disabled:opacity-60"
                 >
                   {isRevising ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                 </Button>
