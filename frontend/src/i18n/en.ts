@@ -103,6 +103,10 @@ export const en = {
   'session.loading': 'Loading session...',
   'session.generatingScriptTranscript': 'Generating script transcript...',
   'session.transcriptionProcessing': 'Transcription is still processing...',
+  'session.transcriptionFailedTitle': 'Transcription Failed',
+  'session.transcriptionFailedHelp': 'The audio upload succeeded. You can start transcription again.',
+  'session.retryTranscription': 'Retry Transcription',
+  'session.retryingTranscription': 'Retrying...',
   'session.transcript': 'Transcript',
 
   'sessionFlow.label': 'Session workflow',
@@ -181,6 +185,7 @@ export const en = {
   'notFound.message': "The page you're looking for doesn't exist.",
 
   'error.createSession': 'Failed to create session',
+  'error.retryTranscription': 'Failed to retry transcription',
   'error.loadRevision': 'Failed to load revision',
   'error.startRevision': 'Failed to start revision',
   'error.reviseSession': 'Failed to revise session',

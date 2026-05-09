@@ -42,6 +42,7 @@ export function mapSessionItem(item: SessionItem): Session {
     type: entity.f_type === 2 ? 'ai_script' : 'audio',
     targetLanguage: entity.target_language ?? undefined,
     createdAt: entity.created_at,
+    assetObjectKey: entity.asset_object_key ?? item.asset?.object_key ?? undefined,
     audioUrl: item.asset?.asset_url ?? undefined,
   };
 }

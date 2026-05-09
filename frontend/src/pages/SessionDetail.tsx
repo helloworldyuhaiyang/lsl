@@ -1,15 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Mic2, FileText, AudioWaveform } from 'lucide-react';
+import { Mic2, FileText, AudioWaveform, Loader2, RefreshCw } from 'lucide-react';
 import { AudioPlayer } from '@/components/AudioPlayer';
 import { StatusBadge } from '@/components/StatusBadge';
 import { SessionFlowNav } from '@/components/SessionFlowNav';
+import { Button } from '@/components/ui/button';
 import { formatDateTime, formatTime } from '@/utils/formatTime';
 import { speakerColors } from '@/data/mockData';
 import { useApp } from '@/context/AppContext';
 import { NotFound } from './NotFound';
 import type { RevisionItem, TranscriptItem } from '@/types';
-import { getSession } from '@/lib/api/sessions';
+import { getSession, updateSession } from '@/lib/api/sessions';
+import { createAsrRecognition } from '@/lib/api/asr';
 import { getTranscript } from '@/lib/api/transcripts';
 import { getTtsSynthesis } from '@/lib/api/tts';
 import { applyTtsSynthesis, mapSessionItem, mapTranscript } from '@/lib/domain';
@@ -27,6 +29,9 @@ export function SessionDetail() {
   const [seekRequest, setSeekRequest] = useState<{ time: number; requestId: number } | null>(null);
   const [showTranslation, setShowTranslation] = useState(false);
   const [currentTranscriptId, setCurrentTranscriptId] = useState<string | null>(null);
+  const [isRetryingTranscription, setIsRetryingTranscription] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const { t } = useI18n();
 
   const session = useMemo(() => loadedSession || (id ? getSessionById(id) : undefined), [id, getSessionById, loadedSession]);
@@ -95,7 +100,36 @@ export function SessionDetail() {
       cancelled = true;
       if (refreshTimer) window.clearTimeout(refreshTimer);
     };
-  }, [id, dispatch]);
+  }, [id, dispatch, reloadToken]);
+
+  const handleRetryTranscription = useCallback(async () => {
+    if (!session?.assetObjectKey || !session.audioUrl) return;
+
+    setIsRetryingTranscription(true);
+    setRetryError(null);
+    setShowTranslation(false);
+    setActiveTranscriptIndex(null);
+
+    try {
+      const recognition = await createAsrRecognition({
+        objectKey: session.assetObjectKey,
+        audioUrl: session.audioUrl,
+        targetLanguage: session.targetLanguage,
+      });
+      const item = await updateSession(session.id, {
+        currentTranscriptId: recognition.transcript.transcript_id,
+      });
+      const nextSession = mapSessionItem(item);
+      setCurrentTranscriptId(item.session.current_transcript_id ?? recognition.transcript.transcript_id);
+      setLoadedSession(nextSession);
+      dispatch({ type: 'UPDATE_SESSION', payload: nextSession });
+      setReloadToken((current) => current + 1);
+    } catch (error) {
+      setRetryError(error instanceof Error ? error.message : t('error.retryTranscription'));
+    } finally {
+      setIsRetryingTranscription(false);
+    }
+  }, [dispatch, session, t]);
 
   if (!session && !notFound) {
     return <div className="text-[13px] text-slate-500">{t('session.loading')}</div>;
@@ -107,6 +141,10 @@ export function SessionDetail() {
   const totalDuration = transcript && transcript.length > 0 ? transcript[transcript.length - 1].endTime : 0;
   const canOpenRevise = session.status === 'completed' || !!session.revision;
   const shouldShowAudioPlayer = session.type === 'audio';
+  const canRetryTranscription = session.type === 'audio'
+    && session.status === 'failed'
+    && !!session.assetObjectKey
+    && !!session.audioUrl;
 
   const isRevision = (item: RevisionItem | TranscriptItem): item is RevisionItem => 'cue' in item;
 
@@ -162,6 +200,31 @@ export function SessionDetail() {
           seekTo={seekRequest}
           onActiveIndexChange={(index) => setActiveTranscriptIndex(index === -1 ? null : index)}
         />
+      )}
+
+      {session.type === 'audio' && session.status === 'failed' && (!transcript || transcript.length === 0) && (
+        <div className="rounded-xl border border-red-100 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <h3 className="text-[14px] font-bold text-slate-800">{t('session.transcriptionFailedTitle')}</h3>
+              <p className="mt-1 text-[12px] text-slate-500">{t('session.transcriptionFailedHelp')}</p>
+              {retryError && <p className="mt-2 text-[12px] text-red-500">{retryError}</p>}
+            </div>
+            {canRetryTranscription && (
+              <Button
+                type="button"
+                onClick={handleRetryTranscription}
+                disabled={isRetryingTranscription}
+                className="h-9 shrink-0 bg-indigo-500 px-3 text-[12px] font-semibold text-white hover:bg-indigo-600 disabled:opacity-60"
+              >
+                {isRetryingTranscription
+                  ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
+                {isRetryingTranscription ? t('session.retryingTranscription') : t('session.retryTranscription')}
+              </Button>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Transcript */}

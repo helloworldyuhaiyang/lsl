@@ -1,5 +1,5 @@
 import { requestJson } from '@/lib/api/client'
-import type { CreateSessionRequest, SessionItem, SessionListResponse } from '@/types/api'
+import type { CreateSessionRequest, SessionItem, SessionListResponse, UpdateSessionRequest } from '@/types/api'
 
 interface ApiResponse<T> {
   code: number
@@ -36,6 +36,25 @@ export async function createSession(payload: CreateSessionRequest): Promise<Sess
 export async function getSession(sessionId: string): Promise<SessionItem> {
   const response = await requestJson<ApiResponse<SessionItem>>(`/sessions/${sessionId}`, {
     method: 'GET',
+  })
+
+  return response.data
+}
+
+export async function updateSession(sessionId: string, payload: UpdateSessionRequest): Promise<SessionItem> {
+  const response = await requestJson<ApiResponse<SessionItem>>(`/sessions/${sessionId}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      title: payload.title,
+      description: payload.description,
+      target_language: payload.targetLanguage,
+      f_type: payload.fType,
+      asset_object_key: payload.assetObjectKey,
+      current_transcript_id: payload.currentTranscriptId,
+    }),
   })
 
   return response.data

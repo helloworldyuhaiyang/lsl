@@ -133,6 +133,15 @@ export interface CreateSessionRequest {
   currentTranscriptId?: string
 }
 
+export interface UpdateSessionRequest {
+  title?: string
+  description?: string | null
+  targetLanguage?: string | null
+  fType?: 1 | 2
+  assetObjectKey?: string | null
+  currentTranscriptId?: string | null
+}
+
 export interface GenerateScriptSessionRequest {
   title: string
   description?: string

@@ -42,6 +42,7 @@ export interface Session {
   type: SessionType;
   targetLanguage?: string;
   createdAt: string;
+  assetObjectKey?: string;
   audioUrl?: string;
   transcript?: TranscriptItem[];
   revision?: RevisionItem[];

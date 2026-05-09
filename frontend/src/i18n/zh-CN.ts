@@ -103,6 +103,10 @@ export const zhCN = {
   'session.loading': '正在加载会话...',
   'session.generatingScriptTranscript': '正在生成脚本转写...',
   'session.transcriptionProcessing': '转写仍在处理中...',
+  'session.transcriptionFailedTitle': '转写失败',
+  'session.transcriptionFailedHelp': '音频已上传成功，可以重新发起转写。',
+  'session.retryTranscription': '重试转写',
+  'session.retryingTranscription': '正在重试...',
   'session.transcript': '转写文本',
 
   'sessionFlow.label': '会话流程',
@@ -181,6 +185,7 @@ export const zhCN = {
   'notFound.message': '你要访问的页面不存在。',
 
   'error.createSession': '创建会话失败',
+  'error.retryTranscription': '重试转写失败',
   'error.loadRevision': '加载修订失败',
   'error.startRevision': '启动修订失败',
   'error.reviseSession': '修订会话失败',
