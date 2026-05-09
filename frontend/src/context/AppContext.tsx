@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useReducer, useCallback, useEffect } from 'react';
+import { useAuth } from '@/context/AuthContext';
 import type { AppState, AppAction, Session } from '@/types';
 import { listSessions } from '@/lib/api/sessions';
 import { mapSessionItem } from '@/lib/domain';
@@ -59,8 +60,16 @@ const AppContext = createContext<AppContextType | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(appReducer, initialState);
+  const { user, loading: authLoading } = useAuth();
 
   const refreshSessions = useCallback(async () => {
+    if (!user) {
+      dispatch({ type: 'SET_SESSIONS', payload: [] });
+      dispatch({ type: 'SET_LOADING', payload: false });
+      dispatch({ type: 'SET_ERROR', payload: null });
+      return;
+    }
+
     dispatch({ type: 'SET_LOADING', payload: true });
     dispatch({ type: 'SET_ERROR', payload: null });
     try {
@@ -74,11 +83,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
     void refreshSessions();
-  }, [refreshSessions]);
+  }, [authLoading, refreshSessions]);
 
   const getSessionById = useCallback((id: string) => {
     return state.sessions.find(s => s.id === id);

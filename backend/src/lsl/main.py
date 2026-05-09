@@ -8,12 +8,16 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import Generic, TypeVar
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 
 from lsl.core import Settings, close_database_resources, configure_logging, create_database_resources
+from lsl.core.session import CookieSessionMiddleware
 from lsl.modules.asr import AsrJobHandler, AsrRepository, AsrService, create_asr_provider
 from lsl.modules.asr.api import router as asr_router
+from lsl.modules.auth import AuthService, UserRepository
+from lsl.modules.auth.api import require_auth_user
+from lsl.modules.auth.api import router as auth_router
 from lsl.modules.asset import AssetRepository, AssetService, create_storage_provider
 from lsl.modules.asset.api import router as asset_router
 from lsl.modules.job import JobRepository, JobService
@@ -173,6 +177,11 @@ async def lifespan(app: FastAPI):
         if db_resources.session_factory is not None
         else None
     )
+    user_repository = (
+        UserRepository(db_resources.session_factory)
+        if db_resources.session_factory is not None
+        else None
+    )
 
     asset_service = AssetService(
         settings=settings,
@@ -269,6 +278,7 @@ async def lifespan(app: FastAPI):
         and job_service is not None
         else None
     )
+    auth_service = AuthService(settings=settings, repository=user_repository)
 
     if job_service is not None:
         if asr_service is not None:
@@ -291,6 +301,7 @@ async def lifespan(app: FastAPI):
 
     app.state.settings = settings
     app.state.db_resources = db_resources
+    app.state.auth_service = auth_service
     app.state.asset_service = asset_service
     app.state.job_service = job_service
     app.state.transcript_service = transcript_service
@@ -318,15 +329,23 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="LSL", lifespan=lifespan)
-app.include_router(asset_router)
-app.include_router(job_router)
-app.include_router(transcript_router)
-app.include_router(asr_router)
-app.include_router(session_router)
-app.include_router(script_router)
-app.include_router(revision_router)
-app.include_router(translation_router)
-app.include_router(tts_router)
+app.add_middleware(
+    CookieSessionMiddleware,
+    secret_key=settings.AUTH_SESSION_SECRET,
+    same_site="lax",
+    https_only=settings.AUTH_COOKIE_SECURE,
+)
+protected_router_dependencies = [Depends(require_auth_user)]
+app.include_router(auth_router)
+app.include_router(asset_router, dependencies=protected_router_dependencies)
+app.include_router(job_router, dependencies=protected_router_dependencies)
+app.include_router(transcript_router, dependencies=protected_router_dependencies)
+app.include_router(asr_router, dependencies=protected_router_dependencies)
+app.include_router(session_router, dependencies=protected_router_dependencies)
+app.include_router(script_router, dependencies=protected_router_dependencies)
+app.include_router(revision_router, dependencies=protected_router_dependencies)
+app.include_router(translation_router, dependencies=protected_router_dependencies)
+app.include_router(tts_router, dependencies=protected_router_dependencies)
 
 
 @app.get("/health", response_model=ApiResponse[HealthData])

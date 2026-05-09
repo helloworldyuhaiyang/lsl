@@ -64,6 +64,20 @@ class Settings:
     # PostgreSQL 连接池获取连接的超时时间，单位秒。
     DB_POOL_TIMEOUT: float = 30.0
 
+    # 登录会话 HMAC secret。生产环境必须覆盖为随机长字符串。
+    AUTH_SESSION_SECRET: str = "dev-session-secret-change-me"
+    # 本地 HTTP 开发时为 false；HTTPS 部署时应为 true。
+    AUTH_COOKIE_SECURE: bool = False
+    # Casdoor 登录完成后跳回前端的地址。
+    AUTH_FRONTEND_REDIRECT_URL: str = "http://localhost:3000/"
+
+    # Casdoor OAuth/OIDC 配置。
+    CASDOOR_ENDPOINT: str = "http://localhost:18000"
+    CASDOOR_CLIENT_ID: str = ""
+    CASDOOR_CLIENT_SECRET: str = ""
+    CASDOOR_REDIRECT_URI: str = "http://localhost:8000/auth/callback"
+    CASDOOR_HTTP_TIMEOUT: float = 15.0
+
     # 是否在 FastAPI lifespan 中启动后台 job runner。
     JOB_RUNNER_ENABLED: bool = True
     # job runner 轮询 due jobs 的间隔，单位秒。
@@ -177,6 +191,8 @@ class Settings:
         db_pool_min_size = _get_env_int("DB_POOL_MIN_SIZE", cls.DB_POOL_MIN_SIZE)
         db_pool_max_size = _get_env_int("DB_POOL_MAX_SIZE", cls.DB_POOL_MAX_SIZE)
         db_pool_timeout = _get_env_float("DB_POOL_TIMEOUT", cls.DB_POOL_TIMEOUT)
+        auth_cookie_secure = _get_env_bool("AUTH_COOKIE_SECURE", cls.AUTH_COOKIE_SECURE)
+        casdoor_http_timeout = _get_env_float("CASDOOR_HTTP_TIMEOUT", cls.CASDOOR_HTTP_TIMEOUT)
         job_runner_enabled = _get_env_bool("JOB_RUNNER_ENABLED", cls.JOB_RUNNER_ENABLED)
         job_runner_interval_seconds = _get_env_float(
             "JOB_RUNNER_INTERVAL_SECONDS",
@@ -211,6 +227,8 @@ class Settings:
             raise ValueError("DB_POOL_MAX_SIZE must be greater than or equal to DB_POOL_MIN_SIZE")
         if db_pool_timeout <= 0:
             raise ValueError("DB_POOL_TIMEOUT must be greater than 0")
+        if casdoor_http_timeout <= 0:
+            raise ValueError("CASDOOR_HTTP_TIMEOUT must be greater than 0")
         if job_runner_interval_seconds <= 0:
             raise ValueError("JOB_RUNNER_INTERVAL_SECONDS must be greater than 0")
         if job_runner_batch_size <= 0:
@@ -264,6 +282,17 @@ class Settings:
             DB_POOL_MIN_SIZE=db_pool_min_size,
             DB_POOL_MAX_SIZE=db_pool_max_size,
             DB_POOL_TIMEOUT=db_pool_timeout,
+            AUTH_SESSION_SECRET=_get_env_str("AUTH_SESSION_SECRET", cls.AUTH_SESSION_SECRET),
+            AUTH_COOKIE_SECURE=auth_cookie_secure,
+            AUTH_FRONTEND_REDIRECT_URL=_get_env_str(
+                "AUTH_FRONTEND_REDIRECT_URL",
+                cls.AUTH_FRONTEND_REDIRECT_URL,
+            ),
+            CASDOOR_ENDPOINT=_get_env_str("CASDOOR_ENDPOINT", cls.CASDOOR_ENDPOINT),
+            CASDOOR_CLIENT_ID=_get_env_str("CASDOOR_CLIENT_ID", cls.CASDOOR_CLIENT_ID),
+            CASDOOR_CLIENT_SECRET=_get_env_str("CASDOOR_CLIENT_SECRET", cls.CASDOOR_CLIENT_SECRET),
+            CASDOOR_REDIRECT_URI=_get_env_str("CASDOOR_REDIRECT_URI", cls.CASDOOR_REDIRECT_URI),
+            CASDOOR_HTTP_TIMEOUT=casdoor_http_timeout,
             JOB_RUNNER_ENABLED=job_runner_enabled,
             JOB_RUNNER_INTERVAL_SECONDS=job_runner_interval_seconds,
             JOB_RUNNER_BATCH_SIZE=job_runner_batch_size,

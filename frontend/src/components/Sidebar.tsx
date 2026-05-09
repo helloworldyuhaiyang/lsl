@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, PlusCircle, Sparkles } from 'lucide-react';
+import { LayoutDashboard, PlusCircle } from 'lucide-react';
+import { BrandWordmark } from '@/components/BrandLogo';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/i18n';
 
@@ -16,14 +17,14 @@ export function Sidebar() {
     <aside className="fixed left-0 top-0 bottom-0 w-64 bg-slate-900 flex flex-col z-50">
       {/* Logo */}
       <div className="p-6 pb-4">
-        <Link to="/" className="flex items-center gap-3 group">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/25">
-            <Sparkles className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h1 className="text-white font-semibold text-[15px] tracking-tight leading-tight">LSL</h1>
-            <p className="text-slate-500 text-[10px] uppercase tracking-widest">{t('common.workspace')}</p>
-          </div>
+        <Link to="/" className="group" aria-label="LSL">
+          <BrandWordmark
+            tone="paper"
+            markClassName="h-9 w-9 transition-transform duration-150 group-hover:-translate-y-0.5"
+            textClassName="text-white"
+            sublabel={t('common.workspace')}
+            sublabelClassName="text-slate-500"
+          />
         </Link>
       </div>
 

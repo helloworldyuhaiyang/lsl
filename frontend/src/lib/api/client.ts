@@ -12,7 +12,7 @@ export class ApiRequestError extends Error {
   }
 }
 
-function buildUrl(path: string, query?: Record<string, string>): string {
+export function buildApiUrl(path: string, query?: Record<string, string>): string {
   const url = new URL(`${API_BASE_URL}${path}`, window.location.origin)
   if (query) {
     Object.entries(query).forEach(([key, value]) => {
@@ -56,10 +56,11 @@ async function assertOk(response: Response): Promise<void> {
 }
 
 export async function requestJson<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const response = await fetch(buildUrl(path, options.query), {
+  const response = await fetch(buildApiUrl(path, options.query), {
     method: options.method ?? 'GET',
     headers: options.headers,
     body: options.body,
+    credentials: 'include',
   })
 
   await assertOk(response)
@@ -68,10 +69,11 @@ export async function requestJson<T>(path: string, options: RequestOptions = {})
 }
 
 export async function requestBlob(path: string, options: RequestOptions = {}): Promise<Blob> {
-  const response = await fetch(buildUrl(path, options.query), {
+  const response = await fetch(buildApiUrl(path, options.query), {
     method: options.method ?? 'GET',
     headers: options.headers,
     body: options.body,
+    credentials: 'include',
   })
 
   await assertOk(response)

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight,
@@ -7,12 +7,16 @@ import {
   CirclePlay,
   Headphones,
   Mic,
+  Pause,
+  Play,
   RefreshCcw,
   Sparkles,
   UploadCloud,
   Wand2,
 } from 'lucide-react';
+import { BrandMark } from '@/components/BrandLogo';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/context/AuthContext';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/i18n';
 
@@ -21,26 +25,62 @@ const cueOptions = [
     cueKey: 'landing.cue.option1.cue',
     toneKey: 'landing.cue.option1.tone',
     textKey: 'landing.cue.option1.text',
-    speed: '0.92x',
+    speed: '1.00x',
+    audioSrc: '/audio/cue-demo/casually.mp3',
   },
   {
     cueKey: 'landing.cue.option2.cue',
     toneKey: 'landing.cue.option2.tone',
     textKey: 'landing.cue.option2.text',
-    speed: '1.00x',
+    speed: '0.72x',
+    audioSrc: '/audio/cue-demo/tired.mp3',
   },
   {
     cueKey: 'landing.cue.option3.cue',
     toneKey: 'landing.cue.option3.tone',
     textKey: 'landing.cue.option3.text',
-    speed: '0.84x',
+    speed: '1.05x',
+    audioSrc: '/audio/cue-demo/angry.mp3',
   },
 ] as const;
 
 export function Landing() {
   const { t } = useI18n();
+  const { user, login } = useAuth();
   const [activeCue, setActiveCue] = useState(0);
+  const [playingCue, setPlayingCue] = useState<number | null>(null);
+  const audioRefs = useRef<Array<HTMLAudioElement | null>>([]);
   const cue = cueOptions[activeCue];
+
+  const handleCuePlay = async (index: number) => {
+    const selectedAudio = audioRefs.current[index];
+    if (!selectedAudio) {
+      return;
+    }
+
+    audioRefs.current.forEach((audio, audioIndex) => {
+      if (audio && audioIndex !== index) {
+        audio.pause();
+        audio.currentTime = 0;
+      }
+    });
+
+    setActiveCue(index);
+
+    if (playingCue === index && !selectedAudio.paused) {
+      selectedAudio.pause();
+      setPlayingCue(null);
+      return;
+    }
+
+    selectedAudio.currentTime = 0;
+    try {
+      await selectedAudio.play();
+      setPlayingCue(index);
+    } catch {
+      setPlayingCue(null);
+    }
+  };
 
   const sources = useMemo(() => [
     {
@@ -87,19 +127,41 @@ export function Landing() {
             </p>
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Link to="/create">
-                <Button className="h-11 w-full rounded-lg bg-indigo-500 px-5 text-[13px] font-semibold text-white shadow-sm shadow-indigo-200 hover:bg-indigo-600 sm:w-auto">
+              {user ? (
+                <Link to="/create">
+                  <Button className="h-11 w-full rounded-lg bg-indigo-500 px-5 text-[13px] font-semibold text-white shadow-sm shadow-indigo-200 hover:bg-indigo-600 sm:w-auto">
+                    {t('landing.hero.primary')}
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
+                </Link>
+              ) : (
+                <Button
+                  type="button"
+                  onClick={login}
+                  className="h-11 w-full rounded-lg bg-indigo-500 px-5 text-[13px] font-semibold text-white shadow-sm shadow-indigo-200 hover:bg-indigo-600 sm:w-auto"
+                >
                   {t('landing.hero.primary')}
                   <ArrowRight className="h-4 w-4" />
                 </Button>
-              </Link>
-              <Link
-                to="/dashboard"
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-5 text-[13px] font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
-              >
-                <CirclePlay className="h-4 w-4 text-emerald-600" />
-                {t('landing.hero.secondary')}
-              </Link>
+              )}
+              {user ? (
+                <Link
+                  to="/dashboard"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-5 text-[13px] font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+                >
+                  <CirclePlay className="h-4 w-4 text-emerald-600" />
+                  {t('landing.hero.secondary')}
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  onClick={login}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-5 text-[13px] font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
+                >
+                  <CirclePlay className="h-4 w-4 text-emerald-600" />
+                  {t('common.login')}
+                </button>
+              )}
             </div>
 
             <div className="mt-8 grid max-w-[560px] grid-cols-3 gap-3">
@@ -176,25 +238,53 @@ export function Landing() {
         />
 
         <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="mb-4 text-[12px] leading-6 text-slate-500">{t('landing.cue.audioHint')}</p>
           <div className="grid gap-2 sm:grid-cols-3">
-            {cueOptions.map((option, index) => (
-              <button
-                key={option.cueKey}
-                type="button"
-                onClick={() => setActiveCue(index)}
-                onMouseEnter={() => setActiveCue(index)}
-                className={cn(
-                  'rounded-lg border px-3 py-3 text-left transition-colors',
-                  activeCue === index
-                    ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
-                    : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50',
-                )}
-              >
-                <div className="font-mono text-[11px] text-orange-600">[{t(option.cueKey)}]</div>
-                <div className="mt-2 text-[12px] font-semibold">{t(option.toneKey)}</div>
-              </button>
-            ))}
+            {cueOptions.map((option, index) => {
+              const isActive = activeCue === index;
+              const isPlaying = playingCue === index;
+
+              return (
+                <button
+                  key={option.cueKey}
+                  type="button"
+                  onClick={() => void handleCuePlay(index)}
+                  aria-label={`${isPlaying ? t('landing.cue.pauseLabel') : t('landing.cue.playLabel')}: ${t(option.toneKey)}`}
+                  className={cn(
+                    'rounded-lg border px-3 py-3 text-left transition-colors',
+                    isActive
+                      ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                      : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50',
+                  )}
+                >
+                  <div className="font-mono text-[11px] text-orange-600">[{t(option.cueKey)}]</div>
+                  <div className="mt-2 text-[12px] font-semibold">{t(option.toneKey)}</div>
+                  <div
+                    className={cn(
+                      'mt-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold',
+                      isPlaying ? 'bg-indigo-500 text-white' : 'bg-white text-indigo-600 ring-1 ring-indigo-100',
+                    )}
+                  >
+                    {isPlaying ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+                    {isPlaying ? t('landing.cue.pauseLabel') : t('landing.cue.playLabel')}
+                  </div>
+                </button>
+              );
+            })}
           </div>
+
+          {cueOptions.map((option, index) => (
+            <audio
+              key={option.audioSrc}
+              ref={(element) => {
+                audioRefs.current[index] = element;
+              }}
+              src={option.audioSrc}
+              preload="metadata"
+              onEnded={() => setPlayingCue((current) => (current === index ? null : current))}
+              onPause={() => setPlayingCue((current) => (current === index ? null : current))}
+            />
+          ))}
 
           <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-5">
             <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 font-mono text-[13px] leading-7 text-slate-700">
@@ -207,7 +297,10 @@ export function Landing() {
               {Array.from({ length: 26 }).map((_, index) => (
                 <span
                   key={index}
-                  className="landing-wave-bar block w-1.5 rounded-full bg-indigo-500"
+                  className={cn(
+                    'block w-1.5 rounded-full bg-indigo-500',
+                    playingCue === activeCue && 'landing-wave-bar',
+                  )}
                   style={{
                     height: `${10 + ((index * 17 + activeCue * 11) % 34)}px`,
                     animationDelay: `${index * 38}ms`,
@@ -262,9 +355,7 @@ function ProductPreview() {
     <div className="landing-console min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex items-center justify-between border-b border-slate-100 pb-3">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
-            <Sparkles className="h-4 w-4" />
-          </div>
+          <BrandMark className="h-8 w-8" />
           <div>
             <div className="text-[13px] font-bold text-slate-800">{t('landing.preview.title')}</div>
             <div className="text-[11px] text-slate-400">{t('landing.preview.subtitle')}</div>

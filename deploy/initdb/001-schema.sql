@@ -17,6 +17,29 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ---------------------------------------------------------------------------
+-- Auth module
+-- Stores users created from Casdoor OAuth/OIDC login.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS public.auth_users (
+    user_id          VARCHAR(32) PRIMARY KEY,                     -- Internal user id, uuid hex.
+    provider         VARCHAR(32) NOT NULL,                         -- OAuth provider key, currently casdoor.
+    provider_subject VARCHAR(255) NOT NULL,                        -- Stable subject from provider claims.
+    username         VARCHAR(128),                                 -- Provider username.
+    display_name     VARCHAR(255),                                 -- Display name.
+    email            VARCHAR(255),                                 -- Email address if provided.
+    avatar_url       VARCHAR(1024),                                -- Avatar URL if provided.
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, -- Creation timestamp.
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP  -- Last update timestamp.
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_auth_users_provider_subject
+    ON public.auth_users (provider, provider_subject);
+
+CREATE INDEX IF NOT EXISTS idx_auth_users_email
+    ON public.auth_users (email);
+
+-- ---------------------------------------------------------------------------
 -- Asset module
 -- Stores object-storage metadata for uploaded or generated files.
 -- ---------------------------------------------------------------------------
