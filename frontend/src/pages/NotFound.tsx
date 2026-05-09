@@ -13,7 +13,7 @@ export function NotFound() {
       </div>
       <h1 className="text-[20px] font-bold text-slate-800 mb-2">{t('notFound.title')}</h1>
       <p className="text-[13px] text-slate-500 mb-6">{t('notFound.message')}</p>
-      <Link to="/">
+      <Link to="/dashboard">
         <Button className="bg-indigo-500 hover:bg-indigo-600 text-white h-9 px-4 text-[12px] font-semibold gap-1.5">
           <ArrowLeft className="w-3.5 h-3.5" />
           {t('create.back')}

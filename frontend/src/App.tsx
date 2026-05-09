@@ -2,6 +2,7 @@ import { HashRouter, Routes, Route } from 'react-router-dom';
 import { AppProvider } from '@/context/AppContext';
 import { TopNav } from '@/components/TopNav';
 import { Dashboard } from '@/pages/Dashboard';
+import { Landing } from '@/pages/Landing';
 import { CreateSession } from '@/pages/CreateSession';
 import { SessionDetail } from '@/pages/SessionDetail';
 import { Revise } from '@/pages/Revise';
@@ -17,9 +18,10 @@ function App() {
           <div className="min-h-screen bg-slate-50 flex flex-col">
             <TopNav />
             <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-              <div className="max-w-[900px] mx-auto">
+              <div className="max-w-[1100px] mx-auto">
                 <Routes>
-                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/" element={<Landing />} />
+                  <Route path="/dashboard" element={<Dashboard />} />
                   <Route path="/create" element={<CreateSession />} />
                   <Route path="/session/:id" element={<SessionDetail />} />
                   <Route path="/session/:id/revise" element={<Revise />} />

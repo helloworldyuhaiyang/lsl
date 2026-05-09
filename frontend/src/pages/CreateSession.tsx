@@ -17,7 +17,7 @@ export function CreateSession() {
   return (
     <div className="max-w-2xl space-y-6">
       <div>
-        <Link to="/" className="mb-4 inline-flex items-center gap-1.5 text-[12px] text-slate-500 transition-colors hover:text-indigo-600">
+        <Link to="/dashboard" className="mb-4 inline-flex items-center gap-1.5 text-[12px] text-slate-500 transition-colors hover:text-indigo-600">
           <ArrowLeft className="h-3.5 w-3.5" />
           {t('create.back')}
         </Link>

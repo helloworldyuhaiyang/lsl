@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { useI18n } from '@/i18n';
 
 const navItems = [
-  { icon: LayoutDashboard, labelKey: 'common.dashboard' as const, path: '/' },
+  { icon: LayoutDashboard, labelKey: 'common.dashboard' as const, path: '/dashboard' },
   { icon: PlusCircle, labelKey: 'common.newSession' as const, path: '/create' },
 ];
 

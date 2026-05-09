@@ -4,7 +4,7 @@ import { useI18n } from '@/i18n';
 
 export function Navbar() {
   const location = useLocation();
-  const isDashboard = location.pathname === '/';
+  const isDashboard = location.pathname === '/dashboard';
   const { t } = useI18n();
 
   return (
@@ -19,7 +19,7 @@ export function Navbar() {
         {/* Nav Links */}
         <div className="flex items-center gap-1">
           <Link
-            to="/"
+            to="/dashboard"
             className={cn(
               'px-3 py-1.5 rounded-md text-[15px] transition-colors duration-150',
               isDashboard

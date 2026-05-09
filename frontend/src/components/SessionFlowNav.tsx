@@ -30,7 +30,7 @@ export function SessionFlowNav({
   return (
     <nav className={cn('space-y-3 sm:flex sm:items-center sm:justify-between sm:gap-4 sm:space-y-0', className)} aria-label={t('sessionFlow.label')}>
       <Link
-        to="/"
+        to="/dashboard"
         className="inline-flex shrink-0 items-center gap-1.5 text-[12px] font-medium text-slate-500 transition-colors hover:text-indigo-600"
       >
         <ArrowLeft className="h-3.5 w-3.5" />

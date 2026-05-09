@@ -110,3 +110,163 @@ input[type="range"]::-moz-range-thumb {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+.landing-hero-bg {
+  background:
+    radial-gradient(circle at 18% 18%, rgba(99, 102, 241, 0.09), transparent 28%),
+    radial-gradient(circle at 88% 4%, rgba(139, 92, 246, 0.08), transparent 24%),
+    #f8fafc;
+}
+
+.landing-console {
+  animation: landing-rise 700ms ease-out both;
+}
+
+.landing-terminal-line {
+  animation: landing-type 2.8s steps(54, end) both;
+  border-right: 1px solid rgba(99, 102, 241, 0.48);
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.landing-script-line,
+.landing-mini-line {
+  animation: landing-line-in 640ms ease-out both;
+}
+
+.landing-wave-bar {
+  animation: landing-wave 920ms ease-in-out infinite;
+  transform-origin: bottom;
+}
+
+.landing-progress {
+  animation: landing-progress 5.2s ease-in-out infinite;
+}
+
+.landing-demo-tile {
+  position: relative;
+  overflow: hidden;
+}
+
+.landing-demo-tile::after {
+  animation: landing-scan 4.6s ease-in-out infinite;
+  background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.08), transparent);
+  content: "";
+  inset: 0;
+  position: absolute;
+  transform: translateX(-100%);
+}
+
+.landing-demo-tile > * {
+  position: relative;
+  z-index: 1;
+}
+
+.landing-tag {
+  animation: landing-tag-pop 1.8s ease-in-out infinite;
+}
+
+.landing-tag:nth-child(2) {
+  animation-delay: 160ms;
+}
+
+.landing-tag:nth-child(3) {
+  animation-delay: 320ms;
+}
+
+@keyframes landing-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes landing-type {
+  from {
+    width: 0;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+@keyframes landing-line-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes landing-wave {
+  0%,
+  100% {
+    transform: scaleY(0.58);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+@keyframes landing-progress {
+  0% {
+    width: 8%;
+  }
+  55% {
+    width: 76%;
+  }
+  100% {
+    width: 96%;
+  }
+}
+
+@keyframes landing-scan {
+  0%,
+  42% {
+    transform: translateX(-100%);
+  }
+  78%,
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes landing-tag-pop {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-console,
+  .landing-terminal-line,
+  .landing-script-line,
+  .landing-mini-line,
+  .landing-wave-bar,
+  .landing-progress,
+  .landing-demo-tile::after,
+  .landing-tag {
+    animation: none;
+  }
+
+  .landing-terminal-line {
+    border-right: 0;
+    white-space: normal;
+  }
+}
