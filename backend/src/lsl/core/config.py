@@ -75,7 +75,7 @@ class Settings:
     CASDOOR_ENDPOINT: str = "http://localhost:18000"
     CASDOOR_CLIENT_ID: str = ""
     CASDOOR_CLIENT_SECRET: str = ""
-    CASDOOR_REDIRECT_URI: str = "http://localhost:8000/auth/callback"
+    CASDOOR_REDIRECT_URI: str = "http://localhost:3000/api/auth/callback"
     CASDOOR_HTTP_TIMEOUT: float = 15.0
 
     # 是否在 FastAPI lifespan 中启动后台 job runner。
