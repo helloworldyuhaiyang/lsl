@@ -30,10 +30,12 @@ class AuthService:
         state = secrets.token_urlsafe(32)
         nonce = secrets.token_urlsafe(32)
         code_verifier = secrets.token_urlsafe(64)
+        # state/code_verifier 先写入签名 session cookie；callback 时用它们防 CSRF 并完成 PKCE 校验。
         session[self.STATE_KEY] = state
         session[self.NONCE_KEY] = nonce
         session[self.CODE_VERIFIER_KEY] = code_verifier
 
+        # CASDOOR_REDIRECT_URI 会进入授权请求，必须和 Casdoor 应用 Redirect URLs 完全一致。
         params = {
             "client_id": self._settings.CASDOOR_CLIENT_ID,
             "response_type": "code",
@@ -60,6 +62,7 @@ class AuthService:
         expected_state = session.pop(self.STATE_KEY, None)
         code_verifier = session.pop(self.CODE_VERIFIER_KEY, None)
         session.pop(self.NONCE_KEY, None)
+        # callback 必须带回同一个浏览器 cookie；host 混用会导致这里读不到 state 并报 invalid OAuth state。
         if not expected_state or not secrets.compare_digest(str(expected_state), state):
             raise ValueError("invalid OAuth state")
         if not code_verifier:
@@ -124,6 +127,7 @@ class AuthService:
             "client_id": self._settings.CASDOOR_CLIENT_ID,
             "client_secret": self._settings.CASDOOR_CLIENT_SECRET,
             "code": code,
+            # 换 token 时 redirect_uri 也要和授权请求中的值一致，否则 Casdoor 会拒绝这个 code。
             "redirect_uri": self._settings.CASDOOR_REDIRECT_URI,
             "code_verifier": code_verifier,
         }

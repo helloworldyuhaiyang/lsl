@@ -73,6 +73,7 @@ class CookieSessionMiddleware:
         return data
 
     def _build_cookie(self, session: dict[str, Any]) -> str:
+        # Cookie 内容只是用 AUTH_SESSION_SECRET 签名防篡改，并没有加密；不要放敏感明文。
         raw = json.dumps(session, separators=(",", ":"), sort_keys=True).encode("utf-8")
         payload = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
         signature = self._sign(payload)

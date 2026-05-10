@@ -55,6 +55,7 @@ def callback(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     settings = request.app.state.settings
+    # AUTH_FRONTEND_REDIRECT_URL 是认证完成后的最终落点，要使用浏览器实际访问前端的地址。
     return RedirectResponse(settings.AUTH_FRONTEND_REDIRECT_URL)
 
 

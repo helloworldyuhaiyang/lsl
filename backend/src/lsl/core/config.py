@@ -64,18 +64,21 @@ class Settings:
     # PostgreSQL 连接池获取连接的超时时间，单位秒。
     DB_POOL_TIMEOUT: float = 30.0
 
-    # 登录会话 HMAC secret。生产环境必须覆盖为随机长字符串。
-    AUTH_SESSION_SECRET: str = "dev-session-secret-change-me"
-    # 本地 HTTP 开发时为 false；HTTPS 部署时应为 true。
-    AUTH_COOKIE_SECURE: bool = False
-    # Casdoor 登录完成后跳回前端的地址。
-    AUTH_FRONTEND_REDIRECT_URL: str = "http://localhost:3000/"
-
-    # Casdoor OAuth/OIDC 配置。
-    CASDOOR_ENDPOINT: str = "http://localhost:18000"
+    # Auth / Casdoor
+    # 1. 后端访问 Casdoor 的地址；Casdoor 在 Docker 中运行时不要用 localhost/127.0.0.1。
+    CASDOOR_ENDPOINT: str = ""
+    # 2. Casdoor 中 LSL 应用的 OAuth Client 配置。
     CASDOOR_CLIENT_ID: str = ""
     CASDOOR_CLIENT_SECRET: str = ""
-    CASDOOR_REDIRECT_URI: str = "http://localhost:3000/api/auth/callback"
+    # 3. Casdoor / Google 登录成功后回调 LSL 后端的地址，必须和 Casdoor 应用 Redirect URLs 完全一致。
+    CASDOOR_REDIRECT_URI: str = ""
+    # 4. 后端完成 callback、写入登录 cookie 后，把浏览器重定向回这个前端地址。
+    AUTH_FRONTEND_REDIRECT_URL: str = ""
+    # 5. 后端用于签名 session cookie 的 HMAC secret；用于防篡改，不是加密。
+    AUTH_SESSION_SECRET: str = "dev-session-secret-change-me"
+    # 6. 本地 HTTP 开发为 false；HTTPS 部署时应为 true，否则浏览器不会发送 Secure cookie。
+    AUTH_COOKIE_SECURE: bool = False
+    # 7. 后端请求 Casdoor token/userinfo 接口的 HTTP 超时时间，单位秒。
     CASDOOR_HTTP_TIMEOUT: float = 15.0
 
     # 是否在 FastAPI lifespan 中启动后台 job runner。
