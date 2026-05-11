@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 from typing import cast
@@ -63,7 +64,7 @@ def translate_item(
         raise HTTPException(status_code=status_code, detail=detail) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return ApiResponse(data=translation)
+    return ApiResponse[TranslationData](data=translation)
 
 
 @router.get("", response_model=ApiResponse[TranslationData])
@@ -83,4 +84,4 @@ def get_translation(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return ApiResponse(data=translation)
+    return ApiResponse[TranslationData](data=translation)
