@@ -39,7 +39,7 @@ Whether the source is a real recording or an AI script, LSL turns it into someth
 - Compare original wording against revised wording, with scoring and draft saving.
 - Edit `CUE`-rich scripts as a single string in the UI.
 - Generate script-backed session data that is ready for revise, listening, translation, and TTS flows.
-- Generate Chinese translations for transcript and revision items, with async status tracking and stale detection after edits.
+- Generate UI-language translations for transcript and revision items, with async status tracking and stale detection after edits.
 - Synthesize full listening audio and preview single revision items through TTS.
 - Use a shared async job foundation for ASR, AI script generation, revision, translation, and TTS workflows.
 
@@ -49,7 +49,7 @@ Whether the source is a real recording or an AI script, LSL turns it into someth
 2. Choose the source type: 1) upload a real recording; 2) generate a script from requirements such as scenario, key content, and speaker roles.
 3. If it is a recording, ASR produces the transcript. If it is a script, the LLM produces dialogue content with `CUE`s.
 4. Revision turns the content into something easier to learn from.
-5. Translation can provide Chinese support in Session Detail, Revise, and Listening without changing the source script.
+5. Translation can provide UI-language support in Session Detail, Revise, and Listening without changing the source script.
 6. TTS turns the revised `CUE` script into audio for repeated listening and speaking drills.
 
 ## Why CUE Is Powerful

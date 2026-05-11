@@ -39,7 +39,7 @@ LSL 的宗旨是：学习语言应该是 `listening -> speak -> listening`。先
 - 对比原句和优化句，支持打分和草稿保存
 - 在前端把带 `CUE` 的脚本作为单一字符串直接编辑
 - 生成可直接进入 revise、听力、翻译和 TTS 链路的脚本数据
-- 为 transcript 和 revision item 生成中文译文，并支持异步状态、编辑后过期检测和重试
+- 为 transcript 和 revision item 生成当前 UI 语言的译文，并支持异步状态、编辑后过期检测和重试
 - 通过 TTS 生成完整听力音频，也可以预览单条 revision item
 - 用统一 Job 基础设施承载 ASR、AI 脚本生成、Revision、Translation 和 TTS 的异步生命周期
 
@@ -49,7 +49,7 @@ LSL 的宗旨是：学习语言应该是 `listening -> speak -> listening`。先
 2. 选择素材来源：1）上传一段真实录音；2）根据要求生成脚本，例如场景、关键内容、人员角色。
 3. 如果是录音，ASR 生成 transcript；如果是脚本，LLM 生成带 `CUE` 的对话内容。
 4. Revision 把内容转成更适合学习和复盘的表达。
-5. Translation 可以在 Session Detail、Revise 和 Listening 页面提供中文辅助，但不改变原始脚本。
+5. Translation 可以在 Session Detail、Revise 和 Listening 页面提供当前 UI 语言的辅助译文，但不改变原始脚本。
 6. TTS 把修订后的 `CUE` 脚本转成音频，用于反复听和反复说的训练。
 
 ## CUE 为什么强大

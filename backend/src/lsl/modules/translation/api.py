@@ -70,7 +70,7 @@ def translate_item(
 def get_translation(
     source_type: str,
     source_entity_id: str,
-    target_language: str = "zh-CN",
+    target_language: str | None = None,
     translation_service: TranslationService = Depends(get_translation_service),
 ):
     try:

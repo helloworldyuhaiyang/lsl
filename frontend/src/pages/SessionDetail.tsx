@@ -32,13 +32,14 @@ export function SessionDetail() {
   const [isRetryingTranscription, setIsRetryingTranscription] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
-  const { t } = useI18n();
+  const { t, language } = useI18n();
 
   const session = useMemo(() => loadedSession || (id ? getSessionById(id) : undefined), [id, getSessionById, loadedSession]);
   const transcriptTranslation = useTranslation({
     sourceType: 'transcript',
     sourceEntityId: currentTranscriptId,
     sessionId: session?.id,
+    targetLanguage: language,
     enabled: !!currentTranscriptId && !!session?.transcript && session.transcript.length > 0,
   });
 

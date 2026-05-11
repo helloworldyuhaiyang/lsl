@@ -201,7 +201,7 @@ function TranslationModeControls({
 export function Listening() {
   const { id } = useParams<{ id: string }>();
   const { getSessionById, dispatch } = useApp();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [loadedSession, setLoadedSession] = useState<ReturnType<typeof getSessionById> | null>(null);
   const [notFound, setNotFound] = useState(false);
 
@@ -229,6 +229,7 @@ export function Listening() {
     sourceType: 'revision',
     sourceEntityId: revisionId,
     sessionId: id,
+    targetLanguage: language,
     enabled: !!revisionId && revision.length > 0,
   });
 

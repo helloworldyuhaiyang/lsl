@@ -28,6 +28,8 @@ Supported `source_type` values:
 - A read refresh may update source hashes, but it must not turn an active job into `partial`.
 - Batch regeneration should be started with `force=true` after the caller has saved the latest source text.
 - Single-item refresh should use the synchronous item endpoint instead of creating a job.
+- `target_language` means the translation output language. UI callers should pass the current UI language explicitly.
+- If the caller omits `target_language`, the service falls back to the configured `TRANSLATION_DEFAULT_TARGET_LANGUAGE`.
 
 ## Boundaries
 

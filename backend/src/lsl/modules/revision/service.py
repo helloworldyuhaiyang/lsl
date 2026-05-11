@@ -50,7 +50,6 @@ class RevisionService:
         self._session_service = session_service
         self._transcript_service = transcript_service
         self._job_service = job_service
-        self._translation_service = translation_service
 
     def shutdown(self) -> None:
         return None
@@ -163,7 +162,6 @@ class RevisionService:
             plan_sections=[],
         )
         model = self._repository.set_job_id(session_id=session_id, job_id=None)
-        self._enqueue_revision_translation(session_id=session_id)
         return self._to_revision_data(model)
 
     def update_revision_item(self, *, item_id: str, payload: UpdateRevisionItemRequest) -> RevisionItemData:
@@ -313,7 +311,6 @@ class RevisionService:
                 error_code=None,
                 error_message=None,
             )
-            self._enqueue_revision_translation(session_id=session_id)
             logger.info(
                 "Revision generation job completed session_id=%s transcript_id=%s job_id=%s total_items=%s elapsed_ms=%s",
                 session_id,
@@ -352,23 +349,6 @@ class RevisionService:
             )
             for item in utterances
         ]
-
-    def _enqueue_revision_translation(self, *, session_id: str) -> None:
-        if self._translation_service is None:
-            return
-        try:
-            revision = self._repository.get_revision_by_session_id(session_id)
-            if revision is None:
-                return
-            self._translation_service.create_translation(
-                source_type="revision",
-                source_entity_id=str(revision.revision_id),
-                session_id=session_id,
-                target_language=None,
-                force=False,
-            )
-        except Exception:
-            logger.exception("Failed to enqueue revision translation session_id=%s", session_id)
 
     @staticmethod
     def _build_generated_revision_item(

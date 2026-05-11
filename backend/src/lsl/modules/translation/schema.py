@@ -20,10 +20,10 @@ class CreateTranslationRequest(BaseModel):
     source_type: str = Field(..., min_length=1, max_length=32)
     source_entity_id: str = Field(..., min_length=1, max_length=128)
     session_id: str | None = Field(default=None, max_length=64)
-    target_language: str = Field(default="zh-CN", min_length=2, max_length=16)
+    target_language: str | None = Field(default=None, min_length=2, max_length=16)
     force: bool = False
 
-    @field_validator("source_type", "source_entity_id", "target_language")
+    @field_validator("source_type", "source_entity_id")
     @classmethod
     def normalize_required(cls, value: str) -> str:
         normalized = value.strip()
@@ -31,7 +31,7 @@ class CreateTranslationRequest(BaseModel):
             raise ValueError("value is required")
         return normalized
 
-    @field_validator("session_id")
+    @field_validator("session_id", "target_language")
     @classmethod
     def normalize_optional(cls, value: str | None) -> str | None:
         if value is None:
@@ -45,9 +45,9 @@ class TranslateTranslationItemRequest(BaseModel):
     source_entity_id: str = Field(..., min_length=1, max_length=128)
     source_item_key: str = Field(..., min_length=1, max_length=128)
     session_id: str | None = Field(default=None, max_length=64)
-    target_language: str = Field(default="zh-CN", min_length=2, max_length=16)
+    target_language: str | None = Field(default=None, min_length=2, max_length=16)
 
-    @field_validator("source_type", "source_entity_id", "source_item_key", "target_language")
+    @field_validator("source_type", "source_entity_id", "source_item_key")
     @classmethod
     def normalize_required(cls, value: str) -> str:
         normalized = value.strip()
@@ -55,7 +55,7 @@ class TranslateTranslationItemRequest(BaseModel):
             raise ValueError("value is required")
         return normalized
 
-    @field_validator("session_id")
+    @field_validator("session_id", "target_language")
     @classmethod
     def normalize_optional(cls, value: str | None) -> str | None:
         if value is None:

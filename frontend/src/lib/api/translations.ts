@@ -15,13 +15,16 @@ export interface TranslationSourceParams {
 }
 
 export async function getTranslation(params: TranslationSourceParams): Promise<TranslationResponse> {
+  const query: Record<string, string> = {
+    source_type: params.sourceType,
+    source_entity_id: params.sourceEntityId,
+  }
+  if (params.targetLanguage) {
+    query.target_language = params.targetLanguage
+  }
   const response = await requestJson<ApiResponse<TranslationResponse>>('/translations', {
     method: 'GET',
-    query: {
-      source_type: params.sourceType,
-      source_entity_id: params.sourceEntityId,
-      target_language: params.targetLanguage ?? 'zh-CN',
-    },
+    query,
   })
   return response.data
 }
@@ -36,7 +39,7 @@ export async function createTranslation(params: TranslationSourceParams & { forc
       source_type: params.sourceType,
       source_entity_id: params.sourceEntityId,
       session_id: params.sessionId,
-      target_language: params.targetLanguage ?? 'zh-CN',
+      target_language: params.targetLanguage,
       force: params.force ?? false,
     }),
   })
@@ -54,7 +57,7 @@ export async function translateTranslationItem(params: TranslationSourceParams &
       source_entity_id: params.sourceEntityId,
       source_item_key: params.sourceItemKey,
       session_id: params.sessionId,
-      target_language: params.targetLanguage ?? 'zh-CN',
+      target_language: params.targetLanguage,
     }),
   })
   return response.data

@@ -9,6 +9,7 @@ from lsl.modules.job.repo import JobRepository
 from lsl.modules.job.service import JobService
 from lsl.modules.job.types import JobStatus
 from lsl.modules.revision.repo import RevisionRepository
+from lsl.modules.revision.types import GeneratedRevisionItem, RevisionStatus
 from lsl.modules.translation.provider import FakeTranslationGenerator
 from lsl.modules.translation.repo import TranslationRepository
 from lsl.modules.translation.service import TranslationJobHandler, TranslationService
@@ -70,6 +71,88 @@ def test_translation_generation_job_updates_items() -> None:
         "译文：hello there",
         "译文：nice to meet you",
     ]
+
+
+def test_translation_uses_explicit_target_language_for_chinese_source() -> None:
+    translation_service, _, transcript_service = _build_services()
+    transcript = transcript_service.create_completed_transcript(
+        source_type="manual",
+        source_entity_id=None,
+        language="zh-CN",
+        utterances=[
+            TranscriptUtterance(seq=0, speaker="A", text="你好", start_time=0, end_time=1000),
+        ],
+    )
+
+    created = translation_service.create_translation(
+        source_type="transcript",
+        source_entity_id=transcript.transcript_id,
+        target_language="en",
+    )
+
+    assert created.target_language == "en"
+
+
+def test_revision_translation_uses_explicit_target_language_for_chinese_source() -> None:
+    translation_service, _, transcript_service = _build_services()
+    transcript = transcript_service.create_completed_transcript(
+        source_type="manual",
+        source_entity_id=None,
+        language="zh-CN",
+        utterances=[
+            TranscriptUtterance(seq=0, speaker="A", text="你好", start_time=0, end_time=1000),
+        ],
+    )
+    revision = translation_service._revision_repository.save_revision(
+        session_id="00000000-0000-0000-0000-000000000001",
+        transcript_id=transcript.transcript_id,
+        user_prompt=None,
+        status=int(RevisionStatus.COMPLETED),
+        items=[
+            GeneratedRevisionItem(
+                transcript_id=transcript.transcript_id,
+                source_seq_start=0,
+                source_seq_end=0,
+                source_seq_count=1,
+                source_seqs=[0],
+                speaker="A",
+                start_time=0,
+                end_time=1000,
+                original_text="你好",
+                suggested_text="[自然地打招呼] 你好",
+                score=90,
+            )
+        ],
+    )
+
+    created = translation_service.create_translation(
+        source_type="revision",
+        source_entity_id=str(revision.revision_id),
+        target_language="en",
+    )
+
+    assert created.source_language == "zh-CN"
+    assert created.target_language == "en"
+
+
+def test_omitted_translation_target_falls_back_to_configured_language() -> None:
+    translation_service, _, transcript_service = _build_services()
+    transcript = transcript_service.create_completed_transcript(
+        source_type="manual",
+        source_entity_id=None,
+        language="en-US",
+        utterances=[
+            TranscriptUtterance(seq=0, speaker="A", text="hello there", start_time=0, end_time=1000),
+        ],
+    )
+
+    created = translation_service.create_translation(
+        source_type="transcript",
+        source_entity_id=transcript.transcript_id,
+        target_language=None,
+    )
+
+    assert created.target_language == "zh-CN"
 
 
 def test_translation_retry_recovers_generating_items() -> None:

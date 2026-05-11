@@ -46,15 +46,16 @@ class TranslationService:
         source_entity_id: str,
         target_language: str | None = None,
     ) -> TranslationData:
+        normalized_source_type = self._normalize_source_type(source_type)
+        source = self._load_source_items(source_type=normalized_source_type, source_entity_id=source_entity_id)
         target = self._normalize_language(target_language)
         row = self._repository.get_translation_by_source(
-            source_type=self._normalize_source_type(source_type),
+            source_type=normalized_source_type,
             source_entity_id=source_entity_id,
             target_language=target,
         )
         if row is None:
             raise ValueError("translation not found")
-        source = self._load_source_items(source_type=row["source_type"], source_entity_id=row["source_entity_id"])
         row = self._repository.upsert_translation(
             translation_id=row["translation_id"],
             session_id=row.get("session_id"),
@@ -80,8 +81,8 @@ class TranslationService:
         if self._job_service is None:
             raise RuntimeError("Job service is not initialized")
         normalized_source_type = self._normalize_source_type(source_type)
-        target = self._normalize_language(target_language)
         source = self._load_source_items(source_type=normalized_source_type, source_entity_id=source_entity_id)
+        target = self._normalize_language(target_language)
         existing = self._repository.get_translation_by_source(
             source_type=normalized_source_type,
             source_entity_id=source_entity_id,
@@ -137,8 +138,8 @@ class TranslationService:
         target_language: str | None = None,
     ) -> TranslationData:
         normalized_source_type = self._normalize_source_type(source_type)
-        target = self._normalize_language(target_language)
         source = self._load_source_items(source_type=normalized_source_type, source_entity_id=source_entity_id)
+        target = self._normalize_language(target_language)
         if not any(item.source_item_key == source_item_key for item in source.items):
             raise ValueError("translation source item not found")
 
@@ -321,9 +322,10 @@ class TranslationService:
             revision = self._revision_repository.get_revision_by_id(source_entity_id)
             if revision is None:
                 raise ValueError("revision not found")
+            transcript = self._transcript_service.get_transcript(transcript_id=str(revision.transcript_id), include_raw=False)
             return _TranslationSource(
                 session_id=str(revision.session_id),
-                source_language=None,
+                source_language=transcript.language,
                 items=[
                     TranslationSourceItem(
                         source_item_key=str(item.item_id),

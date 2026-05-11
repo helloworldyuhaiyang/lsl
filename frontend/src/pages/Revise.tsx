@@ -94,6 +94,7 @@ export function Revise() {
     sourceType: 'revision',
     sourceEntityId: revisionId,
     sessionId: id,
+    targetLanguage: language,
     enabled: !!revisionId && revision.length > 0 && !isRevising,
   });
   const revisionProgress = useMemo(

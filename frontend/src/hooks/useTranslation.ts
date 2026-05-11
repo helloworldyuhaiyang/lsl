@@ -16,7 +16,7 @@ export function useTranslation({
   sourceType,
   sourceEntityId,
   sessionId,
-  targetLanguage = 'zh-CN',
+  targetLanguage,
   enabled = true,
 }: UseTranslationParams) {
   const [translation, setTranslation] = useState<TranslationResponse | null>(null)
