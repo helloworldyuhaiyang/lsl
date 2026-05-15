@@ -8,7 +8,7 @@ import { useI18n } from '@/i18n';
 
 export function CreateSession() {
   const { t } = useI18n();
-  const [mode, setMode] = useState<'audio' | 'ai_script'>('audio');
+  const [mode, setMode] = useState<'audio' | 'ai_script'>('ai_script');
 
   const handleModeChange = useCallback((nextMode: 'audio' | 'ai_script') => {
     setMode(nextMode);
